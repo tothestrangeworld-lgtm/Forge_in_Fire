@@ -6,5 +6,4 @@ compatibility_flags = ["nodejs_compat"]
 # 公開可能な環境変数はここに（シークレットはCloudflare Dashboardで設定）
 # NEXT_PUBLIC_GAS_URL は Dashboard > Environment variables で設定
 
-[[pages_build_output_dir]]
-directory = ".vercel/output/static"
+pages_build_output_dir = ".vercel/output/static"
