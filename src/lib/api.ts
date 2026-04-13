@@ -80,7 +80,7 @@ export async function saveLog(payload: Omit<SaveLogPayload, 'action'>): Promise<
 }
 
 export async function updateSettings(items: Setting[]): Promise<{ updated: number }> {
-  return gasPost<{ updated: number }>({ action: 'updateSettings', items });
+  return gasPost<{ updated: number }>({ action: 'updateSettings', items } as any);
 }
 
 // ステータスリセット
