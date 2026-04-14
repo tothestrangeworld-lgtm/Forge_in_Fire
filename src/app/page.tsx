@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { TrendingUp, Flame, RotateCcw, Loader2 } from 'lucide-react';
+import { TrendingUp, Flame, RotateCcw, Loader2, TrendingDown } from 'lucide-react';
 import type { DashboardData } from '@/types';
 import {
   calcLevelFromXp, calcProgressPercent, calcNextLevel,
@@ -14,10 +14,10 @@ const RadarChart      = dynamic(() => import('@/components/charts/RadarChart'), 
 const ActivityHeatmap = dynamic(() => import('@/components/charts/ActivityHeatmap'), { ssr: false });
 
 export default function DashboardPage() {
-  const [data, setData]         = useState<DashboardData | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState<string | null>(null);
-  const [resetting, setReset]   = useState(false);
+  const [data, setData]           = useState<DashboardData | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState<string | null>(null);
+  const [resetting, setReset]     = useState(false);
   const [showReset, setShowReset] = useState(false);
 
   const load = () => {
@@ -34,7 +34,7 @@ export default function DashboardPage() {
   if (error)   return <ErrorState message={error} />;
   if (!data)   return null;
 
-  const { status, logs, settings } = data;
+  const { status, logs, settings, decay } = data;
   const level       = calcLevelFromXp(status.total_xp);
   const title       = titleForLevel(level);
   const nextLv      = calcNextLevel(status.total_xp);
@@ -42,17 +42,16 @@ export default function DashboardPage() {
   const nextTitle   = nextTitleLevel(level);
   const color       = levelColor(level);
 
-  // 今週の稽古（今週月曜〜今週日曜・未来日付は除外）
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // 今週の稽古（今週月曜〜今週日曜・今日以前のみ）
+  const today = new Date(); today.setHours(0,0,0,0);
   const dow   = today.getDay();
   const monday = new Date(today);
   monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-
   const thisWeek = new Set(
     logs.filter(l => {
-      const d = new Date(l.date); d.setHours(0, 0, 0, 0);
+      const d = new Date(l.date); d.setHours(0,0,0,0);
       return d >= monday && d <= sunday && d <= today;
     }).map(l => l.date)
   ).size;
@@ -73,16 +72,16 @@ export default function DashboardPage() {
   }));
   const hasRadarData = radarData.some(d => d.score > 0);
 
+  // 減衰状態
+  const isDecaying   = (decay?.days_absent ?? 0) > 3;
+  const decayPerDay  = decay?.today_penalty ?? 0;
+  const appliedToday = decay?.applied ?? 0;
+
   async function handleReset() {
     if (!confirm('レベルとXPをリセットします。稽古ログは残ります。よろしいですか？')) return;
     setReset(true);
-    try {
-      await resetStatus();
-      load();
-    } finally {
-      setReset(false);
-      setShowReset(false);
-    }
+    try { await resetStatus(); load(); }
+    finally { setReset(false); setShowReset(false); }
   }
 
   return (
@@ -98,23 +97,14 @@ export default function DashboardPage() {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <div style={{ textAlign:'right' }}>
-            <span style={{
-              display:'inline-block', fontSize:'0.7rem', fontWeight:700,
-              padding:'0.25rem 0.75rem', borderRadius:999, background: color, color:'#fff',
-            }}>
+            <span style={{ display:'inline-block', fontSize:'0.7rem', fontWeight:700, padding:'0.25rem 0.75rem', borderRadius:999, background:color, color:'#fff' }}>
               {title}
             </span>
             <p style={{ fontSize:'0.7rem', color:'#a8a29e', marginTop:4, textAlign:'right' }}>Lv.{level}</p>
           </div>
-          {/* リセットボタン */}
           <button
             onClick={() => setShowReset(v => !v)}
-            style={{
-              width:32, height:32, borderRadius:8,
-              border:'1.5px solid #e0e7ff', background:'#fff',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              cursor:'pointer', color:'#a5b4fc', flexShrink:0,
-            }}
+            style={{ width:32, height:32, borderRadius:8, border:'1.5px solid #e0e7ff', background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#a5b4fc', flexShrink:0 }}
             title="リセット設定"
           >
             <RotateCcw style={{ width:14, height:14 }} />
@@ -130,20 +120,40 @@ export default function DashboardPage() {
             XP・レベル・称号を初期値に戻します。稽古ログは削除されません。
           </p>
           <div style={{ display:'flex', gap:8 }}>
-            <button
-              onClick={() => setShowReset(false)}
-              style={{ flex:1, padding:'8px', borderRadius:8, border:'1.5px solid #e0e7ff', background:'#fff', cursor:'pointer', fontSize:'0.8rem', fontFamily:'inherit', fontWeight:600, color:'#78716c' }}
-            >
+            <button onClick={() => setShowReset(false)} style={{ flex:1, padding:'8px', borderRadius:8, border:'1.5px solid #e0e7ff', background:'#fff', cursor:'pointer', fontSize:'0.8rem', fontFamily:'inherit', fontWeight:600, color:'#78716c' }}>
               キャンセル
             </button>
-            <button
-              onClick={handleReset}
-              disabled={resetting}
-              style={{ flex:1, padding:'8px', borderRadius:8, border:'none', background:'#dc2626', color:'#fff', cursor:'pointer', fontSize:'0.8rem', fontFamily:'inherit', fontWeight:700 }}
-            >
+            <button onClick={handleReset} disabled={resetting} style={{ flex:1, padding:'8px', borderRadius:8, border:'none', background:'#dc2626', color:'#fff', cursor:'pointer', fontSize:'0.8rem', fontFamily:'inherit', fontWeight:700 }}>
               {resetting ? <Loader2 style={{ width:14, height:14, animation:'spin .8s linear infinite' }} /> : 'リセットする'}
               <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 減衰警告バナー */}
+      {isDecaying && (
+        <div
+          className="animate-fade-up"
+          style={{
+            marginBottom:'0.75rem', borderRadius:14,
+            background: decayPerDay >= 100 ? '#fef2f2' : '#fffbeb',
+            border: `1.5px solid ${decayPerDay >= 100 ? '#fca5a5' : '#fde68a'}`,
+            padding:'0.75rem 1rem',
+            display:'flex', alignItems:'center', gap:10,
+          }}
+        >
+          <div style={{ width:36, height:36, borderRadius:10, background: decayPerDay >= 100 ? '#fee2e2' : '#fef3c7', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <TrendingDown style={{ width:18, height:18, color: decayPerDay >= 100 ? '#dc2626' : '#d97706' }} />
+          </div>
+          <div style={{ flex:1 }}>
+            <p style={{ fontSize:'0.8rem', fontWeight:700, color: decayPerDay >= 100 ? '#991b1b' : '#92400e', margin:'0 0 2px' }}>
+              {decay?.days_absent}日間稽古していません
+            </p>
+            <p style={{ fontSize:'0.68rem', color: decayPerDay >= 100 ? '#b91c1c' : '#b45309', margin:0 }}>
+              現在 <span style={{ fontWeight:700 }}>-{decayPerDay} XP/日</span> ペースで減少中
+              {appliedToday > 0 && ` （本日 -${appliedToday} XP 適用済み）`}
+            </p>
           </div>
         </div>
       )}
@@ -158,17 +168,12 @@ export default function DashboardPage() {
               <span style={{ fontSize:'0.9rem', fontWeight:500, color:'rgba(199,210,254,0.6)', marginLeft:4 }}>xp</span>
             </p>
           </div>
-          <div style={{
-            width:52, height:52, borderRadius:14,
-            background:'rgba(255,255,255,0.12)',
-            display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
-          }}>
+          <div style={{ width:52, height:52, borderRadius:14, background:'rgba(255,255,255,0.12)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2 }}>
             <span style={{ fontSize:'1.2rem', lineHeight:1 }}>⚔️</span>
             <span style={{ fontSize:'0.6rem', color:'#c7d2fe', fontWeight:700 }}>Lv.{level}</span>
           </div>
         </div>
 
-        {/* XPバー */}
         {nextLv && (
           <>
             <div className="xp-bar-track" style={{ background:'rgba(255,255,255,0.12)' }}>
@@ -176,14 +181,12 @@ export default function DashboardPage() {
             </div>
             <div style={{ display:'flex', justifyContent:'space-between', marginTop:6 }}>
               <p style={{ fontSize:'0.68rem', color:'rgba(199,210,254,0.55)', margin:0 }}>
-                次のLv.{level + 1}まで{' '}
-                <span style={{ fontWeight:700, color:'#c7d2fe' }}>
-                  {(nextLv.xp - status.total_xp).toLocaleString()} xp
-                </span>
+                次のLv.{level+1}まで{' '}
+                <span style={{ fontWeight:700, color:'#c7d2fe' }}>{(nextLv.xp - status.total_xp).toLocaleString()} xp</span>
               </p>
               {nextTitle && (
-                <p style={{ fontSize:'0.68rem', color:'rgba(199,210,254,0.45)', margin:0 }}>
-                  称号「{nextTitle.title}」→ Lv.{nextTitle.level}
+                <p style={{ fontSize:'0.68rem', color:'rgba(199,210,254,0.4)', margin:0 }}>
+                  「{nextTitle.title}」→ Lv.{nextTitle.level}
                 </p>
               )}
             </div>
@@ -196,7 +199,7 @@ export default function DashboardPage() {
 
       {/* 統計 */}
       <div className="animate-fade-up delay-200" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'0.75rem' }}>
-        <StatCard icon={<Flame style={{width:20,height:20,color:'#f97316'}}/>} bg="#fff7ed" label="連続稽古" value={`${streak}日`} />
+        <StatCard icon={<Flame style={{width:20,height:20,color:'#f97316'}}/>}    bg="#fff7ed" label="連続稽古"   value={`${streak}日`}   />
         <StatCard icon={<TrendingUp style={{width:20,height:20,color:'#6366f1'}}/>} bg="#eef2ff" label="今週の稽古" value={`${thisWeek}回`} />
       </div>
 

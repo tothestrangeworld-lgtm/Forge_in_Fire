@@ -6,6 +6,8 @@ const SPREADSHEET_ID  = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
 const SHEET_SETTINGS  = 'settings';
 const SHEET_LOGS      = 'logs';
 const SHEET_STATUS    = 'user_status';
+// user_status 列構成:
+// A: total_xp  B: level  C: title  D: last_practice_date  E: last_decay_date
 const SHEET_ERRORLOGS = 'error_logs';
 
 // =====================================================================
@@ -76,6 +78,7 @@ function doPost(e) {
     switch (action) {
       case 'saveLog':        return saveLog(body);
       case 'updateSettings': return updateSettings(body);
+      case 'resetStatus':    return resetStatus();
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -150,12 +153,12 @@ function saveLog(body) {
   const newLevel   = calcLevel(newXp);
   const newTitle   = calcTitle(newXp);
 
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
   if (hasDataRow) {
-    // 既存行を上書き
-    statSheet.getRange(2, 1, 1, 3).setValues([[newXp, newLevel, newTitle]]);
+    // 既存行を上書き（last_practice_date = today, last_decay_date = today でリセット）
+    statSheet.getRange(2, 1, 1, 5).setValues([[newXp, newLevel, newTitle, today, today]]);
   } else {
-    // 初回：データ行を新規追加
-    statSheet.appendRow([newXp, newLevel, newTitle]);
+    statSheet.appendRow([newXp, newLevel, newTitle, today, today]);
     gasLog('INFO', 'saveLog', 'user_status を初期化しました', { newXp, newLevel, newTitle });
   }
 
@@ -241,53 +244,153 @@ function getDashboard() {
   // 次のレベルまでのXP
   const nextLevelXp = calcNextLevelXp(status.total_xp);
 
-  return createResponse({ status, settings, logs, nextLevelXp });
+  return createResponse({ status, settings, logs, nextLevelXp, decay: decayResult });
 }
 
 // =====================================================================
-// E. レベル・称号計算ロジック
+// E. レベル・称号計算ロジック（レベル1〜99・指数カーブ）
 // =====================================================================
-const LEVEL_TABLE = [
-  { level: 1,  xp: 0,     title: '見習い' },
-  { level: 2,  xp: 300,   title: '白帯' },
-  { level: 3,  xp: 800,   title: '素振り師' },
-  { level: 4,  xp: 1800,  title: '初段' },
-  { level: 5,  xp: 3500,  title: '弐段' },
-  { level: 6,  xp: 6000,  title: '参段' },
-  { level: 7,  xp: 9500,  title: '四段' },
-  { level: 8,  xp: 14000, title: '五段' },
-  { level: 9,  xp: 20000, title: '錬士' },
-  { level: 10, xp: 28000, title: '教士' },
-  { level: 11, xp: 40000, title: '範士' },
-];
+
+// xpForLevel(n) = floor(100 * (n-1)^1.8)
+// 低レベルはサクサク、高レベルになるほど重い
+function xpForLevel(level) {
+  if (level <= 1) return 0;
+  return Math.floor(100 * Math.pow(level - 1, 1.8));
+}
+
+// 称号テーブル（キリのいいレベルのみ・剣道にちなんだ称号）
+const TITLE_MAP = {
+  1:  '入門',
+  5:  '素振り',
+  10: '初段',
+  15: '弐段',
+  20: '参段',
+  25: '四段',
+  30: '五段',
+  35: '錬士',
+  40: '教士',
+  50: '範士',
+  60: '剣聖',
+  70: '剣豪',
+  80: '剣鬼',
+  90: '剣神',
+  99: '剣道の神',
+};
 
 function calcLevel(xp) {
   let level = 1;
-  for (let i = LEVEL_TABLE.length - 1; i >= 0; i--) {
-    if (xp >= LEVEL_TABLE[i].xp) {
-      level = LEVEL_TABLE[i].level;
-      break;
-    }
+  for (let n = 1; n <= 99; n++) {
+    if (xp >= xpForLevel(n)) level = n;
+    else break;
   }
-  return level;
+  return Math.min(level, 99);
 }
 
 function calcTitle(xp) {
-  let title = '見習い';
-  for (let i = LEVEL_TABLE.length - 1; i >= 0; i--) {
-    if (xp >= LEVEL_TABLE[i].xp) {
-      title = LEVEL_TABLE[i].title;
-      break;
-    }
+  const level = calcLevel(xp);
+  let title = '入門';
+  const milestones = Object.keys(TITLE_MAP).map(Number).sort((a,b) => a-b);
+  for (const lv of milestones) {
+    if (level >= lv) title = TITLE_MAP[lv];
+    else break;
   }
   return title;
 }
 
 function calcNextLevelXp(xp) {
-  for (let i = 0; i < LEVEL_TABLE.length; i++) {
-    if (LEVEL_TABLE[i].xp > xp) {
-      return { required: LEVEL_TABLE[i].xp, title: LEVEL_TABLE[i].title };
-    }
+  const level = calcLevel(xp);
+  if (level >= 99) return { required: null, title: '剣道の神' };
+  return { required: xpForLevel(level + 1), title: calcTitle(xpForLevel(level + 1)) };
+}
+
+// =====================================================================
+// F. リセット機能
+// =====================================================================
+function resetStatus() {
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_STATUS);
+  const rows  = sheet.getDataRange().getValues();
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  if (rows.length >= 2) {
+    sheet.getRange(2, 1, 1, 5).setValues([[0, 1, '入門', '', today]]);
+  } else {
+    sheet.appendRow([0, 1, '入門', '', today]);
   }
-  return { required: null, title: '最高位' };
+  gasLog('INFO', 'resetStatus', 'ステータスをリセットしました');
+  return createResponse({ total_xp: 0, level: 1, title: '入門' });
+}
+
+// =====================================================================
+// G. XP 減衰ロジック
+// =====================================================================
+// アルゴリズム:
+//   猶予期間 = 3日（週2回ペース=3.5日間隔の約半分）
+//   4日目以降: daily_penalty(d) = floor(20 × (d-3)^1.3)
+//   週2回ペースで稽古すれば減衰と釣り合う設計
+//   (7日間稽古なし → 累計約280XP減 ≒ 週2回稽古の獲得XPと相殺)
+// =====================================================================
+function dailyPenalty(daysSincePractice) {
+  if (daysSincePractice <= 3) return 0;
+  return Math.floor(20 * Math.pow(daysSincePractice - 3, 1.3));
+}
+
+function applyDecay(ss) {
+  const sheet = ss.getSheetByName(SHEET_STATUS);
+  const rows  = sheet.getDataRange().getValues();
+  if (rows.length < 2) return { applied: 0, days_absent: 0 };
+
+  const row = rows[1];
+  const totalXp         = parseInt(row[0]) || 0;
+  const lastPracticeStr = row[3] || '';
+  const lastDecayStr    = row[4] || '';
+
+  const today    = new Date(); today.setHours(0,0,0,0);
+  const todayStr = Utilities.formatDate(today, 'Asia/Tokyo', 'yyyy-MM-dd');
+
+  // last_decay_date が今日なら既に適用済み → スキップ
+  if (lastDecayStr === todayStr) {
+    const daysAbsent = lastPracticeStr
+      ? Math.floor((today - new Date(lastPracticeStr)) / 86400000)
+      : 0;
+    return { applied: 0, days_absent: daysAbsent, today_penalty: dailyPenalty(daysAbsent) };
+  }
+
+  // 稽古記録がなければ減衰なし
+  if (!lastPracticeStr) {
+    sheet.getRange(2, 5).setValue(todayStr);
+    return { applied: 0, days_absent: 0, today_penalty: 0 };
+  }
+
+  const lastPractice = new Date(lastPracticeStr); lastPractice.setHours(0,0,0,0);
+  const lastDecay    = lastDecayStr ? new Date(lastDecayStr) : new Date(lastPractice);
+  lastDecay.setHours(0,0,0,0);
+
+  // lastDecay の翌日〜今日まで1日ずつ減衰を計算
+  let totalDecay   = 0;
+  const cursor     = new Date(lastDecay);
+  cursor.setDate(cursor.getDate() + 1);
+
+  while (cursor <= today) {
+    const daysGap = Math.floor((cursor - lastPractice) / 86400000);
+    totalDecay += dailyPenalty(daysGap);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const daysAbsent   = Math.floor((today - lastPractice) / 86400000);
+  const todayPenalty = dailyPenalty(daysAbsent);
+
+  if (totalDecay <= 0) {
+    sheet.getRange(2, 5).setValue(todayStr);
+    return { applied: 0, days_absent: daysAbsent, today_penalty: todayPenalty };
+  }
+
+  // 適用（XPは0未満にしない）
+  const newXp    = Math.max(0, totalXp - totalDecay);
+  const newLevel = calcLevel(newXp);
+  const newTitle = calcTitle(newXp);
+
+  sheet.getRange(2, 1, 1, 5).setValues([[newXp, newLevel, newTitle, lastPracticeStr, todayStr]]);
+  gasLog('INFO', 'applyDecay', `XP減衰適用: -${totalDecay}XP (${daysAbsent}日間稽古なし)`, { totalDecay, daysAbsent, newXp });
+
+  return { applied: totalDecay, days_absent: daysAbsent, today_penalty: todayPenalty };
 }

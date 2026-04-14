@@ -25,11 +25,18 @@ export interface NextLevelInfo {
   title:    string;
 }
 
+export interface DecayInfo {
+  applied:       number;   // 今回適用した減衰XP
+  days_absent:   number;   // 最後の稽古からの日数
+  today_penalty: number;   // 今日1日分の減衰ペース
+}
+
 export interface DashboardData {
   status:      UserStatus;
   settings:    Setting[];
   logs:        LogEntry[];
   nextLevelXp: NextLevelInfo;
+  decay?:      DecayInfo;
 }
 
 export interface SaveLogPayload {
