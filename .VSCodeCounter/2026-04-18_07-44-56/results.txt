@@ -1,0 +1,66 @@
+Date : 2026-04-18 07:44:56
+Directory : c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire
+Total : 22 files,  10348 codes, 123 comments, 290 blanks, all 10761 lines
+
+Languages
++--------------------+------------+------------+------------+------------+------------+
+| language           | files      | code       | comment    | blank      | total      |
++--------------------+------------+------------+------------+------------+------------+
+| JSON               |          2 |      8,327 |          0 |          1 |      8,328 |
+| TypeScript JSX     |          9 |      1,204 |         55 |        141 |      1,400 |
+| TypeScript         |          7 |        409 |         57 |         82 |        548 |
+| PostCSS            |          1 |        210 |         11 |         26 |        247 |
+| Markdown           |          1 |        172 |          0 |         38 |        210 |
+| JSON with Comments |          1 |         20 |          0 |          1 |         21 |
+| JavaScript         |          1 |          6 |          0 |          1 |          7 |
++--------------------+------------+------------+------------+------------+------------+
+
+Directories
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                | files      | code       | comment    | blank      | total      |
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                   |         22 |     10,348 |        123 |        290 |     10,761 |
+| . (Files)                                                                                           |          8 |      8,569 |          9 |         51 |      8,629 |
+| src                                                                                                 |         14 |      1,779 |        114 |        239 |      2,132 |
+| src\app                                                                                             |          7 |      1,192 |         62 |        146 |      1,400 |
+| src\app (Files)                                                                                     |          3 |        480 |         23 |         59 |        562 |
+| src\app\api                                                                                         |          1 |         86 |          7 |         17 |        110 |
+| src\app\api\gas                                                                                     |          1 |         86 |          7 |         17 |        110 |
+| src\app\debug                                                                                       |          1 |        224 |         11 |         23 |        258 |
+| src\app\history                                                                                     |          1 |        159 |          7 |         23 |        189 |
+| src\app\record                                                                                      |          1 |        243 |         14 |         24 |        281 |
+| src\components                                                                                      |          4 |        308 |         11 |         38 |        357 |
+| src\components (Files)                                                                              |          1 |         53 |          0 |          5 |         58 |
+| src\components\charts                                                                               |          3 |        255 |         11 |         33 |        299 |
+| src\lib                                                                                             |          2 |        168 |         26 |         37 |        231 |
+| src\types                                                                                           |          1 |        111 |         15 |         18 |        144 |
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++-----------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| filename                                                                                            | language           | code       | comment    | blank      | total      |
++-----------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\README.md                                 | Markdown           |        172 |          0 |         38 |        210 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\next-env.d.ts                             | TypeScript         |          0 |          5 |          2 |          7 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\next.config.ts                            | TypeScript         |         10 |          4 |          5 |         19 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\package-lock.json                         | JSON               |      8,294 |          0 |          1 |      8,295 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\package.json                              | JSON               |         33 |          0 |          0 |         33 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\postcss.config.js                         | JavaScript         |          6 |          0 |          1 |          7 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\api\gas\route.ts                  | TypeScript         |         86 |          7 |         17 |        110 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\debug\page.tsx                    | TypeScript JSX     |        224 |         11 |         23 |        258 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\globals.css                       | PostCSS            |        210 |         11 |         26 |        247 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\history\page.tsx                  | TypeScript JSX     |        159 |          7 |         23 |        189 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\layout.tsx                        | TypeScript JSX     |         32 |          2 |          6 |         40 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\page.tsx                          | TypeScript JSX     |        238 |         10 |         27 |        275 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\record\page.tsx                   | TypeScript JSX     |        243 |         14 |         24 |        281 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\Navigation.tsx             | TypeScript JSX     |         53 |          0 |          5 |         58 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\charts\ActivityHeatmap.tsx | TypeScript JSX     |        157 |         10 |         21 |        188 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\charts\RadarChart.tsx      | TypeScript JSX     |         40 |          0 |          5 |         45 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\charts\TrendLineChart.tsx  | TypeScript JSX     |         58 |          1 |          7 |         66 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\lib\api.ts                            | TypeScript         |         64 |         11 |         15 |         90 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\lib\logger.ts                         | TypeScript         |        104 |         15 |         22 |        141 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\types\index.ts                        | TypeScript         |        111 |         15 |         18 |        144 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\tailwind.config.ts                        | TypeScript         |         34 |          0 |          3 |         37 |
+| c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\tsconfig.json                             | JSON with Comments |         20 |          0 |          1 |         21 |
+| Total                                                                                               |                    |     10,348 |        123 |        290 |     10,761 |
++-----------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+

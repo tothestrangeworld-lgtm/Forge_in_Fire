@@ -355,13 +355,32 @@ function applyDecay(ss) {
     return { applied: 0, days_absent: daysAbsent, today_penalty: dailyPenalty(daysAbsent) };
   }
 
-  // 稽古記録がなければ減衰なし
-  if (!lastPracticeStr) {
+  // last_practice_date が空の場合（旧データ互換）→ logs シートから最終稽古日を自動取得
+  let resolvedLastPractice = lastPracticeStr;
+  if (!resolvedLastPractice) {
+    const logSheet = ss.getSheetByName(SHEET_LOGS);
+    const logRows  = logSheet.getDataRange().getValues();
+    // ヘッダーを除いたA列（date）から最大値を取得
+    const logDates = logRows.slice(1)
+      .map(r => r[0] ? String(r[0]).slice(0, 10) : '')
+      .filter(d => d.match(/^\d{4}-\d{2}-\d{2}$/))
+      .sort();
+    if (logDates.length > 0) {
+      resolvedLastPractice = logDates[logDates.length - 1];
+      // user_status の D列を補完して次回から使えるようにする
+      sheet.getRange(2, 4).setValue(resolvedLastPractice);
+      gasLog('INFO', 'applyDecay', 'last_practice_date を logs から自動補完', { resolvedLastPractice });
+    }
+  }
+
+  // 稽古記録が一件もなければ減衰なし
+  if (!resolvedLastPractice) {
     sheet.getRange(2, 5).setValue(todayStr);
     return { applied: 0, days_absent: 0, today_penalty: 0 };
   }
 
-  const lastPractice = new Date(lastPracticeStr); lastPractice.setHours(0,0,0,0);
+  const lastPractice = new Date(resolvedLastPractice); lastPractice.setHours(0,0,0,0);
+  // last_decay_date が空の場合は last_practice_date の翌日から計算開始
   const lastDecay    = lastDecayStr ? new Date(lastDecayStr) : new Date(lastPractice);
   lastDecay.setHours(0,0,0,0);
 
@@ -389,7 +408,7 @@ function applyDecay(ss) {
   const newLevel = calcLevel(newXp);
   const newTitle = calcTitle(newXp);
 
-  sheet.getRange(2, 1, 1, 5).setValues([[newXp, newLevel, newTitle, lastPracticeStr, todayStr]]);
+  sheet.getRange(2, 1, 1, 5).setValues([[newXp, newLevel, newTitle, resolvedLastPractice, todayStr]]);
   gasLog('INFO', 'applyDecay', `XP減衰適用: -${totalDecay}XP (${daysAbsent}日間稽古なし)`, { totalDecay, daysAbsent, newXp });
 
   return { applied: totalDecay, days_absent: daysAbsent, today_penalty: todayPenalty };

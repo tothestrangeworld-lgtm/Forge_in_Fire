@@ -10,8 +10,8 @@ import {
 import { fetchDashboard, resetStatus } from '@/lib/api';
 import dynamic from 'next/dynamic';
 
-const RadarChart      = dynamic(() => import('@/components/charts/RadarChart'),      { ssr: false });
-const ActivityHeatmap = dynamic(() => import('@/components/charts/ActivityHeatmap'), { ssr: false });
+const RadarChart       = dynamic(() => import('@/components/charts/RadarChart'),       { ssr: false });
+const XPTimelineChart  = dynamic(() => import('@/components/charts/XPTimelineChart'),  { ssr: false });
 
 export default function DashboardPage() {
   const [data, setData]           = useState<DashboardData | null>(null);
@@ -211,10 +211,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ヒートマップ */}
+      {/* XP推移 */}
       <div className="wa-card animate-fade-up delay-300" style={{ marginBottom:'1rem' }}>
-        <span className="section-title">稽古カレンダー</span>
-        <ActivityHeatmap logs={logs} />
+        <span className="section-title">XP推移</span>
+        <XPTimelineChart logs={logs} compact={true} />
       </div>
 
     </div>

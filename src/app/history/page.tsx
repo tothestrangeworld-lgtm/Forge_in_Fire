@@ -7,7 +7,7 @@ import { fetchDashboard } from '@/lib/api';
 
 const RadarChart      = dynamic(() => import('@/components/charts/RadarChart'),      { ssr: false, loading: () => <ChartLoading /> });
 const TrendLineChart  = dynamic(() => import('@/components/charts/TrendLineChart'),  { ssr: false, loading: () => <ChartLoading /> });
-const ActivityHeatmap = dynamic(() => import('@/components/charts/ActivityHeatmap'), { ssr: false, loading: () => <ChartLoading /> });
+const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false, loading: () => <ChartLoading /> });
 
 type Tab = 'radar' | 'trend' | 'heatmap';
 
@@ -65,9 +65,9 @@ export default function HistoryPage() {
     : '—';
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'radar',   label: 'バランス'   },
-    { key: 'trend',   label: '蓄積推移'   },
-    { key: 'heatmap', label: 'カレンダー' },
+    { key: 'radar',   label: 'バランス'  },
+    { key: 'trend',   label: '蓄積推移'  },
+    { key: 'heatmap', label: 'XP推移'   },
   ];
 
   return (
@@ -148,8 +148,8 @@ export default function HistoryPage() {
 
         {tab === 'heatmap' && (
           <>
-            <span className="section-title">稽古カレンダー</span>
-            <ActivityHeatmap logs={logs} />
+            <span className="section-title">XP推移（稽古開始〜今日）</span>
+            <XPTimelineChart logs={logs} compact={false} />
           </>
         )}
       </div>

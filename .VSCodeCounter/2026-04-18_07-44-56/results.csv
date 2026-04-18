@@ -1,0 +1,24 @@
+"filename", "language", "TypeScript", "JSON with Comments", "JSON", "TypeScript JSX", "JavaScript", "Markdown", "PostCSS", "comment", "blank", "total"
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\README.md", "Markdown", 0, 0, 0, 0, 0, 172, 0, 0, 38, 210
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\next-env.d.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 0, 5, 2, 7
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\next.config.ts", "TypeScript", 10, 0, 0, 0, 0, 0, 0, 4, 5, 19
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\package-lock.json", "JSON", 0, 0, 8294, 0, 0, 0, 0, 0, 1, 8295
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\package.json", "JSON", 0, 0, 33, 0, 0, 0, 0, 0, 0, 33
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\postcss.config.js", "JavaScript", 0, 0, 0, 0, 6, 0, 0, 0, 1, 7
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\api\gas\route.ts", "TypeScript", 86, 0, 0, 0, 0, 0, 0, 7, 17, 110
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\debug\page.tsx", "TypeScript JSX", 0, 0, 0, 224, 0, 0, 0, 11, 23, 258
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\globals.css", "PostCSS", 0, 0, 0, 0, 0, 0, 210, 11, 26, 247
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\history\page.tsx", "TypeScript JSX", 0, 0, 0, 159, 0, 0, 0, 7, 23, 189
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\layout.tsx", "TypeScript JSX", 0, 0, 0, 32, 0, 0, 0, 2, 6, 40
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\page.tsx", "TypeScript JSX", 0, 0, 0, 238, 0, 0, 0, 10, 27, 275
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\app\record\page.tsx", "TypeScript JSX", 0, 0, 0, 243, 0, 0, 0, 14, 24, 281
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\Navigation.tsx", "TypeScript JSX", 0, 0, 0, 53, 0, 0, 0, 0, 5, 58
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\charts\ActivityHeatmap.tsx", "TypeScript JSX", 0, 0, 0, 157, 0, 0, 0, 10, 21, 188
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\charts\RadarChart.tsx", "TypeScript JSX", 0, 0, 0, 40, 0, 0, 0, 0, 5, 45
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\components\charts\TrendLineChart.tsx", "TypeScript JSX", 0, 0, 0, 58, 0, 0, 0, 1, 7, 66
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\lib\api.ts", "TypeScript", 64, 0, 0, 0, 0, 0, 0, 11, 15, 90
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\lib\logger.ts", "TypeScript", 104, 0, 0, 0, 0, 0, 0, 15, 22, 141
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\src\types\index.ts", "TypeScript", 111, 0, 0, 0, 0, 0, 0, 15, 18, 144
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\tailwind.config.ts", "TypeScript", 34, 0, 0, 0, 0, 0, 0, 0, 3, 37
+"c:\Users\to_th\OneDrive - 佐世保市役所\デスクトップ\アプリ\Forge_in_Fire\tsconfig.json", "JSON with Comments", 0, 20, 0, 0, 0, 0, 0, 0, 1, 21
+"Total", "-", 409, 20, 8327, 1204, 6, 172, 210, 123, 290, 10761
