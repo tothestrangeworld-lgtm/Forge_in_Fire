@@ -13,6 +13,9 @@ const mplus = M_PLUS_Rounded_1c({
 export const metadata: Metadata = {
   title: '百錬自得 | 剣道稽古記録',
   description: '剣道の稽古を記録し、成長を可視化する稽古管理アプリ',
+};
+
+export const viewport = {
   themeColor: '#1e1b4b',
 };
 

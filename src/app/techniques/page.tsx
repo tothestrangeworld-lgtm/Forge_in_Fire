@@ -6,8 +6,8 @@ import { Loader2, CheckCircle, PlusCircle } from 'lucide-react';
 import type { Technique } from '@/types';
 import { fetchTechniques, updateTechniqueRating } from '@/lib/api';
 
-const TechniqueRadarChart = dynamic(
-  () => import('@/components/charts/TechniqueRadarChart'),
+const SkillGrid = dynamic(
+  () => import('@/components/charts/SkillGrid'),
   { ssr: false, loading: () => <ChartLoading /> }
 );
 
@@ -96,10 +96,13 @@ export default function TechniquesPage() {
         </h1>
       </header>
 
-      {/* レーダーチャート */}
-      <div className="wa-card animate-fade-up delay-100" style={{ marginBottom:'1rem' }}>
-        <span className="section-title">部位別ポイント</span>
-        <TechniqueRadarChart techniques={techniques} />
+      {/* スキルグリッド */}
+      <div style={{ marginBottom:'1rem' }} className="animate-fade-up delay-100">
+        <span className="section-title" style={{ display:'block', marginBottom:6 }}>スキルグリッド</span>
+        <SkillGrid techniques={techniques} />
+        <p style={{ fontSize:'0.62rem', color:'#a8a29e', marginTop:6, textAlign:'right' }}>
+          ピンチ/スクロールで拡大・縮小できます
+        </p>
       </div>
 
       {/* 技リスト */}
