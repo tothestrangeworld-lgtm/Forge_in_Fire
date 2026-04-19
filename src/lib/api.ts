@@ -107,5 +107,5 @@ export async function updateTechniqueRating(
     action: 'updateTechniqueRating',
     id,
     rating,
-  });
+  } as any);
 }
