@@ -1,7 +1,7 @@
 name = "forge-in-fire"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".open-next/assets"
+pages_build_output_dir = ".vercel/output/static"
 
 [vars]
 # シークレット（GAS_URL など）は Cloudflare Dashboard > Settings > Environment variables で設定
