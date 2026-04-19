@@ -221,11 +221,19 @@ function getDashboard() {
   const statSheet = ss.getSheetByName(SHEET_STATUS);
   const setSheet  = ss.getSheetByName(SHEET_SETTINGS);
 
-  // user_status
+  // XP減衰を適用してから status を読む
+  const decayResult = applyDecay(ss);
+
+  // user_status（減衰適用後の最新値を読み直す）
   const statRows  = statSheet.getDataRange().getValues();
   const status    = statRows.length >= 2
-    ? { total_xp: parseInt(statRows[1][0]) || 0, level: parseInt(statRows[1][1]) || 1, title: statRows[1][2] || '見習い' }
-    : { total_xp: 0, level: 1, title: '見習い' };
+    ? {
+        total_xp:           parseInt(statRows[1][0]) || 0,
+        level:              parseInt(statRows[1][1]) || 1,
+        title:              statRows[1][2] || '入門',
+        last_practice_date: statRows[1][3] || '',
+      }
+    : { total_xp: 0, level: 1, title: '入門', last_practice_date: '' };
 
   // settings
   const setRows = setSheet.getDataRange().getValues();

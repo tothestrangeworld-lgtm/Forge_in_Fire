@@ -18,7 +18,13 @@ export default function DebugPage() {
   const [filter, setFilter]   = useState<FilterLevel>('all');
   const [expanded, setExp]    = useState<Set<string>>(new Set());
   const [search, setSearch]   = useState('');
-  const [gasUrl]              = useState(process.env.NEXT_PUBLIC_GAS_URL ?? '');
+  // GAS_URL はサーバーサイド専用のため、/api/gas への疎通で確認
+  const [gasStatus, setGasStatus] = useState<'checking'|'ok'|'ng'>('checking');
+  useEffect(() => {
+    fetch('/api/gas?action=ping')
+      .then(r => r.ok ? setGasStatus('ok') : setGasStatus('ng'))
+      .catch(() => setGasStatus('ng'));
+  }, []);
 
   const reload = useCallback(() => {
     const all = logger.getAll();
@@ -84,13 +90,20 @@ export default function DebugPage() {
         </p>
       </header>
 
-      {/* GAS URL チェック */}
-      <div className="wa-card" style={{ marginBottom:'1rem', borderLeft:`4px solid ${gasUrl ? '#10b981' : '#ef4444'}` }}>
-        <p style={{ fontSize:'0.7rem', fontWeight:700, color: gasUrl ? '#065f46' : '#991b1b', margin:'0 0 4px' }}>
-          {gasUrl ? '✓ GAS URL 設定済み' : '✗ GAS URL 未設定'}
+      {/* GAS 疎通チェック */}
+      <div className="wa-card" style={{ marginBottom:'1rem', borderLeft:`4px solid ${gasStatus === 'ok' ? '#10b981' : gasStatus === 'ng' ? '#ef4444' : '#94a3b8'}` }}>
+        <p style={{ fontSize:'0.7rem', fontWeight:700, margin:'0 0 4px',
+          color: gasStatus === 'ok' ? '#065f46' : gasStatus === 'ng' ? '#991b1b' : '#64748b' }}>
+          {gasStatus === 'ok'       ? '✓ GAS プロキシ 疎通OK'
+           : gasStatus === 'ng'    ? '✗ GAS プロキシ エラー'
+           : '… GAS 接続確認中'}
         </p>
-        <p style={{ fontSize:'0.65rem', color:'#a8a29e', margin:0, wordBreak:'break-all' }}>
-          {gasUrl || 'NEXT_PUBLIC_GAS_URL が未設定です'}
+        <p style={{ fontSize:'0.65rem', color:'#a8a29e', margin:0 }}>
+          {gasStatus === 'ok'
+            ? '/api/gas 経由でGASと通信できています'
+            : gasStatus === 'ng'
+            ? 'Cloudflare の環境変数 GAS_URL を確認してください'
+            : '確認中...'}
         </p>
       </div>
 
