@@ -1,9 +1,7 @@
-name = "hyakuren-jitoku"
-compatibility_date = "2024-09-23"
+name = "forge-in-fire"
+compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".open-next/assets"
 
 [vars]
-# 公開可能な環境変数はここに（シークレットはCloudflare Dashboardで設定）
-# NEXT_PUBLIC_GAS_URL は Dashboard > Environment variables で設定
-
-pages_build_output_dir = ".vercel/output/static"
+# シークレット（GAS_URL など）は Cloudflare Dashboard > Settings > Environment variables で設定
