@@ -56,6 +56,7 @@ function doGet(e) {
       case 'getLogs':       return getLogs(e.parameter);
       case 'getUserStatus': return getUserStatus();
       case 'getDashboard':  return getDashboard();
+      case 'getTechniques': return getTechniques();
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -78,7 +79,8 @@ function doPost(e) {
     switch (action) {
       case 'saveLog':        return saveLog(body);
       case 'updateSettings': return updateSettings(body);
-      case 'resetStatus':    return resetStatus();
+      case 'resetStatus':        return resetStatus();
+      case 'updateTechniqueRating': return updateTechniqueRating(body);
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -412,4 +414,101 @@ function applyDecay(ss) {
   gasLog('INFO', 'applyDecay', `XP減衰適用: -${totalDecay}XP (${daysAbsent}日間稽古なし)`, { totalDecay, daysAbsent, newXp });
 
   return { applied: totalDecay, days_absent: daysAbsent, today_penalty: todayPenalty };
+}
+
+// =====================================================================
+// H. TechniqueMastery シート操作
+// =====================================================================
+const SHEET_TECHNIQUE = 'TechniqueMastery';
+
+/**
+ * TechniqueMastery シートの全データを取得する
+ * ヘッダー: ID, BodyPart, ActionType, SubCategory, Name, Points, LastRating
+ */
+function getTechniques() {
+  try {
+    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_TECHNIQUE);
+
+    if (!sheet) {
+      gasLog('WARN', 'getTechniques', 'TechniqueMastery シートが見つかりません');
+      return createError('TechniqueMastery sheet not found', 404);
+    }
+
+    const rows = sheet.getDataRange().getValues();
+    if (rows.length < 2) {
+      return createResponse([]);
+    }
+
+    // ヘッダー行をスキップしてオブジェクト配列に変換
+    const techniques = rows.slice(1).map(row => ({
+      id:          String(row[0] ?? ''),
+      bodyPart:    String(row[1] ?? ''),
+      actionType:  String(row[2] ?? ''),
+      subCategory: String(row[3] ?? ''),
+      name:        String(row[4] ?? ''),
+      points:      Number(row[5]) || 0,
+      lastRating:  Number(row[6]) || 0,
+    })).filter(t => t.id && t.name);
+
+    gasLog('INFO', 'getTechniques', `${techniques.length}件取得`);
+    return createResponse(techniques);
+
+  } catch (err) {
+    gasLog('ERROR', 'getTechniques', err.message, { stack: err.stack });
+    return createError('Server error: ' + err.message, 500);
+  }
+}
+
+/**
+ * 技のIDと星評価を受け取り、Points に加算・LastRating を上書きする
+ * body: { action, id: string, rating: number (1〜5) }
+ */
+function updateTechniqueRating(body) {
+  const { id, rating } = body;
+
+  if (!id) {
+    return createError('id は必須です', 400);
+  }
+  const ratingNum = parseInt(rating);
+  if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+    return createError('rating は 1〜5 の整数で指定してください', 400);
+  }
+
+  try {
+    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_TECHNIQUE);
+
+    if (!sheet) {
+      return createError('TechniqueMastery sheet not found', 404);
+    }
+
+    const rows      = sheet.getDataRange().getValues();
+    const targetRow = rows.findIndex((row, i) => i > 0 && String(row[0]) === String(id));
+
+    if (targetRow === -1) {
+      gasLog('WARN', 'updateTechniqueRating', `ID=${id} が見つかりません`);
+      return createError(`ID=${id} の技が見つかりません`, 404);
+    }
+
+    const sheetRow    = targetRow + 1; // 1始まりに変換
+    const currentPts  = Number(rows[targetRow][5]) || 0;
+    const newPoints   = currentPts + ratingNum;
+
+    // F列(6列目)= Points, G列(7列目)= LastRating を更新
+    sheet.getRange(sheetRow, 6).setValue(newPoints);
+    sheet.getRange(sheetRow, 7).setValue(ratingNum);
+
+    gasLog('INFO', 'updateTechniqueRating', `ID=${id} Points:${currentPts}→${newPoints} Rating:${ratingNum}`);
+
+    return createResponse({
+      id:         String(id),
+      points:     newPoints,
+      lastRating: ratingNum,
+    });
+
+  } catch (err) {
+    gasLog('ERROR', 'updateTechniqueRating', err.message, { stack: err.stack });
+    return createError('Server error: ' + err.message, 500);
+  }
 }

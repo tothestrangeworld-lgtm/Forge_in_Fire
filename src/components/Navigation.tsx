@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, PenLine, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, PenLine, BarChart2, Swords } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { href: '/',        label: 'ホーム', Icon: LayoutDashboard },
-  { href: '/record',  label: '記録',   Icon: PenLine },
-  { href: '/history', label: 'グラフ', Icon: BarChart2 },
+  { href: '/',            label: 'ホーム', Icon: LayoutDashboard },
+  { href: '/record',      label: '記録',   Icon: PenLine },
+  { href: '/history',     label: 'グラフ', Icon: BarChart2 },
+  { href: '/techniques',  label: '技',     Icon: Swords },
 ];
 
 export default function Navigation() {

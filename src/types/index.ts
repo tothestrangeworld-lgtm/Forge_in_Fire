@@ -141,3 +141,25 @@ export function levelColor(level: number): string {
   if (level >= 10) return '#34d399';
   return '#94a3b8';
 }
+
+// =====================================================================
+// 技の習熟度（TechniqueMastery）
+// =====================================================================
+
+/** TechniqueMastery シートの1行に対応する型 */
+export interface Technique {
+  id:          string;
+  bodyPart:    string;  // 部位（例: 上半身, 下半身, 全身）
+  actionType:  string;  // 動作種別（例: 打突, 足さばき, 構え）
+  subCategory: string;  // サブカテゴリ（例: 面, 小手, 胴）
+  name:        string;  // 技の名前
+  points:      number;  // 累積ポイント
+  lastRating:  number;  // 直近の星評価（1〜5）
+}
+
+/** updateTechniqueRating のレスポンス */
+export interface TechniqueUpdateResponse {
+  id:         string;
+  points:     number;
+  lastRating: number;
+}

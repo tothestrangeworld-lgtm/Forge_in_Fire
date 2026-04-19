@@ -10,6 +10,8 @@ import type {
   SaveLogPayload,
   SaveLogResponse,
   Setting,
+  Technique,
+  TechniqueUpdateResponse,
 } from '@/types';
 import { loggedFetch, logger } from '@/lib/logger';
 
@@ -86,4 +88,24 @@ export async function updateSettings(items: Setting[]): Promise<{ updated: numbe
 // ステータスリセット
 export async function resetStatus(): Promise<{ total_xp: number; level: number; title: string }> {
   return gasPost<{ total_xp: number; level: number; title: string }>({ action: 'resetStatus' });
+}
+
+// ===== 技の習熟度（TechniqueMastery） =====
+
+/** TechniqueMastery シートから技一覧を取得する */
+export async function fetchTechniques(): Promise<Technique[]> {
+  return gasGet<Technique[]>({ action: 'getTechniques' });
+}
+
+/** 技IDと星評価（1〜5）をGASに送信してPoints加算・LastRating更新 */
+export async function updateTechniqueRating(
+  id: string,
+  rating: number
+): Promise<TechniqueUpdateResponse> {
+  logger.info('api', `技評価送信: id=${id} rating=${rating}`);
+  return gasPost<TechniqueUpdateResponse>({
+    action: 'updateTechniqueRating',
+    id,
+    rating,
+  });
 }
