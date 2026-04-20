@@ -6,6 +6,7 @@
 
 import type {
   DashboardData,
+  EpithetMasterEntry,
   GASResponse,
   SaveLogPayload,
   SaveLogResponse,
@@ -107,5 +108,12 @@ export async function updateTechniqueRating(
     action: 'updateTechniqueRating',
     id,
     rating,
-  } as any);
+  });
+}
+
+// ===== 二つ名マスタ（EpithetMaster） =====
+
+/** EpithetMaster シートから二つ名マスタを取得する */
+export async function fetchEpithetMaster(): Promise<EpithetMasterEntry[]> {
+  return gasGet<EpithetMasterEntry[]>({ action: 'getEpithetMaster' });
 }
