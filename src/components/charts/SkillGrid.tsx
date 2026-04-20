@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -21,18 +21,28 @@ interface Props { techniques: Technique[]; }
 // =====================================================================
 // ハンドル（不可視・全方向）
 // =====================================================================
-const H = { opacity: 0, width: 6, height: 6 } as React.CSSProperties;
+// ハンドルを円の中心に配置（エッジが中心から伸びるように）
+const CENTER_HANDLE: React.CSSProperties = {
+  opacity:   0,
+  width:     2,
+  height:    2,
+  top:       '50%',
+  left:      '50%',
+  transform: 'translate(-50%, -50%)',
+  border:    'none',
+  background: 'transparent',
+};
 
 const AllHandles = () => (
   <>
-    <Handle type="source" position={Position.Top}    style={H} />
-    <Handle type="source" position={Position.Right}  style={H} />
-    <Handle type="source" position={Position.Bottom} style={H} />
-    <Handle type="source" position={Position.Left}   style={H} />
-    <Handle type="target" position={Position.Top}    style={H} />
-    <Handle type="target" position={Position.Right}  style={H} />
-    <Handle type="target" position={Position.Bottom} style={H} />
-    <Handle type="target" position={Position.Left}   style={H} />
+    <Handle type="source" position={Position.Top}    id="s-t" style={CENTER_HANDLE} />
+    <Handle type="source" position={Position.Right}  id="s-r" style={CENTER_HANDLE} />
+    <Handle type="source" position={Position.Bottom} id="s-b" style={CENTER_HANDLE} />
+    <Handle type="source" position={Position.Left}   id="s-l" style={CENTER_HANDLE} />
+    <Handle type="target" position={Position.Top}    id="t-t" style={CENTER_HANDLE} />
+    <Handle type="target" position={Position.Right}  id="t-r" style={CENTER_HANDLE} />
+    <Handle type="target" position={Position.Bottom} id="t-b" style={CENTER_HANDLE} />
+    <Handle type="target" position={Position.Left}   id="t-l" style={CENTER_HANDLE} />
   </>
 );
 
@@ -52,7 +62,7 @@ function CoreNode(_: NodeProps) {
       flexShrink: 0,
     }}>
       <AllHandles />
-      CORE
+      技
     </div>
   );
 }
@@ -157,7 +167,10 @@ const TECH_R_BASE  = 170;  // 第1階層から第2階層への基本距離
 const TECH_R_EXTRA = 60;   // 技が多いほど奥に伸ばす追加距離/列
 const TECH_SPREAD  = 95;   // 技の横間隔
 
-function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[] } {
+// techId → actionType のマップ（フィルター用）
+type TechActionMap = Record<string, string>;
+
+function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[]; techActionMap: TechActionMap } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
@@ -209,7 +222,7 @@ function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[] } {
     edges.push({
       id: `e-core-${bpId}`, source: 'core', target: bpId,
       type: 'straight',
-      style: { stroke: bpEdgeColor, strokeWidth: bpEdgeWidth, opacity: 0.55 + bpNorm * 0.45 },
+      style: { stroke: bpEdgeColor, strokeWidth: bpEdgeWidth, opacity: 0.55 + bpNorm * 0.45, zIndex: -1 },
     });
 
     // ── 第2階層（技ノード）───────────────────────────
@@ -251,19 +264,89 @@ function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[] } {
       edges.push({
         id: `e-${bpId}-${techId}`, source: bpId, target: techId,
         type: 'straight',
-        style: { stroke: edgeColor, strokeWidth: edgeWidth, opacity: 0.45 + techNorm * 0.55 },
+        style: { stroke: edgeColor, strokeWidth: edgeWidth, opacity: 0.45 + techNorm * 0.55, zIndex: -1 },
       });
     });
   });
 
-  return { nodes, edges };
+  // techId → actionType のマップを生成
+  const techActionMap: TechActionMap = {};
+  techniques.forEach(t => {
+    techActionMap[`tech-${t.id}`] = t.actionType ?? '';
+  });
+
+  return { nodes, edges, techActionMap };
+}
+
+// =====================================================================
+// ActionType フィルターに基づいてノード・エッジの opacity を適用
+// =====================================================================
+type FilterType = 'all' | string;
+
+function applyFilter(
+  nodes: Node[],
+  edges: Edge[],
+  filter: FilterType,
+  techActionMap: TechActionMap,
+): { nodes: Node[]; edges: Edge[] } {
+  if (filter === 'all') return { nodes, edges };
+
+  const filteredNodes = nodes.map(n => {
+    // CORE・BodyPart は常に通常表示
+    if (n.type === 'coreNode' || n.type === 'bodyPartNode') return n;
+    // 技ノード：ActionType が一致するか判定
+    const actionType = techActionMap[n.id] ?? '';
+    const match = actionType === filter;
+    return {
+      ...n,
+      style: {
+        ...(n.style ?? {}),
+        opacity: match ? 1 : 0.15,
+        // 一致する技ノードは少し強調
+        filter: match ? 'drop-shadow(0 0 8px rgba(99,102,241,0.9))' : 'none',
+      },
+    };
+  });
+
+  const filteredEdges = edges.map(e => {
+    // CORE → BodyPart エッジは常に通常表示
+    if (e.id.startsWith('e-core-')) return e;
+    // BodyPart → 技 エッジ：技ノードの ActionType で判定
+    const actionType = techActionMap[e.target] ?? '';
+    const match = actionType === filter;
+    return {
+      ...e,
+      style: {
+        ...(e.style ?? {}),
+        opacity: match
+          ? Math.max((e.style?.opacity as number) ?? 0.8, 0.8)
+          : 0.08,
+      },
+    };
+  });
+
+  return { nodes: filteredNodes, edges: filteredEdges };
 }
 
 // =====================================================================
 // メインコンポーネント
 // =====================================================================
 export default function SkillGrid({ techniques }: Props) {
-  const { nodes, edges } = useMemo(() => buildGraph(techniques), [techniques]);
+  const [filter, setFilter] = useState<FilterType>('all');
+
+  const { nodes: rawNodes, edges: rawEdges, techActionMap } =
+    useMemo(() => buildGraph(techniques), [techniques]);
+
+  // ActionType の一覧を動的に取得（「すべて」+ 実データの種類）
+  const actionTypes = useMemo(() => {
+    const types = [...new Set(techniques.map(t => t.actionType).filter(Boolean))];
+    return types;
+  }, [techniques]);
+
+  const { nodes, edges } = useMemo(
+    () => applyFilter(rawNodes, rawEdges, filter, techActionMap),
+    [rawNodes, rawEdges, filter, techActionMap],
+  );
 
   if (!techniques.length) {
     return (
@@ -273,32 +356,72 @@ export default function SkillGrid({ techniques }: Props) {
     );
   }
 
+  const FILTER_BUTTONS: { key: FilterType; label: string }[] = [
+    { key: 'all', label: 'すべて' },
+    ...actionTypes.map(t => ({ key: t, label: t })),
+  ];
+
   return (
-    <div style={{
-      width: '100%', height: 500,
-      borderRadius: 16, overflow: 'hidden',
-      background: '#07071a',
-    }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        fitView
-        fitViewOptions={{ padding: 0.15, maxZoom: 1.0 }}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable={false}
-        zoomOnDoubleClick={false}
-        panOnDrag
-        zoomOnScroll
-        zoomOnPinch
-        minZoom={0.15}
-        maxZoom={3}
-        colorMode="dark"
-      >
-        <Background variant={BackgroundVariant.Dots} color="#1a1a3a" gap={28} size={1.5} />
-        <Controls showInteractive={false} style={{ background:'#1e1b4b', border:'1px solid #312e81' }} />
-      </ReactFlow>
+    <div style={{ width: '100%' }}>
+
+      {/* フィルタートグルボタン */}
+      <div style={{
+        display: 'flex', gap: 6, marginBottom: 8,
+        flexWrap: 'wrap',
+      }}>
+        {FILTER_BUTTONS.map(({ key, label }) => {
+          const active = filter === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              style={{
+                padding: '4px 14px',
+                borderRadius: 999,
+                border: `1.5px solid ${active ? '#818cf8' : 'rgba(129,140,248,0.3)'}`,
+                background: active ? '#312e81' : 'rgba(30,27,75,0.5)',
+                color: active ? '#c7d2fe' : '#6366f1',
+                fontSize: '0.72rem',
+                fontWeight: active ? 700 : 500,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                transition: 'all .15s',
+                boxShadow: active ? '0 0 12px rgba(99,102,241,0.5)' : 'none',
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* スフィア盤 */}
+      <div style={{
+        width: '100%', height: 500,
+        borderRadius: 16, overflow: 'hidden',
+        background: '#07071a',
+      }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={NODE_TYPES}
+          fitView
+          fitViewOptions={{ padding: 0.15, maxZoom: 1.0 }}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          zoomOnDoubleClick={false}
+          panOnDrag
+          zoomOnScroll
+          zoomOnPinch
+          minZoom={0.15}
+          maxZoom={3}
+          colorMode="dark"
+        >
+          <Background variant={BackgroundVariant.Dots} color="#1a1a3a" gap={28} size={1.5} />
+          <Controls showInteractive={false} style={{ background:'#1e1b4b', border:'1px solid #312e81' }} />
+        </ReactFlow>
+      </div>
     </div>
   );
 }
