@@ -12,6 +12,10 @@ const SkillGrid = dynamic(
   () => import('@/components/charts/SkillGrid'),
   { ssr: false, loading: () => <ChartLoading /> }
 );
+const PlaystyleCharts = dynamic(
+  () => import('@/components/charts/PlaystyleCharts'),
+  { ssr: false, loading: () => <ChartLoading height={180} /> }
+);
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type RatingMap  = Record<string, number>;    // id → 今回選んだ星（0=未選択）
@@ -122,6 +126,21 @@ export default function TechniquesPage() {
         <p style={{ fontSize:'0.62rem', color:'#a8a29e', marginTop:6, textAlign:'right' }}>
           ピンチ/スクロールで拡大・縮小できます
         </p>
+      </div>
+
+      {/* プレイスタイル分析 */}
+      <div
+        className="animate-fade-up delay-200"
+        style={{
+          marginBottom: '1rem',
+          padding: '0.85rem 1rem',
+          borderRadius: 16,
+          background: 'linear-gradient(135deg,#0d0b2a,#1a1744)',
+          border: '1px solid rgba(99,102,241,0.2)',
+        }}
+      >
+        <span className="section-title">プレイスタイル分析</span>
+        <PlaystyleCharts techniques={techniques} />
       </div>
 
       {/* 技リスト */}
@@ -356,9 +375,9 @@ function EpithetBanner({ techniques, epithetMaster, level, titleMaster }: Epithe
 
 // ===== ローディング =====
 
-function ChartLoading() {
+function ChartLoading({ height = 240 }: { height?: number }) {
   return (
-    <div style={{ height:240, borderRadius:12, background:'linear-gradient(90deg,#eef2ff,#e0e7ff,#eef2ff)', backgroundSize:'200%', animation:'shimmer 1.4s infinite' }}>
+    <div style={{ height, borderRadius:12, background:'linear-gradient(90deg,#eef2ff,#e0e7ff,#eef2ff)', backgroundSize:'200%', animation:'shimmer 1.4s infinite' }}>
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
   );
