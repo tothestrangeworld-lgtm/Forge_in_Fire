@@ -26,17 +26,25 @@ export interface NextLevelInfo {
 }
 
 export interface DecayInfo {
-  applied:       number;   // 今回適用した減衰XP
-  days_absent:   number;   // 最後の稽古からの日数
-  today_penalty: number;   // 今日1日分の減衰ペース
+  applied:       number;
+  days_absent:   number;
+  today_penalty: number;
+}
+
+/** title_master シートの1行 */
+export interface TitleMasterEntry {
+  level: number;
+  title: string;
 }
 
 export interface DashboardData {
-  status:      UserStatus;
-  settings:    Setting[];
-  logs:        LogEntry[];
-  nextLevelXp: NextLevelInfo;
-  decay?:      DecayInfo;
+  status:         UserStatus;
+  settings:       Setting[];
+  logs:           LogEntry[];
+  nextLevelXp:    NextLevelInfo;
+  decay?:         DecayInfo;
+  titleMaster?:   TitleMasterEntry[];    // 称号マスタ（スプレッドシートから取得）
+  epithetMaster?: EpithetMasterEntry[];  // 二つ名マスタ（スプレッドシートから取得）
 }
 
 export interface SaveLogPayload {
@@ -87,20 +95,30 @@ const TITLE_MAP: Record<number, string> = {
   99: '剣道の神',
 };
 
-// 現在レベルの称号（最後に取得した称号を返す）
-export function titleForLevel(level: number): string {
-  let title = '入門';
-  for (const lv of Object.keys(TITLE_MAP).map(Number).sort((a, b) => a - b)) {
-    if (level >= lv) title = TITLE_MAP[lv];
+// 称号マスタをオブジェクト化（動的データ or ハードコードフォールバック）
+function buildTitleTable(master?: TitleMasterEntry[]): Record<number, string> {
+  if (master && master.length > 0) {
+    return Object.fromEntries(master.map(e => [e.level, e.title]));
+  }
+  return TITLE_MAP;
+}
+
+// 現在レベルの称号（動的マスタ対応）
+export function titleForLevel(level: number, master?: TitleMasterEntry[]): string {
+  const table = buildTitleTable(master);
+  let title = Object.values(table)[0] ?? '入門';
+  for (const lv of Object.keys(table).map(Number).sort((a, b) => a - b)) {
+    if (level >= lv) title = table[lv];
     else break;
   }
   return title;
 }
 
-// 次の称号が得られるレベルと名前
-export function nextTitleLevel(level: number): { level: number; title: string } | null {
-  for (const lv of Object.keys(TITLE_MAP).map(Number).sort((a, b) => a - b)) {
-    if (lv > level) return { level: lv, title: TITLE_MAP[lv] };
+// 次の称号が得られるレベルと名前（動的マスタ対応）
+export function nextTitleLevel(level: number, master?: TitleMasterEntry[]): { level: number; title: string } | null {
+  const table = buildTitleTable(master);
+  for (const lv of Object.keys(table).map(Number).sort((a, b) => a - b)) {
+    if (lv > level) return { level: lv, title: table[lv] };
   }
   return null;
 }
@@ -125,10 +143,10 @@ export function calcProgressPercent(xp: number): number {
 }
 
 // 旧API互換（dashboard page で使用）
-export function calcNextLevel(xp: number): { xp: number; title: string } | null {
+export function calcNextLevel(xp: number, master?: TitleMasterEntry[]): { xp: number; title: string } | null {
   const level = calcLevelFromXp(xp);
   if (level >= 99) return null;
-  return { xp: xpForLevel(level + 1), title: titleForLevel(level + 1) };
+  return { xp: xpForLevel(level + 1), title: titleForLevel(level + 1, master) };
 }
 
 // レベルカラー
@@ -162,4 +180,22 @@ export interface TechniqueUpdateResponse {
   id:         string;
   points:     number;
   lastRating: number;
+}
+
+// =====================================================================
+// 二つ名（Epithet）システム
+// =====================================================================
+
+/** EpithetMaster シートの1行 */
+export interface EpithetMasterEntry {
+  id:           string;
+  category:     string;       // 'status' | 'actionType' | 'subCategory' | 'balance'
+  triggerValue: string;       // 照合キー（例: '仕掛け技', '出端技', '初期', 'バランス'）
+  name:         string;       // 修飾語（例: '怒涛の', '後の先を極めし'）
+  description:  string;       // 説明文
+}
+
+/** getDashboard レスポンスに含まれる二つ名マスタ */
+export interface DashboardWithEpithet {
+  epithetMaster?: EpithetMasterEntry[];
 }

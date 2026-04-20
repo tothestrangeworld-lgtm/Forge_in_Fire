@@ -9,6 +9,9 @@ const SHEET_STATUS    = 'user_status';
 // user_status 列構成:
 // A: total_xp  B: level  C: title  D: last_practice_date  E: last_decay_date
 const SHEET_ERRORLOGS = 'error_logs';
+const SHEET_XP_HIST    = 'xp_history';
+const SHEET_TITLE_MASTER  = 'title_master';
+const SHEET_EPITHET_MASTER = 'EpithetMaster';
 
 // =====================================================================
 // ログユーティリティ
@@ -45,6 +48,79 @@ function createError(message, code) {
 }
 
 // =====================================================================
+// 称号マスタ読み込み
+// title_master シートが無ければデフォルト値で自動作成して返す
+// 戻り値: [{ level: number, title: string }] （levelの昇順）
+// =====================================================================
+function getTitleMasterData(ss) {
+  let sheet = ss.getSheetByName(SHEET_TITLE_MASTER);
+
+  // シートが無ければデフォルト値で自動作成
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_TITLE_MASTER);
+    sheet.appendRow(['level', 'title']);
+    sheet.getRange(1,1,1,2).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+    const defaults = [
+      [1,  '入門'],
+      [5,  '素振り'],
+      [10, '初段'],
+      [15, '弐段'],
+      [20, '参段'],
+      [25, '四段'],
+      [30, '五段'],
+      [35, '錬士'],
+      [40, '教士'],
+      [50, '範士'],
+      [60, '剣聖'],
+      [70, '剣豪'],
+      [80, '剣鬼'],
+      [90, '剣神'],
+      [99, '剣道の神'],
+    ];
+    sheet.getRange(2, 1, defaults.length, 2).setValues(defaults);
+  }
+
+  const rows = sheet.getDataRange().getValues();
+  return rows.slice(1)
+    .filter(r => r[0] !== '' && r[1] !== '')
+    .map(r => ({ level: parseInt(r[0]), title: String(r[1]) }))
+    .filter(r => !isNaN(r.level))
+    .sort((a, b) => a.level - b.level);
+}
+
+// 称号マスタから現在の称号を取得
+function calcTitleFromMaster(level, titleMaster) {
+  let title = titleMaster.length > 0 ? titleMaster[0].title : '入門';
+  for (const entry of titleMaster) {
+    if (level >= entry.level) title = entry.title;
+    else break;
+  }
+  return title;
+}
+
+// =====================================================================
+// XP履歴ヘルパー
+// xp_history シートに1行追記する
+// type: 'gain' | 'decay' | 'reset'
+// =====================================================================
+function writeXpHistory(ss, type, amount, reason, totalXpAfter, level, title) {
+  try {
+    let sheet = ss.getSheetByName(SHEET_XP_HIST);
+    if (!sheet) {
+      sheet = ss.insertSheet(SHEET_XP_HIST);
+      sheet.appendRow(['date', 'type', 'amount', 'reason', 'total_xp_after', 'level', 'title']);
+      sheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#ffffff');
+      sheet.setFrozenRows(1);
+    }
+    const ts = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    sheet.appendRow([ts, type, amount, reason, totalXpAfter, level, title]);
+  } catch(e) {
+    console.error('writeXpHistory failed:', e);
+  }
+}
+
+// =====================================================================
 // doGet: データ取得
 // =====================================================================
 function doGet(e) {
@@ -55,8 +131,9 @@ function doGet(e) {
       case 'getSettings':   return getSettings();
       case 'getLogs':       return getLogs(e.parameter);
       case 'getUserStatus': return getUserStatus();
-      case 'getDashboard':  return getDashboard();
-      case 'getTechniques': return getTechniques();
+      case 'getDashboard':      return getDashboard();
+      case 'getTechniques':    return getTechniques();
+      case 'getEpithetMaster': return getEpithetMaster();
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -153,7 +230,8 @@ function saveLog(body) {
   let currentXp    = hasDataRow ? (parseInt(statusData[1][0]) || 0) : 0;
   const newXp      = currentXp + totalSessionXp;
   const newLevel   = calcLevel(newXp);
-  const newTitle   = calcTitle(newXp);
+  const titleMasterData = getTitleMasterData(ss);
+  const newTitle   = calcTitleFromMaster(newLevel, titleMasterData);
 
   const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
   if (hasDataRow) {
@@ -163,6 +241,11 @@ function saveLog(body) {
     statSheet.appendRow([newXp, newLevel, newTitle, today, today]);
     gasLog('INFO', 'saveLog', 'user_status を初期化しました', { newXp, newLevel, newTitle });
   }
+
+  // XP履歴に記録
+  writeXpHistory(ss, 'gain', totalSessionXp,
+    `稽古記録（${date}・${items.length}項目）`,
+    newXp, newLevel, newTitle);
 
   return createResponse({
     xp_earned: totalSessionXp,
@@ -254,7 +337,13 @@ function getDashboard() {
   // 次のレベルまでのXP
   const nextLevelXp = calcNextLevelXp(status.total_xp);
 
-  return createResponse({ status, settings, logs, nextLevelXp, decay: decayResult });
+  // 称号マスタを取得してレスポンスに含める
+  const titleMaster = getTitleMasterData(ss);
+
+  // 二つ名マスタを取得
+  const epithetMaster = getEpithetMasterData(ss);
+
+  return createResponse({ status, settings, logs, nextLevelXp, decay: decayResult, titleMaster, epithetMaster });
 }
 
 // =====================================================================
@@ -327,6 +416,8 @@ function resetStatus() {
     sheet.appendRow([0, 1, '入門', '', today]);
   }
   gasLog('INFO', 'resetStatus', 'ステータスをリセットしました');
+  const rSS = SpreadsheetApp.openById(SPREADSHEET_ID);
+  writeXpHistory(rSS, 'reset', 0, 'レベルリセット', 0, 1, '入門');
   return createResponse({ total_xp: 0, level: 1, title: '入門' });
 }
 
@@ -416,10 +507,14 @@ function applyDecay(ss) {
   // 適用（XPは0未満にしない）
   const newXp    = Math.max(0, totalXp - totalDecay);
   const newLevel = calcLevel(newXp);
-  const newTitle = calcTitle(newXp);
+  const titleMasterData = getTitleMasterData(ss);
+  const newTitle = calcTitleFromMaster(newLevel, titleMasterData);
 
   sheet.getRange(2, 1, 1, 5).setValues([[newXp, newLevel, newTitle, resolvedLastPractice, todayStr]]);
   gasLog('INFO', 'applyDecay', `XP減衰適用: -${totalDecay}XP (${daysAbsent}日間稽古なし)`, { totalDecay, daysAbsent, newXp });
+  writeXpHistory(ss, 'decay', -totalDecay,
+    `${daysAbsent}日間稽古なし（減衰）`,
+    newXp, newLevel, newTitle);
 
   return { applied: totalDecay, days_absent: daysAbsent, today_penalty: todayPenalty };
 }
@@ -519,4 +614,55 @@ function updateTechniqueRating(body) {
     gasLog('ERROR', 'updateTechniqueRating', err.message, { stack: err.stack });
     return createError('Server error: ' + err.message, 500);
   }
+}
+
+// =====================================================================
+// I. EpithetMaster シート操作（二つ名マスタ）
+// =====================================================================
+// EpithetMaster 列構成: ID, Category, TriggerValue, Name, Description
+
+/**
+ * EpithetMaster シートを読み込む内部ヘルパー
+ * シートが無い場合はデフォルト値で自動作成する
+ */
+function getEpithetMasterData(ss) {
+  let sheet = ss.getSheetByName(SHEET_EPITHET_MASTER);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_EPITHET_MASTER);
+    sheet.appendRow(['ID', 'Category', 'TriggerValue', 'Name', 'Description']);
+    sheet.getRange(1,1,1,5).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+
+    const defaults = [
+      [1, 'status',     '初期',        '見習い',           'まだ技の記録がない剣士'],
+      [2, 'actionType', '仕掛け技',     '怒涛の',           '仕掛け技のポイントが7割以上を占める'],
+      [3, 'actionType', '応じ技',       '後の先を極めし',   '応じ技のポイントが7割以上を占める'],
+      [4, 'subCategory','出端技',       '出端の',           '出端技のポイントが最も高い'],
+      [5, 'subCategory','基本',         '基本を極めし',     '基本技のポイントが最も高い'],
+      [6, 'balance',    'バランス',     '万能の',           'どの技にも偏りのない剣士'],
+    ];
+    sheet.getRange(2, 1, defaults.length, 5).setValues(defaults);
+  }
+
+  const rows = sheet.getDataRange().getValues();
+  return rows.slice(1)
+    .filter(r => r[0] !== '' && r[2] !== '' && r[3] !== '')
+    .map(r => ({
+      id:           String(r[0]),
+      category:     String(r[1]),
+      triggerValue: String(r[2]),
+      name:         String(r[3]),
+      description:  String(r[4] ?? ''),
+    }));
+}
+
+/**
+ * doGet action='getEpithetMaster' で呼ばれる公開API
+ */
+function getEpithetMaster() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const data = getEpithetMasterData(ss);
+  gasLog('INFO', 'getEpithetMaster', `${data.length}件取得`);
+  return createResponse(data);
 }

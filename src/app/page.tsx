@@ -35,11 +35,12 @@ export default function DashboardPage() {
   if (!data)   return null;
 
   const { status, logs, settings, decay } = data;
+  const tm          = data.titleMaster;          // スプレッドシートの称号マスタ
   const level       = calcLevelFromXp(status.total_xp);
-  const title       = titleForLevel(level);
-  const nextLv      = calcNextLevel(status.total_xp);
+  const title       = titleForLevel(level, tm);
+  const nextLv      = calcNextLevel(status.total_xp, tm);
   const progressPct = calcProgressPercent(status.total_xp);
-  const nextTitle   = nextTitleLevel(level);
+  const nextTitle   = nextTitleLevel(level, tm);
   const color       = levelColor(level);
 
   // 今週の稽古（今週月曜〜今週日曜・今日以前のみ）
