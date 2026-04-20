@@ -55,7 +55,7 @@ async function gasGet<T>(params: Record<string, string>): Promise<T> {
 }
 
 // ===== POST（プロキシ経由） =====
-async function gasPost<T>(body: object & { action?: string }): Promise<T> {
+async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
   const action = (body as Record<string, string>).action ?? 'unknown';
 
   const res = await loggedFetch(PROXY, {
