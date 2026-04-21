@@ -1,7 +1,6 @@
 // =====================================================================
-// 百錬自得 - GAS API クライアント
+// 百錬自得 - GAS API クライアント（マルチユーザー対応）
 // ブラウザ → /api/gas（Next.jsプロキシ）→ GAS
-// CORSを回避するためブラウザは直接GASを叩かない
 // =====================================================================
 
 import type {
@@ -15,8 +14,8 @@ import type {
   TechniqueUpdateResponse,
 } from '@/types';
 import { loggedFetch, logger } from '@/lib/logger';
+import { getCurrentUserId } from '@/lib/auth';
 
-// 常に自サーバーの /api/gas を経由する（CORS回避）
 const PROXY = '/api/gas';
 
 // ===== レスポンスパーサー =====
@@ -32,88 +31,119 @@ async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
     return json.data as T;
   } catch (err) {
     if (err instanceof SyntaxError) {
-      logger.error('gas', `JSONパースエラー: ${action}`, {
-        detail: { raw: text.slice(0, 500) },
-      });
+      logger.error('gas', `JSONパースエラー: ${action}`, { detail: { raw: text.slice(0, 500) } });
       throw new Error(`Invalid JSON from GAS (${action}): ${text.slice(0, 120)}`);
     }
     throw err;
   }
 }
 
-// ===== GET（プロキシ経由） =====
+// ===== GET（user_id を自動付与） =====
 async function gasGet<T>(params: Record<string, string>): Promise<T> {
   const action = params.action ?? 'unknown';
-  const url    = new URL(PROXY, location.origin);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const userId = getCurrentUserId();
 
-  const res = await loggedFetch(url.toString(), { cache: 'no-store' }, {
-    category: 'gas',
-    action,
-  });
+  // マスタ系は user_id 不要
+  const noUserIdActions = ['getEpithetMaster', 'getUsers', 'ping'];
+  const merged = noUserIdActions.includes(action)
+    ? params
+    : { ...params, user_id: userId };
+
+  const url = new URL(PROXY, location.origin);
+  Object.entries(merged).forEach(([k, v]) => url.searchParams.set(k, v));
+
+  const res = await loggedFetch(url.toString(), { cache: 'no-store' }, { category: 'gas', action });
   return parseGASResponse<T>(res, action);
 }
 
-// ===== POST（プロキシ経由） =====
+// ===== POST（user_id を自動付与） =====
 async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
-  const action = (body as Record<string, string>).action ?? 'unknown';
+  const action = (body.action as string) ?? 'unknown';
+  const userId = getCurrentUserId();
+
+  // login は user_id を付与しない
+  const merged = action === 'login'
+    ? body
+    : { ...body, user_id: userId };
 
   const res = await loggedFetch(PROXY, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body:    JSON.stringify(merged),
   }, { category: 'gas', action });
 
   return parseGASResponse<T>(res, action);
 }
 
-// ===== 公開API =====
+// =====================================================================
+// 認証
+// =====================================================================
+
+export interface LoginPayload { user_id?: string; name?: string; password: string; }
+export interface LoginResponse { user_id: string; name: string; role: string; }
+
+export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
+  return gasPost<LoginResponse>({ action: 'login', ...payload });
+}
+
+export async function fetchUsers(): Promise<{ user_id: string; name: string; role: string }[]> {
+  return gasGet<{ user_id: string; name: string; role: string }[]>({ action: 'getUsers' });
+}
+
+// =====================================================================
+// ダッシュボード
+// =====================================================================
 
 export async function fetchDashboard(): Promise<DashboardData> {
   return gasGet<DashboardData>({ action: 'getDashboard' });
 }
 
+// =====================================================================
+// settings
+// =====================================================================
+
 export async function fetchSettings(): Promise<Setting[]> {
   return gasGet<Setting[]>({ action: 'getSettings' });
 }
+
+export async function updateSettings(items: Setting[]): Promise<{ updated: number }> {
+  return gasPost<{ updated: number }>({ action: 'updateSettings', items } as Record<string, unknown>);
+}
+
+// =====================================================================
+// logs
+// =====================================================================
 
 export async function saveLog(payload: Omit<SaveLogPayload, 'action'>): Promise<SaveLogResponse> {
   logger.info('api', `稽古記録送信: ${payload.date} (${payload.items.length}項目)`);
   return gasPost<SaveLogResponse>({ action: 'saveLog', ...payload });
 }
 
-export async function updateSettings(items: Setting[]): Promise<{ updated: number }> {
-  return gasPost<{ updated: number }>({ action: 'updateSettings', items } as any);
-}
+// =====================================================================
+// user_status
+// =====================================================================
 
-// ステータスリセット
 export async function resetStatus(): Promise<{ total_xp: number; level: number; title: string }> {
   return gasPost<{ total_xp: number; level: number; title: string }>({ action: 'resetStatus' });
 }
 
-// ===== 技の習熟度（TechniqueMastery） =====
+// =====================================================================
+// TechniqueMastery
+// =====================================================================
 
-/** TechniqueMastery シートから技一覧を取得する */
 export async function fetchTechniques(): Promise<Technique[]> {
   return gasGet<Technique[]>({ action: 'getTechniques' });
 }
 
-/** 技IDと星評価（1〜5）をGASに送信してPoints加算・LastRating更新 */
-export async function updateTechniqueRating(
-  id: string,
-  rating: number
-): Promise<TechniqueUpdateResponse> {
+export async function updateTechniqueRating(id: string, rating: number): Promise<TechniqueUpdateResponse> {
   logger.info('api', `技評価送信: id=${id} rating=${rating}`);
-  return gasPost<TechniqueUpdateResponse>({
-    action: 'updateTechniqueRating',
-    id,
-    rating,
-  });
+  return gasPost<TechniqueUpdateResponse>({ action: 'updateTechniqueRating', id, rating });
 }
 
-// ===== 二つ名マスタ（EpithetMaster） =====
+// =====================================================================
+// マスタ（共通）
+// =====================================================================
 
-/** EpithetMaster シートから二つ名マスタを取得する */
 export async function fetchEpithetMaster(): Promise<EpithetMasterEntry[]> {
   return gasGet<EpithetMasterEntry[]>({ action: 'getEpithetMaster' });
 }
