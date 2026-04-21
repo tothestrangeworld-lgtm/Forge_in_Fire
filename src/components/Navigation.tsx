@@ -2,13 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, PenLine, BarChart2, Swords } from 'lucide-react';
+import { LayoutDashboard, Swords } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { href: '/',            label: 'ホーム', Icon: LayoutDashboard },
-  { href: '/record',      label: '記録',   Icon: PenLine },
-  { href: '/history',     label: 'グラフ', Icon: BarChart2 },
-  { href: '/techniques',  label: '技',     Icon: Swords },
+  { href: '/',       label: 'ホーム',   Icon: LayoutDashboard },
+  { href: '/record', label: '稽古記録', Icon: Swords },
 ];
 
 export default function Navigation() {
@@ -29,7 +27,7 @@ export default function Navigation() {
           return (
             <Link key={href} href={href} style={{
               flex:1, display:'flex', flexDirection:'column',
-              alignItems:'center', gap:3, padding:'10px 0 12px',
+              alignItems:'center', gap:3, padding:'10px 0 14px',
               color: active ? '#1e1b4b' : '#a8a29e',
               textDecoration:'none', transition:'color .15s',
               position:'relative',
@@ -37,16 +35,16 @@ export default function Navigation() {
               {active && (
                 <span style={{
                   position:'absolute', top:0, left:'50%', transform:'translateX(-50%)',
-                  width:24, height:2, background:'#1e1b4b', borderRadius:'0 0 2px 2px',
+                  width:32, height:2.5, background:'#1e1b4b', borderRadius:'0 0 3px 3px',
                 }} />
               )}
               <Icon style={{
-                width:20, height:20,
+                width:22, height:22,
                 strokeWidth: active ? 2.5 : 1.8,
                 transform: active ? 'scale(1.1)' : 'scale(1)',
                 transition:'transform .15s',
               }} />
-              <span style={{ fontSize:10, fontWeight: active ? 700 : 500, letterSpacing:'0.04em' }}>
+              <span style={{ fontSize:11, fontWeight: active ? 700 : 500, letterSpacing:'0.04em' }}>
                 {label}
               </span>
             </Link>
