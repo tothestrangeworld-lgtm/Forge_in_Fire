@@ -17,7 +17,7 @@
 | グラフ | Recharts（AreaChart・RadarChart・PieChart） |
 | スキルグリッド | @xyflow/react v12（react-flow、ノード・エッジの動的描画） |
 | アイコン | lucide-react |
-| 認証状態 | `localStorage` によるセッション保持（サーバーサイド認証なし）。未認証時は `AuthGuard` が `redirecting` 状態を立ててリダイレクト。`api.ts` でも `AUTH_REQUIRED` ガードにより GAS への不正リクエストを二重でブロック。 |
+| 認証状態 | `localStorage` によるセッション保持（サーバーサイド認証なし） |
 
 ### バックエンド・データベース
 
@@ -63,7 +63,7 @@ Forge_in_Fire/
 │   │
 │   ├── components/
 │   │   ├── Navigation.tsx              # ボトムナビ（ホーム・稽古記録・ログアウト の3項目）
-│   │   ├── AuthGuard.tsx               # 未ログイン時に /login へリダイレクトするガード（3状態管理）
+│   │   ├── AuthGuard.tsx               # 未ログイン時に /login へリダイレクトするガード
 │   │   └── charts/
 │   │       ├── RadarChart.tsx          # 稽古スコアバランス（recharts RadarChart）
 │   │       ├── TrendLineChart.tsx      # スコア推移折れ線（累積モード対応）
@@ -75,7 +75,7 @@ Forge_in_Fire/
 │   │       └── TechniqueRadarChart.tsx # ※SkillGridに統合済み。参照なし
 │   │
 │   ├── lib/
-│   │   ├── api.ts                      # GAS APIクライアント（user_idを自動付与・AUTH_REQUIREDガード）
+│   │   ├── api.ts                      # GAS APIクライアント（user_idを自動付与して全リクエスト発行）
 │   │   ├── auth.ts                     # 認証ユーティリティ（localStorage の読み書き・ログアウト）
 │   │   ├── epithet.ts                  # 二つ名（Epithet）判定ロジック（Technique[]から称号を算出）
 │   │   └── logger.ts                   # クライアントロガー（localStorage に最大200件、/debug で確認）
@@ -320,11 +320,6 @@ EpithetResult: { name, description, suffix, fullTitle }
 - 認証成功後は `localStorage` に `hyakuren_user` を保存（ブラウザ再起動後も維持）
 - `AuthGuard` コンポーネントが未ログインユーザーを `/login` へリダイレクト
 - `api.ts` が全リクエストに `user_id` を自動付与
-- セッション切れ直後のレースコンディション対策:
-  - `AuthGuard` は `'pending' | 'authenticated' | 'redirecting'` の3状態で管理し、
-    リダイレクト中も children を描画しない（§9 参照）
-  - `api.ts` の `gasGet` / `gasPost` は `userId` が空の場合に即 `throw new Error('AUTH_REQUIRED')`
-    を投げてフェッチを物理ブロック（GAS へのエラーリクエストが届かない）
 
 ### ✅ デバッグ・ログ機能
 - クライアントログを `localStorage` に最大200件保存（`/debug` で閲覧・エクスポート）
@@ -350,48 +345,3 @@ Cloudflare Pages Dashboard → Settings → Environment variables で設定。
 - [ ] 稽古の意識項目をUI上で追加・編集する管理画面
 - [ ] PWA対応（オフライン記録 → オンライン時に同期）
 - [ ] パスワードのハッシュ化（現在は平文保存）
-
----
-
-## 9. 認証レースコンディション対策（設計メモ）
-
-### 問題
-
-セッション切れ（localStorage クリア）直後に保護されたページを開くと、
-`AuthGuard` の `router.replace('/login')` が完了するコンマ数秒の間に
-各 page.tsx の `useEffect` が発火し、`user_id` が空のまま GAS リクエストが飛ぶ。
-結果として GAS が `user_id は必須です` エラーを返し、画面がエラー表示で止まっていた。
-
-### 二重防衛の設計
-
-```
-[1] AuthGuard（描画レイヤー）
-    useState: 'pending' → 認証確認後 'authenticated' or 'redirecting'
-    ↓ 'pending' / 'redirecting' の間は children を return null でブロック
-    ↓ children が描画されないので page.tsx の useEffect も発火しない
-
-[2] api.ts（通信レイヤー）
-    gasGet / gasPost でフェッチ前に userId を検証
-    → 空なら throw new Error('AUTH_REQUIRED') で物理ブロック
-    → GAS に不正リクエストが届くことを防ぐセーフティネット
-```
-
-[1] だけでは Next.js の hydration タイミングによってはすり抜けるケースがある。
-[2] がセーフティネットとして機能し、GAS に不正リクエストが届くことを二重で防ぐ。
-
-### 各ページの `useEffect` での推奨エラーハンドリング
-
-```typescript
-useEffect(() => {
-  fetchDashboard()
-    .then(setData)
-    .catch((err: Error) => {
-      // AUTH_REQUIRED はリダイレクト中の正常系。エラー表示不要。
-      if (err.message === 'AUTH_REQUIRED') return;
-      setError(err.message);
-    });
-}, []);
-```
-
-`AUTH_REQUIRED` はリダイレクト中に起きる正常系のため、各 page.tsx の catch で
-握り潰すこと。それ以外のエラーは通常通りユーザーに表示する。
