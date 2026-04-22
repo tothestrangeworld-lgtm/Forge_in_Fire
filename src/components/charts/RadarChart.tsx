@@ -18,11 +18,20 @@ export default function RadarChart({ data }: Props) {
   return (
     <div style={{ width:'100%', height:240 }}>
       <ResponsiveContainer width="100%" height="100%">
-        <RechartsRadar data={data} outerRadius="70%">
+        {/*
+          outerRadius: "70%" → "55%"
+            値を小さくすることでラベル領域を十分確保する。
+            スマホ画面（〜390px幅）でも長い項目名が見切れなくなる。
+        */}
+        <RechartsRadar data={data} outerRadius="55%">
           <PolarGrid stroke="#e0e7ff" strokeWidth={1} />
           <PolarAngleAxis
             dataKey="subject"
-            tick={{ fontSize:11, fill:'#44403c', fontFamily:'M PLUS Rounded 1c,sans-serif' }}
+            tick={{
+              fontSize: 9,  // 11 → 9：長い技名が見切れないよう縮小
+              fill: '#44403c',
+              fontFamily: 'M PLUS Rounded 1c,sans-serif',
+            }}
           />
           <Tooltip
             contentStyle={{

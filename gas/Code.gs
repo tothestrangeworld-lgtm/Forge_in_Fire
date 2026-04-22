@@ -376,7 +376,34 @@ function getDashboard(params) {
   var titleMaster   = getTitleMasterData(ss);
   var epithetMaster = getEpithetMasterData(ss);
 
-  return createResponse({ status, settings, logs, nextLevelXp, decay: decayResult, titleMaster, epithetMaster });
+  // ── xp_history（イベントソーシング用）直近90件を返す ──────────────
+  // 列構成: user_id(0), date(1), type(2), amount(3), reason(4), total_xp_after(5), level(6), title(7)
+  var xpHistSheet = ss.getSheetByName(SHEET_XP_HIST);
+  var xpHistory   = [];
+  if (xpHistSheet) {
+    var histRows = filterRowsByUserId(xpHistSheet, userId);
+    xpHistory = histRows
+      .map(function(r) {
+        return {
+          date:           r[1] ? Utilities.formatDate(new Date(r[1]), 'Asia/Tokyo', 'yyyy-MM-dd') : '',
+          type:           String(r[2] || ''),
+          amount:         Number(r[3]) || 0,
+          reason:         String(r[4] || ''),
+          total_xp_after: Number(r[5]) || 0,
+          level:          Number(r[6]) || 1,
+          title:          String(r[7] || ''),
+        };
+      })
+      .filter(function(r) { return r.date; })
+      .slice(-90); // 直近90件（約3ヶ月分）に絞る
+  }
+  // ─────────────────────────────────────────────────────────────────────
+
+  return createResponse({
+    status, settings, logs, nextLevelXp,
+    decay: decayResult, titleMaster, epithetMaster,
+    xpHistory,
+  });
 }
 
 // =====================================================================

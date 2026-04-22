@@ -31,7 +31,10 @@ export default function DashboardPage() {
     setLoading(true);
     Promise.all([fetchDashboard(), fetchTechniques()])
       .then(([dash, techs]) => { setData(dash); setTechniques(techs); })
-      .catch(e => setError(e.message))
+      .catch(e => {
+        if (e.message === 'AUTH_REQUIRED') return; // この1行を追加！
+        setError(e.message);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -41,7 +44,7 @@ export default function DashboardPage() {
   if (error)   return <ErrorState message={error} />;
   if (!data)   return null;
 
-  const { status, logs, settings, decay } = data;
+  const { status, logs, settings, decay, xpHistory } = data;
   const tm          = data.titleMaster;
   const em          = data.epithetMaster ?? [] as EpithetMasterEntry[];
   const level       = calcLevelFromXp(status.total_xp);
@@ -249,7 +252,7 @@ export default function DashboardPage() {
 
       <div className="wa-card animate-fade-up delay-300" style={{ marginBottom:'1rem' }}>
         <span className="section-title">XP推移</span>
-        <XPTimelineChart logs={logs} compact={true} />
+        <XPTimelineChart xpHistory={xpHistory} compact={true} />
       </div>
 
     </div>

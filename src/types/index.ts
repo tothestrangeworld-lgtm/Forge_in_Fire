@@ -37,14 +37,37 @@ export interface TitleMasterEntry {
   title: string;
 }
 
+// =====================================================================
+// xp_history シートの1行（イベントソーシング用）
+// GAS列構成: user_id, date, type, amount, reason, total_xp_after, level, title
+// =====================================================================
+export interface XpHistoryEntry {
+  /** 記録日（タイムスタンプの日付部分）"YYYY-MM-DD" */
+  date:           string;
+  /** イベント種別 */
+  type:           'gain' | 'decay' | 'reset' | string;
+  /** XP増減量。獲得は正値、減衰・リセットはマイナス値または 0 */
+  amount:         number;
+  /** 理由テキスト（例: "稽古記録（4/13・9項目）", "3日間稽古なし"） */
+  reason:         string;
+  /** イベント適用後の累積XP（グラフのY軸に直接使用） */
+  total_xp_after: number;
+  /** 適用後のレベル */
+  level:          number;
+  /** 適用後の称号 */
+  title:          string;
+}
+
 export interface DashboardData {
   status:         UserStatus;
   settings:       Setting[];
   logs:           LogEntry[];
   nextLevelXp:    NextLevelInfo;
   decay?:         DecayInfo;
-  titleMaster?:   TitleMasterEntry[];    // 称号マスタ（スプレッドシートから取得）
-  epithetMaster?: EpithetMasterEntry[];  // 二つ名マスタ（スプレッドシートから取得）
+  titleMaster?:   TitleMasterEntry[];
+  epithetMaster?: EpithetMasterEntry[];
+  /** XP全イベント履歴（直近90件）。XPTimelineChart の正データソース */
+  xpHistory?:     XpHistoryEntry[];
 }
 
 export interface SaveLogPayload {

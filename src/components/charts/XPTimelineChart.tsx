@@ -1,120 +1,141 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import type { LogEntry } from '@/types';
+import type { XpHistoryEntry } from '@/types';
+
+// =====================================================================
+// XPTimelineChart
+//
+// 【設計方針】
+//   旧実装では LogEntry[] からフロントエンドでXPを疑似再計算していたため、
+//   レベルリセット・減衰が正しく反映されない構造的欠陥があった。
+//   本コンポーネントは GAS の xp_history（イベントソーシング）を正として
+//   受け取り、total_xp_after をそのまま Y軸にマッピングするだけのシンプルな実装。
+// =====================================================================
 
 interface Props {
-  logs:    LogEntry[];
-  compact?: boolean; // true = ホーム用の小さい版
+  xpHistory?: XpHistoryEntry[];
+  compact?:   boolean; // true = ホーム用の小さい版
 }
 
-interface DataPoint {
-  date:      string; // 表示用 "MM/DD"
-  xp:        number; // 累積XP
-  gained:    number; // その日の獲得XP（稽古日のみ > 0）
-  lost:      number; // その日の減衰XP（> 0）
-  isPractice: boolean;
+// "YYYY-MM-DD HH:mm:ss" または "YYYY-MM-DD" → "M/DD" 表示用文字列
+function toDisplayDate(dateStr: string): string {
+  const d = dateStr.slice(0, 10); // "YYYY-MM-DD"
+  const parts = d.split('-');
+  if (parts.length < 3) return dateStr;
+  return `${parseInt(parts[1])}/${parts[2]}`;
 }
 
-// GASと同じ減衰計算
-function dailyPenalty(daysSince: number): number {
-  if (daysSince <= 3) return 0;
-  return Math.floor(20 * Math.pow(daysSince - 3, 1.3));
-}
-
-function buildXPTimeline(logs: LogEntry[]): DataPoint[] {
-  if (!logs.length) return [];
-
-  // 日付ごとにXP獲得を集計（基本XP50 + ボーナス）
-  const dailyGain: Record<string, number> = {};
-  logs.forEach(l => {
-    const d = (l.date ?? '').slice(0, 10);
-    if (!d) return;
-    if (!dailyGain[d]) dailyGain[d] = 50; // 基本XP（稽古1回につき1回だけ加算）
-    dailyGain[d] += l.xp_earned;
-  });
-
-  // 同日複数稽古の重複加算を防ぐため、uniqueな稽古日ベースで基本XPを整理
-  const practiceDates = new Set(logs.map(l => (l.date ?? '').slice(0, 10)).filter(Boolean));
-
-  const sortedDates = [...practiceDates].sort();
-  if (!sortedDates.length) return [];
-
-  const result: DataPoint[] = [];
-  let cumXP        = 0;
-  let lastPractice: Date | null = null;
-
-  const start = new Date(sortedDates[0]);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-
-  for (const cur = new Date(start); cur <= today; cur.setDate(cur.getDate() + 1)) {
-    const y  = cur.getFullYear();
-    const m  = String(cur.getMonth() + 1).padStart(2, '0');
-    const d  = String(cur.getDate()).padStart(2, '0');
-    const ds = `${y}-${m}-${d}`;
-
-    let gained = 0;
-    let lost   = 0;
-
-    if (dailyGain[ds]) {
-      gained = dailyGain[ds];
-      cumXP += gained;
-      lastPractice = new Date(cur);
-    } else if (lastPractice) {
-      const daysSince = Math.floor((cur.getTime() - lastPractice.getTime()) / 86400000);
-      lost   = dailyPenalty(daysSince);
-      cumXP  = Math.max(0, cumXP - lost);
-    }
-
-    result.push({
-      date:       `${cur.getMonth() + 1}/${d}`,
-      xp:         Math.max(0, cumXP),
-      gained,
-      lost,
-      isPractice: !!dailyGain[ds],
+// X軸ティック：月初め "M/01" の重複を除いたラベルのみ
+function buildXTicks(data: XpHistoryEntry[]): string[] {
+  const seen = new Set<string>();
+  return data
+    .map(e => toDisplayDate(e.date))
+    .filter(label => {
+      if (!label.endsWith('/01')) return false;
+      if (seen.has(label)) return false;
+      seen.add(label);
+      return true;
     });
-  }
-
-  return result;
 }
 
-// データが多い場合は間引き（X軸の視認性確保）
-function sampleData(data: DataPoint[], maxPoints: number): DataPoint[] {
-  if (data.length <= maxPoints) return data;
-  const step = Math.ceil(data.length / maxPoints);
-  return data.filter((_, i) => i % step === 0 || i === data.length - 1);
+// Tooltip の種別ラベル
+const TYPE_LABEL: Record<string, string> = {
+  gain:  '稽古獲得',
+  decay: 'XP減衰',
+  reset: 'リセット',
+};
+
+// Tooltip カスタムコンテンツ
+interface TooltipPayloadItem {
+  payload?: {
+    type?:   string;
+    reason?: string;
+    level?:  number;
+    amount?: number;
+  };
+  value?: number;
 }
 
-export default function XPTimelineChart({ logs, compact = false }: Props) {
+function CustomTooltip({
+  active, payload, label,
+}: {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+  label?:  string;
+}) {
+  if (!active || !payload?.length) return null;
+  const item    = payload[0];
+  const xp      = item.value ?? 0;
+  const { type, reason, level, amount } = item.payload ?? {};
+  const typeLabel = TYPE_LABEL[type ?? ''] ?? type ?? '';
+  const sign      = (amount ?? 0) >= 0 ? '+' : '';
+
+  return (
+    <div style={{
+      background: '#1e1b4b', border: 'none', borderRadius: 10,
+      color: '#fff', fontSize: 11, padding: '8px 12px', lineHeight: 1.7,
+    }}>
+      <div style={{ color: '#c7d2fe', marginBottom: 2 }}>{label}</div>
+      <div style={{ color: '#a5b4fc' }}>{typeLabel}</div>
+      {amount !== undefined && (
+        <div style={{ color: (amount ?? 0) >= 0 ? '#34d399' : '#f87171' }}>
+          {sign}{amount?.toLocaleString()} XP
+        </div>
+      )}
+      <div style={{ color: '#fff', fontWeight: 'bold' }}>
+        累積 {xp.toLocaleString()} XP
+      </div>
+      {level && (
+        <div style={{ color: '#a5b4fc' }}>Lv {level}</div>
+      )}
+      {reason && (
+        <div style={{ color: '#818cf8', fontSize: 10, marginTop: 2 }}>{reason}</div>
+      )}
+    </div>
+  );
+}
+
+export default function XPTimelineChart({ xpHistory = [], compact = false }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  const allData = useMemo(() => buildXPTimeline(logs), [logs]);
-
   if (!mounted) return null;
-  if (!allData.length) return (
-    <div style={{ textAlign:'center', padding:'2rem', color:'#a8a29e', fontSize:'0.85rem' }}>
-      稽古を記録するとXP推移が表示されます
-    </div>
-  );
 
-  const chartData = sampleData(allData, compact ? 60 : 120);
-  const maxXP     = Math.max(...allData.map(d => d.xp));
-  const height    = compact ? 160 : 240;
+  if (!xpHistory.length) {
+    return (
+      <div style={{
+        textAlign: 'center', padding: '2rem',
+        color: '#a8a29e', fontSize: '0.85rem',
+      }}>
+        稽古を記録するとXP推移が表示されます
+      </div>
+    );
+  }
 
-  // X軸は月初めのみ表示
-  const xTicks = chartData
-    .filter(d => d.date.endsWith('/01'))
-    .map(d => d.date);
+  const maxXP  = Math.max(...xpHistory.map(e => e.total_xp_after));
+  const height = compact ? 160 : 240;
+  const xTicks = buildXTicks(xpHistory);
+
+  // Recharts 用フラット配列へ変換（余計なフィールドを展開）
+  const chartData = xpHistory.map(e => ({
+    label:          toDisplayDate(e.date),
+    total_xp_after: Math.max(0, e.total_xp_after),
+    amount:         e.amount,
+    type:           e.type,
+    reason:         e.reason,
+    level:          e.level,
+    title:          e.title,
+  }));
 
   return (
-    <div style={{ width:'100%', height }}>
+    <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top:8, right:4, left:-28, bottom:0 }}>
+        <AreaChart data={chartData} margin={{ top: 8, right: 4, left: -28, bottom: 0 }}>
           <defs>
             <linearGradient id="xpGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%"  stopColor="#4f46e5" stopOpacity={0.35} />
@@ -125,49 +146,42 @@ export default function XPTimelineChart({ logs, compact = false }: Props) {
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" vertical={false} />
 
           <XAxis
-            dataKey="date"
+            dataKey="label"
             ticks={xTicks}
-            tick={{ fontSize:9, fill:'#a5b4fc' }}
+            tick={{ fontSize: 9, fill: '#a5b4fc' }}
             tickLine={false}
             axisLine={false}
           />
           <YAxis
-            tick={{ fontSize:9, fill:'#a5b4fc' }}
+            tick={{ fontSize: 9, fill: '#a5b4fc' }}
             tickLine={false}
             axisLine={false}
-            tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(v)}
+            tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
           />
 
-          <Tooltip
-            contentStyle={{
-              background:'#1e1b4b', border:'none',
-              borderRadius:10, color:'#fff',
-              fontSize:11, padding:'8px 12px',
-            }}
-            formatter={(value: number, name: string) => {
-              if (name === 'xp') return [`${value.toLocaleString()} XP`, '累積XP'];
-              return [value, name];
-            }}
-            labelStyle={{ color:'#c7d2fe', marginBottom:4 }}
-          />
+          <Tooltip content={<CustomTooltip />} />
 
-          {/* 最高XPに参照線 */}
           <ReferenceLine
             y={maxXP}
             stroke="#818cf8"
             strokeDasharray="4 4"
             strokeWidth={1}
-            label={{ value:`最高 ${maxXP.toLocaleString()}`, position:'insideTopRight', fontSize:9, fill:'#818cf8' }}
+            label={{
+              value: `最高 ${maxXP.toLocaleString()}`,
+              position: 'insideTopRight',
+              fontSize: 9,
+              fill: '#818cf8',
+            }}
           />
 
           <Area
             type="monotone"
-            dataKey="xp"
+            dataKey="total_xp_after"
             stroke="#3730a3"
             strokeWidth={compact ? 1.5 : 2}
             fill="url(#xpGradient)"
             dot={false}
-            activeDot={{ r:4, fill:'#1e1b4b', strokeWidth:0 }}
+            activeDot={{ r: 4, fill: '#1e1b4b', strokeWidth: 0 }}
           />
         </AreaChart>
       </ResponsiveContainer>
