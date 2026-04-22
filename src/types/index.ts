@@ -18,6 +18,7 @@ export interface UserStatus {
   total_xp: number;
   level:    number;
   title:    string;
+  last_practice_date?: string | null; // 👈 この1行を追加！
 }
 
 export interface NextLevelInfo {
