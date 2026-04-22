@@ -44,52 +44,56 @@
 ```
 Forge_in_Fire/
 ├── gas/
-│   └── Code.gs                         # GASバックエンド全処理（認証・CRUD・XP計算・減衰）
+│   └── Code.gs                             # GASバックエンド全処理（認証・CRUD・XP計算・減衰）
 │
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx                  # ルートレイアウト（AuthGuard・ナビゲーション組み込み）
-│   │   ├── globals.css                 # デザイントークン・共通CSS（wa-card、btn-ai等）
-│   │   ├── page.tsx                    # ホーム画面（ステータス・スキルグリッド・分析を統合表示）
+│   │   ├── layout.tsx                      # ルートレイアウト（AuthGuard・ナビゲーション組み込み）
+│   │   ├── globals.css                     # デザイントークン・共通CSS（wa-card、btn-ai等）
+│   │   ├── page.tsx                        # ホーム画面（ステータス・スキルグリッド・分析を統合表示）
 │   │   ├── record/
-│   │   │   └── page.tsx                # 記録画面（稽古記録タブ・技の評価タブの統合ページ）
+│   │   │   └── page.tsx                    # 記録画面（稽古記録タブ・技の評価タブの統合ページ）
 │   │   ├── login/
-│   │   │   └── page.tsx                # ログイン画面（ユーザー選択・パスコード認証）
+│   │   │   └── page.tsx                    # ログイン画面（ユーザー選択・パスコード認証）
+│   │   ├── rivals/
+│   │   │   ├── page.tsx                    # 門下生一覧（自分以外のユーザーをリスト表示）
+│   │   │   └── [id]/
+│   │   │       └── page.tsx                # 他ユーザーのダッシュボード閲覧（リードオンリー）
 │   │   ├── debug/
-│   │   │   └── page.tsx                # ログビューア（localStorageのクライアントログ確認）
+│   │   │   └── page.tsx                    # ログビューア（localStorageのクライアントログ確認）
 │   │   └── api/
 │   │       └── gas/
-│   │           └── route.ts            # GASプロキシ（GET/POST をGASに中継、CORS回避）
+│   │           └── route.ts                # GASプロキシ（GET/POST をGASに中継、CORS回避）
 │   │
 │   ├── components/
-│   │   ├── Navigation.tsx              # ボトムナビ（ホーム・稽古記録・ログアウト の3項目）
-│   │   ├── AuthGuard.tsx               # 未ログイン時に /login へリダイレクトするガード
+│   │   ├── Navigation.tsx                  # ボトムナビ（ホーム・稽古記録・門下生・ログアウト の4項目）
+│   │   ├── AuthGuard.tsx                   # 未ログイン時に /login へリダイレクトするガード
 │   │   └── charts/
-│   │       ├── RadarChart.tsx          # 稽古スコアバランス（recharts RadarChart）
-│   │       ├── TrendLineChart.tsx      # スコア推移折れ線（累積モード対応）
-│   │       ├── XPTimelineChart.tsx     # XP累積推移エリアチャート（xp_historyを正データソースとして使用）
-│   │       ├── ActivityHeatmap.tsx     # 稽古カレンダー（月×週グリッド、4月年度始まり）
-│   │       ├── SkillGrid.tsx           # スフィア盤（react-flow、CORE→BodyPart→技の3層）
-│   │       ├── PlaystyleCharts.tsx     # プレイスタイル分析（ドーナツ+レーダー）
-│   │       └── TechniqueRadarChart.tsx # ※SkillGridに統合済み。参照なし
+│   │       ├── RadarChart.tsx              # 稽古スコアバランス（recharts RadarChart）
+│   │       ├── TrendLineChart.tsx          # スコア推移折れ線（累積モード対応）
+│   │       ├── XPTimelineChart.tsx         # XP累積推移エリアチャート（xp_historyを正データソースとして使用）
+│   │       ├── ActivityHeatmap.tsx         # 稽古カレンダー（月×週グリッド、4月年度始まり）
+│   │       ├── SkillGrid.tsx               # スフィア盤（react-flow、CORE→BodyPart→技の3層）
+│   │       ├── PlaystyleCharts.tsx         # プレイスタイル分析（ドーナツ+レーダー）
+│   │       └── TechniqueRadarChart.tsx     # ※SkillGridに統合済み。参照なし
 │   │
 │   ├── lib/
-│   │   ├── api.ts                      # GAS APIクライアント（user_idを自動付与して全リクエスト発行）
-│   │   ├── auth.ts                     # 認証ユーティリティ（localStorage の読み書き・ログアウト）
-│   │   ├── epithet.ts                  # 二つ名（Epithet）判定ロジック（Technique[]から称号を算出）
-│   │   └── logger.ts                   # クライアントロガー（localStorage に最大200件、/debug で確認）
+│   │   ├── api.ts                          # GAS APIクライアント（user_id自動付与・targetUserId上書き対応）
+│   │   ├── auth.ts                         # 認証ユーティリティ（localStorage の読み書き・ログアウト）
+│   │   ├── epithet.ts                      # 二つ名（Epithet）判定ロジック（Technique[]から称号を算出）
+│   │   └── logger.ts                       # クライアントロガー（localStorage に最大200件、/debug で確認）
 │   │
 │   └── types/
-│       └── index.ts                    # 全型定義・XP/レベル計算関数・称号テーブル（フォールバック）
+│       └── index.ts                        # 全型定義・XP/レベル計算関数・称号テーブル（フォールバック）
 │
-├── .env.example                        # 環境変数テンプレート
-├── open-next.config.ts                 # OpenNext設定ファイル（Cloudflare Pages用）
-├── next.config.ts                      # Next.js設定
-├── tailwind.config.ts                  # Tailwind設定（カスタムカラー・アニメーション）
-├── wrangler.toml                       # Cloudflare Pages設定（ビルド出力先等）
-├── package.json                        # 依存パッケージ管理
-├── DEPLOY_GUIDE.md                     # デプロイ手順書
-└── HANDOFF.md                          # 開発引き継ぎ文書
+├── .env.example                            # 環境変数テンプレート
+├── open-next.config.ts                     # OpenNext設定ファイル（Cloudflare Pages用）
+├── next.config.ts                          # Next.js設定
+├── tailwind.config.ts                      # Tailwind設定（カスタムカラー・アニメーション）
+├── wrangler.toml                           # Cloudflare Pages設定（ビルド出力先等）
+├── package.json                            # 依存パッケージ管理
+├── DEPLOY_GUIDE.md                         # デプロイ手順書
+└── HANDOFF.md                              # 開発引き継ぎ文書
 ```
 
 ---
@@ -234,7 +238,7 @@ DashboardData: {
   decay?:         DecayInfo
   titleMaster?:   TitleMasterEntry[]
   epithetMaster?: EpithetMasterEntry[]
-  xpHistory?:     XpHistoryEntry[]   ← 追加（イベントソーシング用）
+  xpHistory?:     XpHistoryEntry[]
 }
 
 UserStatus:    { total_xp, level, title, last_practice_date? }
@@ -307,12 +311,9 @@ EpithetResult: { name, description, suffix, fullTitle }
 - `xp_history` シートに全増減を記録
 
 ### ✅ XP推移グラフ（イベントソーシング方式）
-- **旧方式（廃止）:** LogEntry[] からフロントエンドでXPを疑似再計算していたため、
-  レベルリセット・減衰がグラフに正しく反映されなかった。
-- **新方式:** GAS の `xp_history` シートを正のデータソースとし、
-  `getDashboard` が直近90件を `xpHistory` として返す。
-  `XPTimelineChart` は `xpHistory[n].total_xp_after` をそのままY軸にマッピングするだけ。
-  計算ロジックを持たないため、リセット・減衰が常に正確に描画される。
+- GAS の `xp_history` シートを正のデータソースとし、`getDashboard` が直近90件を `xpHistory` として返す
+- `XPTimelineChart` は `xpHistory[n].total_xp_after` をそのままY軸にマッピングするだけ
+- 計算ロジックを持たないため、リセット・減衰が常に正確に描画される
 
 ### ✅ 技の習熟度記録（スキルグリッド）
 - `TechniqueMastery` シートから技データを取得
@@ -327,7 +328,7 @@ EpithetResult: { name, description, suffix, fullTitle }
 - 判定優先順位: 初期 → ActionType偏り(70%以上) → SubCategory最高 → バランス
 
 ### ✅ 二つ名（Epithet）+ 称号バナー
-- ホーム画面と技の記録画面に表示
+- ホーム画面・技の記録画面・門下生ダッシュボード閲覧画面に表示
 - 二つ名（修飾語）+ 称号（レベル由来）を組み合わせて「怒涛の 初段」のように表示
 
 ### ✅ 各種グラフ可視化
@@ -346,6 +347,16 @@ EpithetResult: { name, description, suffix, fullTitle }
 - `AuthGuard` コンポーネントが未ログインユーザーを `/login` へリダイレクト
 - `api.ts` が全リクエストに `user_id` を自動付与
 
+### ✅ 切磋琢磨機能（門下生ダッシュボード閲覧）
+- ボトムナビ「門下生」タブ（`/rivals`）から他ユーザーの稽古進捗を閲覧できる
+- 自分自身はリストから除外して表示
+- `/rivals/[id]` でユーザーごとのダッシュボードをリードオンリーで表示
+  - XP推移・稽古カレンダー・スコアレーダー・スキルグリッド・プレイスタイル分析を表示
+  - リセットボタン・XP減衰警告は除外（他人のステータス変更不可）
+  - スキルグリッドは `pointerEvents: none` ラッパーで操作を封じる
+- `api.ts` の `gasGet` が `params.user_id` を優先解決するよう拡張（後述）
+- GAS側の改修は不要（既存の `getDashboard`, `getTechniques`, `getUsers` をそのまま活用）
+
 ### ✅ デバッグ・ログ機能
 - クライアントログを `localStorage` に最大200件保存（`/debug` で閲覧・エクスポート）
 - GASの `error_logs` シートにサーバーサイドエラーを記録
@@ -353,7 +364,46 @@ EpithetResult: { name, description, suffix, fullTitle }
 
 ---
 
-## 7. 環境変数
+## 7. api.ts の設計原則
+
+### user_id の解決ルール
+
+`gasGet` 関数は以下の優先順位で `user_id` を解決する。
+
+```
+1. params に user_id が明示されていればそれを使用（他ユーザー閲覧用）
+2. 省略されている場合は getCurrentUserId() で自分のIDを自動付与
+3. user_id が必要なのに未ログイン → 'AUTH_REQUIRED' エラーをスローしてフェッチをブロック
+```
+
+```typescript
+// 実装イメージ
+const merged = needsUserId
+  ? { ...params, user_id: params.user_id ?? userId }
+  : params;
+```
+
+### targetUserId を受け取る関数
+
+| 関数 | 引数 | 挙動 |
+|---|---|---|
+| `fetchDashboard(targetUserId?)` | 省略 → 自分、指定 → 対象ユーザー | 門下生閲覧で使用 |
+| `fetchTechniques(targetUserId?)` | 省略 → 自分、指定 → 対象ユーザー | 門下生閲覧で使用 |
+
+### AUTH_REQUIRED エラーの扱い
+
+認証ガードがスローする `Error('AUTH_REQUIRED')` は、各 `useEffect` の catch ブロックで検出し、無視する（AuthGuard によるリダイレクトに任せる）。
+
+```typescript
+.catch(err => {
+  if (err.message === 'AUTH_REQUIRED') return;  // AuthGuardに委譲
+  setError('読み込みに失敗しました');
+});
+```
+
+---
+
+## 8. 環境変数
 
 | 変数名 | 必須 | 内容 |
 |---|---|---|
@@ -363,25 +413,12 @@ Cloudflare Pages Dashboard → Settings → Environment variables で設定。
 
 ---
 
-## 8. 呼び出し側の変更点（page.tsx）
-
-`XPTimelineChart` のpropsを `logs` から `xpHistory` に切り替えること。
-
-```tsx
-// 変更前
-<XPTimelineChart logs={dashboard.logs} compact />
-
-// 変更後
-<XPTimelineChart xpHistory={dashboard.xpHistory} compact />
-```
-
----
-
 ## 9. 今後の拡張ポイント（備忘録）
 
 - [ ] ユーザー登録・パスワード変更画面（現在はスプレッドシート直接編集）
-- [ ] ランキング画面（全ユーザーの総XP比較）
+- [ ] ランキング画面（全ユーザーの総XP比較・リアルタイム順位表）
 - [ ] 稽古の意識項目をUI上で追加・編集する管理画面
 - [ ] PWA対応（オフライン記録 → オンライン時に同期）
 - [ ] パスワードのハッシュ化（現在は平文保存）
 - [ ] xp_history の全期間表示オプション（現在は直近90件に絞っている）
+- [ ] 門下生ダッシュボード閲覧時の「挑戦状を送る」コメント機能

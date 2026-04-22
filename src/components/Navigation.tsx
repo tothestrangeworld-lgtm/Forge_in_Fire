@@ -1,13 +1,15 @@
+// src/components/Navigation.tsx
 'use client';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Swords, LogOut } from 'lucide-react';
+import { LayoutDashboard, Swords, Users, LogOut } from 'lucide-react';
 import { clearAuthUser, getAuthUser } from '@/lib/auth';
 
 const NAV_LINKS = [
   { href: '/',       label: 'ホーム',   Icon: LayoutDashboard },
   { href: '/record', label: '稽古記録', Icon: Swords },
+  { href: '/rivals', label: '門下生',   Icon: Users },
 ];
 
 export default function Navigation() {
@@ -35,7 +37,8 @@ export default function Navigation() {
     }}>
       <div style={{ display:'flex' }}>
         {NAV_LINKS.map(({ href, label, Icon }) => {
-          const active = pathname === href;
+          // /rivals/[id] など配下のパスでも「門下生」タブをアクティブにする
+          const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
             <Link key={href} href={href} style={{
               flex:1, display:'flex', flexDirection:'column',
@@ -45,10 +48,23 @@ export default function Navigation() {
               position:'relative',
             }}>
               {active && (
-                <span style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:32, height:2.5, background:'#1e1b4b', borderRadius:'0 0 3px 3px' }} />
+                <span style={{
+                  position:'absolute', top:0, left:'50%',
+                  transform:'translateX(-50%)',
+                  width:32, height:2.5,
+                  background:'#1e1b4b',
+                  borderRadius:'0 0 3px 3px',
+                }} />
               )}
-              <Icon style={{ width:22, height:22, strokeWidth: active ? 2.5 : 1.8, transform: active ? 'scale(1.1)' : 'scale(1)', transition:'transform .15s' }} />
-              <span style={{ fontSize:11, fontWeight: active ? 700 : 500, letterSpacing:'0.04em' }}>{label}</span>
+              <Icon style={{
+                width:22, height:22,
+                strokeWidth: active ? 2.5 : 1.8,
+                transform: active ? 'scale(1.1)' : 'scale(1)',
+                transition:'transform .15s',
+              }} />
+              <span style={{ fontSize:11, fontWeight: active ? 700 : 500, letterSpacing:'0.04em' }}>
+                {label}
+              </span>
             </Link>
           );
         })}

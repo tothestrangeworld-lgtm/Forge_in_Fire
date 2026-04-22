@@ -1,3 +1,4 @@
+// src/lib/api.ts
 // =====================================================================
 // 百錬自得 - GAS API クライアント（マルチユーザー対応）
 // ブラウザ → /api/gas（Next.jsプロキシ）→ GAS
@@ -41,7 +42,7 @@ async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
   }
 }
 
-// ===== GET（user_id を自動付与） =====
+// ===== GET（user_id を自動付与、ただし params に user_id が明示されていればそちらを優先） =====
 async function gasGet<T>(params: Record<string, string>): Promise<T> {
   const action = params.action ?? 'unknown';
   const userId = getCurrentUserId();
@@ -57,8 +58,10 @@ async function gasGet<T>(params: Record<string, string>): Promise<T> {
     throw new Error('AUTH_REQUIRED');
   }
 
+  // params に user_id が明示的に渡された場合はそれを優先（他ユーザー閲覧用）。
+  // 渡されていない場合は getCurrentUserId() を自動付与。
   const merged = needsUserId
-    ? { ...params, user_id: userId }
+    ? { ...params, user_id: params.user_id ?? userId }
     : params;
 
   const url = new URL(PROXY, location.origin);
@@ -113,8 +116,16 @@ export async function fetchUsers(): Promise<{ user_id: string; name: string; rol
 // ダッシュボード
 // =====================================================================
 
-export async function fetchDashboard(): Promise<DashboardData> {
-  return gasGet<DashboardData>({ action: 'getDashboard' });
+/**
+ * ダッシュボードを取得する。
+ * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
+ */
+export async function fetchDashboard(targetUserId?: string): Promise<DashboardData> {
+  return gasGet<DashboardData>(
+    targetUserId
+      ? { action: 'getDashboard', user_id: targetUserId }
+      : { action: 'getDashboard' },
+  );
 }
 
 // =====================================================================
@@ -150,8 +161,16 @@ export async function resetStatus(): Promise<{ total_xp: number; level: number; 
 // TechniqueMastery
 // =====================================================================
 
-export async function fetchTechniques(): Promise<Technique[]> {
-  return gasGet<Technique[]>({ action: 'getTechniques' });
+/**
+ * 技の習熟度一覧を取得する。
+ * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
+ */
+export async function fetchTechniques(targetUserId?: string): Promise<Technique[]> {
+  return gasGet<Technique[]>(
+    targetUserId
+      ? { action: 'getTechniques', user_id: targetUserId }
+      : { action: 'getTechniques' },
+  );
 }
 
 export async function updateTechniqueRating(id: string, rating: number): Promise<TechniqueUpdateResponse> {
