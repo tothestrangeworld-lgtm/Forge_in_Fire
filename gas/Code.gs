@@ -540,6 +540,16 @@ function dailyPenalty(d) {
   return Math.floor(20 * Math.pow(d - 3, 1.3));
 }
 
+// Sheetsの日付セルはDateオブジェクトで返るため、Utilities.formatDate で文字列化する
+function toDateStr(val) {
+  if (!val) return '';
+  try {
+    var d = (val instanceof Date) ? val : new Date(val);
+    if (isNaN(d.getTime())) return '';
+    return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  } catch(e) { return ''; }
+}
+
 function applyDecay(ss, userId) {
   var sheet = ss.getSheetByName(SHEET_STATUS);
   if (!sheet) return { applied:0, days_absent:0, today_penalty:0 };
@@ -551,10 +561,11 @@ function applyDecay(ss, userId) {
   }
   if (rowIdx === -1) return { applied:0, days_absent:0, today_penalty:0 };
 
-  var row        = allRows[rowIdx];
+  var row      = allRows[rowIdx];
+  // 列構成: user_id(0), total_xp(1), level(2), title(3), last_practice_date(4), last_decay_date(5)
   var totalXp    = parseInt(row[1]) || 0;
-  var lastPractS = row[4] ? String(row[4]).slice(0,10) : '';
-  var lastDecayS = row[5] ? String(row[5]).slice(0,10) : '';
+  var lastPractS = toDateStr(row[4]);   // E列: last_practice_date
+  var lastDecayS = toDateStr(row[5]);   // F列: last_decay_date
   var today      = new Date(); today.setHours(0,0,0,0);
   var todayStr   = Utilities.formatDate(today, 'Asia/Tokyo', 'yyyy-MM-dd');
   var sheetRow   = rowIdx + 1;
@@ -564,23 +575,25 @@ function applyDecay(ss, userId) {
     return { applied:0, days_absent:da, today_penalty: dailyPenalty(da) };
   }
 
-  // last_practice_date が空ならlogsから補完
+  // last_practice_date が空なら logs シートから自動補完
+  // logs列構成: user_id(0), date(1), item_name(2), score(3), xp_earned(4)
   var resolvedLP = lastPractS;
   if (!resolvedLP) {
     var logSheet = ss.getSheetByName(SHEET_LOGS);
     if (logSheet) {
-      var logRows = filterRowsByUserId(logSheet, userId)
-        .map(function(r){ return r[1] ? String(r[1]).slice(0,10) : ''; })
+      var logDates = filterRowsByUserId(logSheet, userId)
+        .map(function(r){ return toDateStr(r[1]); })   // B列(r[1])が date
         .filter(function(d){ return d.match(/^\d{4}-\d{2}-\d{2}$/); })
         .sort();
-      if (logRows.length > 0) {
-        resolvedLP = logRows[logRows.length - 1];
-        sheet.getRange(sheetRow, 5).setValue(resolvedLP);
+      if (logDates.length > 0) {
+        resolvedLP = logDates[logDates.length - 1];
+        sheet.getRange(sheetRow, 5).setValue(resolvedLP);  // E列に書き戻し
+        gasLog('INFO', 'applyDecay', 'last_practice_date 自動補完 user:' + userId, { resolvedLP: resolvedLP });
       }
     }
   }
   if (!resolvedLP) {
-    sheet.getRange(sheetRow, 6).setValue(todayStr);
+    sheet.getRange(sheetRow, 6).setValue(todayStr);  // F列
     return { applied:0, days_absent:0, today_penalty:0 };
   }
 
@@ -609,6 +622,7 @@ function applyDecay(ss, userId) {
   var titleMD  = getTitleMasterData(ss);
   var newTitle = calcTitleFromMaster(newLevel, titleMD);
 
+  // user_status 更新: 6列（user_id〜last_decay_date）
   sheet.getRange(sheetRow, 1, 1, 6).setValues([[userId, newXp, newLevel, newTitle, resolvedLP, todayStr]]);
   gasLog('INFO', 'applyDecay', 'user=' + userId + ' -' + totalDecay + 'XP (' + daysAbsent + '日)', { newXp: newXp });
   writeXpHistory(ss, userId, 'decay', -totalDecay, daysAbsent + '日間稽古なし', newXp, newLevel, newTitle);

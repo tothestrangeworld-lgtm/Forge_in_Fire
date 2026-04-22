@@ -97,7 +97,9 @@ function PracticeTab() {
   useEffect(() => {
     fetchSettings()
       .then(s => { setSettings(s.filter(i => i.is_active)); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .catch(e => { 
+        if (e.message === 'AUTH_REQUIRED') return; // この1行を一番上に追加！
+        setError(e.message); setLoading(false); });
   }, []);
 
   const activeItems = settings.filter(s => s.is_active);
@@ -113,6 +115,7 @@ function PracticeTab() {
       });
       setResult({ xp: res.xp_earned, title: res.title });
     } catch (e: unknown) {
+      if (e instanceof Error && e.message === 'AUTH_REQUIRED') return; // この1行を追加！
       setError(e instanceof Error ? e.message : '送信に失敗しました');
     } finally { setSubmitting(false); }
   }
@@ -256,7 +259,10 @@ function TechniqueTab() {
   useEffect(() => {
     fetchTechniques()
       .then(data => { setTechniques(data); })
-      .catch(e => setError(e.message))
+      .catch(e => {
+        if (e.message === 'AUTH_REQUIRED') return; // この1行を追加！
+        setError(e.message);
+      })
       .finally(() => setLoading(false));
   }, []);
 

@@ -18,6 +18,9 @@ import { getCurrentUserId } from '@/lib/auth';
 
 const PROXY = '/api/gas';
 
+// user_id が不要なアクション一覧（GET / POST 共通で参照）
+const NO_USER_ID_ACTIONS = ['getEpithetMaster', 'getUsers', 'ping'] as const;
+
 // ===== レスポンスパーサー =====
 async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
   let text = '';
@@ -42,12 +45,21 @@ async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
 async function gasGet<T>(params: Record<string, string>): Promise<T> {
   const action = params.action ?? 'unknown';
   const userId = getCurrentUserId();
+  const needsUserId = !(NO_USER_ID_ACTIONS as readonly string[]).includes(action);
 
-  // マスタ系は user_id 不要
-  const noUserIdActions = ['getEpithetMaster', 'getUsers', 'ping'];
-  const merged = noUserIdActions.includes(action)
-    ? params
-    : { ...params, user_id: userId };
+  // --- 認証ガード ---
+  // user_id が必要なアクションで未認証の場合はフェッチを物理的にブロックする。
+  // AuthGuard の router.replace('/login') が完了するコンマ数秒の間に
+  // page.tsx の useEffect が発火してしまうレースコンディション対策。
+  // 呼び出し元は err.message === 'AUTH_REQUIRED' を catch して無視すること。
+  if (needsUserId && !userId) {
+    logger.warn('api', `AUTH_REQUIRED: gasGet blocked (action=${action})`);
+    throw new Error('AUTH_REQUIRED');
+  }
+
+  const merged = needsUserId
+    ? { ...params, user_id: userId }
+    : params;
 
   const url = new URL(PROXY, location.origin);
   Object.entries(merged).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -60,11 +72,18 @@ async function gasGet<T>(params: Record<string, string>): Promise<T> {
 async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
   const action = (body.action as string) ?? 'unknown';
   const userId = getCurrentUserId();
+  const needsUserId = action !== 'login';
 
-  // login は user_id を付与しない
-  const merged = action === 'login'
-    ? body
-    : { ...body, user_id: userId };
+  // --- 認証ガード ---
+  // login 以外で user_id が必要なアクションで未認証の場合はフェッチをブロックする。
+  if (needsUserId && !userId) {
+    logger.warn('api', `AUTH_REQUIRED: gasPost blocked (action=${action})`);
+    throw new Error('AUTH_REQUIRED');
+  }
+
+  const merged = needsUserId
+    ? { ...body, user_id: userId }
+    : body;
 
   const res = await loggedFetch(PROXY, {
     method:  'POST',
