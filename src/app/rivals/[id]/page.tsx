@@ -318,7 +318,7 @@ export default function RivalDashboardPage({
             </div>
             {/* ポインターイベントを無効にして操作不可にする */}
             <div style={{ pointerEvents: 'none', userSelect: 'none' }}>
-              <SkillGrid techniques={techniques} readOnly />
+              <SkillGrid techniques={techniques} />
             </div>
           </div>
         )}
