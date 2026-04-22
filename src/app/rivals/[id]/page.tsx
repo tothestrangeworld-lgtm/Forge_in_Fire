@@ -334,8 +334,6 @@ export default function RivalDashboardPage({
             </div>
             <PlaystyleCharts
               techniques={techniques}
-              epithetMaster={epithetMaster}
-              status={status}
             />
           </div>
         )}
