@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, Swords, Star, TrendingUp, Trophy, Calendar } from 'lucide-react';
 import { fetchDashboard, fetchTechniques, fetchUsers } from '@/lib/api';
-import { computeEpithet } from '@/lib/epithet';
+import { calcEpithet } from '@/lib/epithet';
 import type { DashboardData, Technique } from '@/types';
 
 // Recharts は SSR 非対応のため dynamic import
@@ -118,8 +118,8 @@ export default function RivalDashboardPage({
   }));
   // 二つ名の算出
   const epithet = epithetMaster && techniques.length > 0
-    ? computeEpithet(techniques, epithetMaster, status)
-    : null;
+  ? calcEpithet(techniques, epithetMaster)
+  : null;
 
   // 次レベルまでのXP進捗
   const currentLevelXp = xpForLevel(status.level);
