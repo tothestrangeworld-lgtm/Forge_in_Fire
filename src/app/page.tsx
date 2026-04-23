@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { TrendingUp, Flame, RotateCcw, Loader2, TrendingDown } from 'lucide-react';
-import type { DashboardData, EpithetMasterEntry, Technique } from '@/types';
+import type { DashboardData, EpithetMasterEntry, Technique, UserTask } from '@/types';
 import {
   calcLevelFromXp, calcProgressPercent, calcNextLevel,
   titleForLevel, nextTitleLevel, levelColor,
 } from '@/types';
-import { fetchDashboard, resetStatus, fetchTechniques } from '@/lib/api';
+import { fetchDashboard, fetchTechniques, resetStatus } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import dynamic from 'next/dynamic';
 
@@ -44,7 +44,7 @@ export default function DashboardPage() {
   if (error)   return <ErrorState message={error} />;
   if (!data)   return null;
 
-  const { status, logs, settings, decay, xpHistory } = data;
+  const { status, logs, settings, decay, xpHistory, tasks } = data;
   const tm          = data.titleMaster;
   const em          = data.epithetMaster ?? [] as EpithetMasterEntry[];
   const level       = calcLevelFromXp(status.total_xp);
@@ -83,6 +83,9 @@ export default function DashboardPage() {
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
   const decayPerDay  = decay?.today_penalty ?? 0;
   const appliedToday = decay?.applied ?? 0;
+
+  // 課題（評価項目）
+  const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
 
   // 稽古統計
   const totalSessions = new Set(logs.map(l => l.date)).size;
@@ -200,6 +203,53 @@ export default function DashboardPage() {
           </>
         )}
         {!nextLv && <p style={{ fontSize:'0.75rem', color:'#fde68a', fontWeight:700, marginTop:6 }}>🏆 最高位「剣道の神」に到達！</p>}
+      </div>
+
+      {/* ── 現在の評価項目 ─────────────────────────── */}
+      <div className="wa-card animate-fade-up delay-100" style={{
+        marginBottom:'0.75rem',
+        background:'linear-gradient(135deg, rgba(13,11,42,0.92), rgba(30,27,75,0.82))',
+        border:'1px solid rgba(139,92,246,0.25)',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:10 }}>
+          <div>
+            <span className="section-title" style={{ color:'rgba(199,210,254,0.55)' }}>現在の評価項目</span>
+            <p style={{ margin:0, fontSize:'0.7rem', color:'rgba(199,210,254,0.35)' }}>
+              稽古記録で毎日1〜5評価する項目。
+            </p>
+          </div>
+          <a
+            href="/settings/tasks"
+            className="btn-outline"
+            style={{
+              width: 'auto',
+              padding: '0.45rem 0.7rem',
+              fontSize: '0.72rem',
+              borderColor: 'rgba(199,210,254,0.25)',
+              color: 'rgba(226,232,240,0.85)',
+              background: 'rgba(255,255,255,0.04)',
+              textDecoration: 'none',
+              flexShrink: 0,
+            }}
+            title="評価項目を編集"
+          >
+            課題を編集する
+          </a>
+        </div>
+
+        {activeTasks.length > 0 ? (
+          <ul style={{ margin:0, paddingLeft:'1.1rem', display:'flex', flexDirection:'column', gap:6 }}>
+            {activeTasks.map(t => (
+              <li key={t.id} style={{ color:'rgba(226,232,240,0.92)', fontWeight:800, lineHeight:1.35 }}>
+                {t.task_text}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p style={{ margin:0, fontSize:'0.8rem', color:'rgba(199,210,254,0.55)', fontWeight:700 }}>
+            現在、有効な評価項目がありません
+          </p>
+        )}
       </div>
 
       {/* 統計ミニカード */}

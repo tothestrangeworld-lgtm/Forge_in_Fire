@@ -66,7 +66,7 @@ export interface XpHistoryEntry {
 export interface UserTask {
   id:         string;
   task_text:  string;
-  status:     'active' | 'completed' | string;
+  status:     'active' | 'archived' | string;
   created_at: string;
   updated_at: string;
 }

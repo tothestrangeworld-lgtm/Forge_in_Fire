@@ -129,8 +129,8 @@ function doPost(e) {
       case 'updateSettings':        return updateSettings(body);
       case 'resetStatus':           return resetStatus(body);
       case 'updateTechniqueRating': return updateTechniqueRating(body);
-      case 'saveTask':              return saveTask(body);
-      case 'completeTask':          return completeTask(body);
+      case 'updateTasks':           return updateTasks(body);
+      case 'archiveTask':           return archiveTask(body);
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -452,33 +452,43 @@ function getUserTasks(ss, userId) {
     .filter(function(t) { return t.id && t.task_text; });
 }
 
-function saveTask(body) {
+function updateTasks(body) {
   var userId = body.user_id;
-  var taskText = body.task_text;
+  var tasks = body.tasks;
   if (!userId) return createError('user_id は必須です', 400);
-  if (!taskText || String(taskText).trim() === '') return createError('task_text は必須です', 400);
+  if (!tasks || !Array.isArray(tasks)) return createError('tasks は文字列配列で必須です', 400);
 
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = getUserTasksSheet(ss);
-  var rows = sheet.getDataRange().getValues();
   var ts = nowJstTs();
 
-  // 既存の active を completed に
+  // 1) 既存 active を全て archived に
+  var rows = sheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (String(r[1]) === String(userId) && String(r[3]) === 'active') {
-      sheet.getRange(i + 1, 4).setValue('completed'); // status
-      sheet.getRange(i + 1, 6).setValue(ts);          // updated_at
+      sheet.getRange(i + 1, 4).setValue('archived'); // status
+      sheet.getRange(i + 1, 6).setValue(ts);         // updated_at
     }
   }
 
-  var newId = Utilities.getUuid();
-  sheet.appendRow([newId, userId, String(taskText).trim(), 'active', ts, ts]);
-  gasLog('INFO', 'saveTask', 'task saved user=' + userId, { id: newId });
-  return createResponse({ id: String(newId) });
+  // 2) 新しい tasks を active で一括追加（空文字は除外）
+  var cleaned = tasks
+    .map(function(t) { return (t === null || t === undefined) ? '' : String(t).trim(); })
+    .filter(function(t) { return t !== ''; });
+
+  if (cleaned.length > 0) {
+    var newRows = cleaned.map(function(text) {
+      return [Utilities.getUuid(), userId, text, 'active', ts, ts];
+    });
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
+  }
+
+  gasLog('INFO', 'updateTasks', 'tasks updated user=' + userId, { active_count: cleaned.length });
+  return createResponse({ active_count: cleaned.length });
 }
 
-function completeTask(body) {
+function archiveTask(body) {
   var userId = body.user_id;
   var taskId = body.task_id;
   if (!userId) return createError('user_id は必須です', 400);
@@ -492,9 +502,9 @@ function completeTask(body) {
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (String(r[0]) === String(taskId) && String(r[1]) === String(userId)) {
-      sheet.getRange(i + 1, 4).setValue('completed'); // status
+      sheet.getRange(i + 1, 4).setValue('archived'); // status
       sheet.getRange(i + 1, 6).setValue(ts);          // updated_at
-      gasLog('INFO', 'completeTask', 'task completed user=' + userId, { id: taskId });
+      gasLog('INFO', 'archiveTask', 'task archived user=' + userId, { id: taskId });
       return createResponse({ id: String(taskId) });
     }
   }

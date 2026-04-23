@@ -3,8 +3,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, Loader2, PlusCircle } from 'lucide-react';
-import type { Setting, Technique } from '@/types';
-import { fetchSettings, saveLog, fetchTechniques, updateTechniqueRating } from '@/lib/api';
+import type { DashboardData, Technique, UserTask } from '@/types';
+import { fetchDashboard, saveLog, fetchTechniques, updateTechniqueRating } from '@/lib/api';
 
 // =====================================================================
 // 共通型・定数
@@ -86,7 +86,7 @@ export default function RecordPage() {
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
-  const [settings, setSettings]    = useState<Setting[]>([]);
+  const [dashboard, setDashboard]  = useState<DashboardData | null>(null);
   const [scores, setScores]        = useState<ScoreMap>({});
   const [date, setDate]            = useState(todayStr());
   const [loading, setLoading]      = useState(true);
@@ -95,23 +95,24 @@ function PracticeTab() {
   const [error, setError]          = useState<string|null>(null);
 
   useEffect(() => {
-    fetchSettings()
-      .then(s => { setSettings(s.filter(i => i.is_active)); setLoading(false); })
+    fetchDashboard()
+      .then(d => { setDashboard(d); setLoading(false); })
       .catch(e => { 
         if (e.message === 'AUTH_REQUIRED') return; // この1行を一番上に追加！
         setError(e.message); setLoading(false); });
   }, []);
 
-  const activeItems = settings.filter(s => s.is_active);
-  const allScored   = activeItems.length > 0 && activeItems.every(s => scores[s.item_name]);
+  const activeTasks: UserTask[] = (dashboard?.tasks ?? []).filter(t => t.status === 'active');
+  const allScored   = activeTasks.length > 0 && activeTasks.every(t => scores[t.id]);
+  const canSubmit   = activeTasks.length > 0 && allScored && !submitting;
 
   async function handleSubmit() {
-    if (!allScored || submitting) return;
+    if (!canSubmit) return;
     setSubmitting(true); setError(null);
     try {
       const res = await saveLog({
         date,
-        items: activeItems.map(s => ({ item_name: s.item_name, score: scores[s.item_name] })),
+        items: activeTasks.map(t => ({ item_name: t.task_text, score: scores[t.id] })),
       });
       setResult({ xp: res.xp_earned, title: res.title });
     } catch (e: unknown) {
@@ -172,13 +173,13 @@ function PracticeTab() {
         </div>
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          {activeItems.map((item, idx) => {
-            const current = scores[item.item_name];
+          {activeTasks.map((task, idx) => {
+            const current = scores[task.id];
             const badge   = current ? BADGE_STYLES[current] : null;
             return (
-              <div key={item.item_name} className="wa-card animate-slide-in" style={{ animationDelay:`${idx*60}ms` }}>
+              <div key={task.id} className="wa-card animate-slide-in" style={{ animationDelay:`${idx*60}ms` }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                  <p style={{ fontWeight:700, color:'var(--ai)', margin:0, fontSize:'0.95rem' }}>{item.item_name}</p>
+                  <p style={{ fontWeight:700, color:'var(--ai)', margin:0, fontSize:'0.95rem' }}>{task.task_text}</p>
                   {badge && current && (
                     <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.2rem 0.6rem', borderRadius:999, background:badge.bg, color:badge.color }}>
                       {SCORE_LABELS[current]}
@@ -187,7 +188,7 @@ function PracticeTab() {
                 </div>
                 <div style={{ display:'flex', flexDirection:'row', gap:8, width:'100%' }}>
                   {[1,2,3,4,5].map(n => (
-                    <button key={n} onClick={() => setScores(prev => ({...prev,[item.item_name]:n}))} style={{
+                    <button key={n} onClick={() => setScores(prev => ({...prev,[task.id]:n}))} style={{
                       flex:1, minWidth:0, height:42, borderRadius:'50%',
                       border:`2px solid ${current===n ? 'var(--ai)' : '#c7d2fe'}`,
                       background: current===n ? 'var(--ai)' : '#fff',
@@ -218,14 +219,14 @@ function PracticeTab() {
         </div>
       )}
 
-      {!allScored && activeItems.length > 0 && (
+      {!allScored && activeTasks.length > 0 && (
         <p style={{ textAlign:'center', fontSize:'0.72rem', color:'#a8a29e', margin:'1rem 0 0.5rem' }}>
-          {Object.keys(scores).length} / {activeItems.length} 項目を評価済み
+          {Object.keys(scores).filter(k => scores[k]).length} / {activeTasks.length} 項目を評価済み
         </p>
       )}
 
       <div style={{ marginTop:20 }}>
-        <button className="btn-ai" disabled={!allScored || submitting} onClick={handleSubmit} style={{ width:'100%' }}>
+        <button className="btn-ai" disabled={!canSubmit} onClick={handleSubmit} style={{ width:'100%' }}>
           {submitting
             ? <span style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
                 <Loader2 style={{ width:16, height:16, animation:'spin .8s linear infinite' }} />保存中...
@@ -235,11 +236,11 @@ function PracticeTab() {
         </button>
       </div>
 
-      {!loading && activeItems.length === 0 && (
+      {!loading && activeTasks.length === 0 && (
         <div style={{ textAlign:'center', marginTop:'4rem' }}>
-          <p style={{ fontSize:'2.5rem', marginBottom:'1rem' }}>⚙️</p>
-          <p style={{ fontWeight:700, color:'var(--ai)', marginBottom:8 }}>意識項目が設定されていません</p>
-          <p style={{ fontSize:'0.75rem', color:'#a8a29e' }}>設定から意識項目を追加してください</p>
+          <p style={{ fontSize:'2.5rem', marginBottom:'1rem' }}>📝</p>
+          <p style={{ fontWeight:700, color:'var(--ai)', marginBottom:8 }}>現在設定されている課題（評価項目）がありません</p>
+          <p style={{ fontSize:'0.75rem', color:'#a8a29e' }}>ホーム画面から課題を設定してください。</p>
         </div>
       )}
     </div>

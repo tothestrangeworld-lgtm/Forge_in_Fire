@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 import { ArrowLeft, Swords, Star, TrendingUp, Trophy, Calendar } from 'lucide-react';
 import { fetchDashboard, fetchTechniques, fetchUsers } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
-import type { DashboardData, Technique } from '@/types';
+import type { DashboardData, Technique, UserTask } from '@/types';
 
 export const runtime = 'edge';
 
@@ -106,6 +106,7 @@ export default function RivalDashboardPage({
   }
 
   const { status, logs, xpHistory, epithetMaster, settings } = dashboard;
+  const activeTask: UserTask | null = (dashboard.tasks ?? []).find(t => t.status === 'active') ?? null;
   // 稽古評価レーダー用（page.tsxから移植）
   const activeItems = settings.filter(s => s.is_active).map(s => s.item_name);
   const totals: Record<string, { sum: number; count: number }> = {};
@@ -258,6 +259,59 @@ export default function RivalDashboardPage({
                 最終稽古：{status.last_practice_date}
               </span>
             </div>
+          )}
+        </div>
+
+        {/* ======================= 現在の課題（閲覧専用） ======================= */}
+        <div className="wa-card" style={{
+          background: 'linear-gradient(135deg, rgba(13,11,42,0.92), rgba(30,27,75,0.82))',
+          border: '1px solid rgba(139,92,246,0.25)',
+          borderRadius: 16,
+          padding: '14px 12px',
+          marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#c4b5fd', letterSpacing: '0.06em' }}>
+                現在の課題
+              </span>
+              <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.35)', marginTop: 2 }}>
+                READ ONLY
+              </div>
+            </div>
+            <span style={{
+              fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
+              background: activeTask ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.12)',
+              border: activeTask ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(148,163,184,0.25)',
+              color: activeTask ? '#86efac' : 'rgba(226,232,240,0.65)',
+              borderRadius: 999,
+              padding: '3px 8px',
+              flexShrink: 0,
+            }}>
+              {activeTask ? 'ACTIVE' : 'NONE'}
+            </span>
+          </div>
+
+          {activeTask ? (
+            <>
+              <p style={{
+                margin: 0,
+                fontSize: 14,
+                fontWeight: 900,
+                color: '#ede9fe',
+                lineHeight: 1.35,
+                wordBreak: 'break-word',
+              }}>
+                {activeTask.task_text}
+              </p>
+              <p style={{ margin: '6px 0 0', fontSize: 10, color: 'rgba(199,210,254,0.35)' }}>
+                更新: {activeTask.updated_at || activeTask.created_at}
+              </p>
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'rgba(199,210,254,0.55)' }}>
+              課題はまだ設定されていません
+            </p>
           )}
         </div>
 
