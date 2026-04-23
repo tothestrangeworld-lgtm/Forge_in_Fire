@@ -66,18 +66,18 @@ export default function DashboardPage() {
   const streak  = calcStreak(logs.map(l => l.date));
 
   // 稽古評価レーダー用
-  const activeItems = settings.filter(s => s.is_active).map(s => s.item_name);
+  const radarSubjects = activeTasks.map(t => t.task_text);
   const totals: Record<string, { sum: number; count: number }> = {};
-  activeItems.forEach(i => { totals[i] = { sum: 0, count: 0 }; });
+  radarSubjects.forEach(s => { totals[s] = { sum: 0, count: 0 }; });
   logs.slice(-50).forEach(l => {
     if (totals[l.item_name]) { totals[l.item_name].sum += l.score; totals[l.item_name].count++; }
   });
-  const radarData = activeItems.map(item => ({
-    subject: item,
-    score:   totals[item].count > 0 ? +(totals[item].sum / totals[item].count).toFixed(1) : 0,
+  const radarData = radarSubjects.map(subject => ({
+    subject,
+    score:   totals[subject].count > 0 ? +(totals[subject].sum / totals[subject].count).toFixed(1) : 0,
     fullMark: 5,
   }));
-  const hasRadarData = radarData.some(d => d.score > 0);
+  const hasRadarData = radarData.length > 0;
 
   // 減衰
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
@@ -294,10 +294,13 @@ export default function DashboardPage() {
       {/* 稽古評価レーダー + XP推移 */}
       <div className="wa-card animate-fade-up delay-300" style={{ marginBottom:'0.75rem' }}>
         <span className="section-title">稽古スコアバランス（直近50回）</span>
-        {hasRadarData
-          ? <RadarChart data={radarData} />
-          : <p style={{ textAlign:'center', fontSize:'0.82rem', color:'#a8a29e', padding:'1.5rem 0' }}>稽古を記録するとグラフが表示されます</p>
-        }
+        {hasRadarData ? (
+          <RadarChart data={radarData} />
+        ) : (
+          <p style={{ textAlign:'center', fontSize:'0.82rem', color:'#a8a29e', padding:'1.5rem 0' }}>
+            評価項目を設定して稽古を記録すると、ここにバランスチャートが表示されます
+          </p>
+        )}
       </div>
 
       <div className="wa-card animate-fade-up delay-300" style={{ marginBottom:'1rem' }}>
