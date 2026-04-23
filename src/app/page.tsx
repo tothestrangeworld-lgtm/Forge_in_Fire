@@ -65,6 +65,9 @@ export default function DashboardPage() {
   ).size;
   const streak  = calcStreak(logs.map(l => l.date));
 
+  // 課題（評価項目）
+  const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
+
   // 稽古評価レーダー用
   const radarSubjects = activeTasks.map(t => t.task_text);
   const totals: Record<string, { sum: number; count: number }> = {};
@@ -83,9 +86,6 @@ export default function DashboardPage() {
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
   const decayPerDay  = decay?.today_penalty ?? 0;
   const appliedToday = decay?.applied ?? 0;
-
-  // 課題（評価項目）
-  const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
 
   // 稽古統計
   const totalSessions = new Set(logs.map(l => l.date)).size;
