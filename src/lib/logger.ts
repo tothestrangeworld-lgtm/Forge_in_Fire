@@ -20,6 +20,8 @@ export interface LogEntry {
 const STORAGE_KEY = 'hyakuren_logs';
 const MAX_ENTRIES = 200;
 
+type LogExtra = Partial<Omit<LogEntry,'id'|'ts'|'level'|'category'|'message'>>;
+
 // ブラウザ環境チェック
 const isBrowser = typeof window !== 'undefined';
 
@@ -45,7 +47,7 @@ function uid() {
 
 export const logger = {
   /** 汎用ログ書き込み */
-  log(level: LogLevel, category: string, message: string, extra?: Partial<Omit<LogEntry,'id'|'ts'|'level'|'category'|'message'>>) {
+  log(level: LogLevel, category: string, message: string, extra?: LogExtra) {
     const entry: LogEntry = {
       id:       uid(),
       ts:       new Date().toISOString(),
@@ -68,10 +70,10 @@ export const logger = {
     return entry;
   },
 
-  debug: (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('debug', cat, msg, extra),
-  info:  (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('info',  cat, msg, extra),
-  warn:  (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('warn',  cat, msg, extra),
-  error: (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('error', cat, msg, extra),
+  debug: (cat: string, msg: string, extra?: LogExtra) => logger.log('debug', cat, msg, extra),
+  info:  (cat: string, msg: string, extra?: LogExtra) => logger.log('info',  cat, msg, extra),
+  warn:  (cat: string, msg: string, extra?: LogExtra) => logger.log('warn',  cat, msg, extra),
+  error: (cat: string, msg: string, extra?: LogExtra) => logger.log('error', cat, msg, extra),
 
   /** 全ログ取得（新しい順） */
   getAll(): LogEntry[] {

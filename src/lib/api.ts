@@ -187,7 +187,7 @@ export async function updateTechniqueRating(id: string, rating: number): Promise
 // =====================================================================
 
 export async function updateTasks(tasks: string[]): Promise<{ active_count: number }> {
-  logger.info('api', '評価項目をまとめて更新', { count: tasks.length });
+  logger.info('api', '評価項目をまとめて更新', { detail: { count: tasks.length } });
   return gasPost<{ active_count: number }>({ action: 'updateTasks', tasks });
 }
 
