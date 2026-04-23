@@ -9,6 +9,8 @@ import { fetchDashboard, fetchTechniques, fetchUsers } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import type { DashboardData, Technique } from '@/types';
 
+export const runtime = 'edge';
+
 // Recharts は SSR 非対応のため dynamic import
 const RadarChart       = dynamic(() => import('@/components/charts/RadarChart'),       { ssr: false });
 const XPTimelineChart  = dynamic(() => import('@/components/charts/XPTimelineChart'),  { ssr: false });
