@@ -68,10 +68,10 @@ export const logger = {
     return entry;
   },
 
-  debug: (cat: string, msg: string, extra?: Partial<LogEntry>) => logger.log('debug', cat, msg, extra),
-  info:  (cat: string, msg: string, extra?: Partial<LogEntry>) => logger.log('info',  cat, msg, extra),
-  warn:  (cat: string, msg: string, extra?: Partial<LogEntry>) => logger.log('warn',  cat, msg, extra),
-  error: (cat: string, msg: string, extra?: Partial<LogEntry>) => logger.log('error', cat, msg, extra),
+  debug: (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('debug', cat, msg, extra),
+  info:  (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('info',  cat, msg, extra),
+  warn:  (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('warn',  cat, msg, extra),
+  error: (cat: string, msg: string, extra?: Parameters<typeof logger.log>[3]) => logger.log('error', cat, msg, extra),
 
   /** 全ログ取得（新しい順） */
   getAll(): LogEntry[] {
