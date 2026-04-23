@@ -179,6 +179,20 @@ export async function updateTechniqueRating(id: string, rating: number): Promise
 }
 
 // =====================================================================
+// user_tasks
+// =====================================================================
+
+export async function saveTask(task_text: string): Promise<{ id: string }> {
+  logger.info('api', '課題を設定', { task_text: task_text.slice(0, 80) });
+  return gasPost<{ id: string }>({ action: 'saveTask', task_text });
+}
+
+export async function completeTask(taskId: string): Promise<{ id: string }> {
+  logger.info('api', `課題を完了: id=${taskId}`);
+  return gasPost<{ id: string }>({ action: 'completeTask', task_id: taskId });
+}
+
+// =====================================================================
 // マスタ（共通）
 // =====================================================================
 

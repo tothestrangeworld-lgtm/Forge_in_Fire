@@ -59,6 +59,18 @@ export interface XpHistoryEntry {
   title:          string;
 }
 
+// =====================================================================
+// user_tasks
+// =====================================================================
+
+export interface UserTask {
+  id:         string;
+  task_text:  string;
+  status:     'active' | 'completed' | string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DashboardData {
   status:         UserStatus;
   settings:       Setting[];
@@ -69,6 +81,7 @@ export interface DashboardData {
   epithetMaster?: EpithetMasterEntry[];
   /** XP全イベント履歴（直近90件）。XPTimelineChart の正データソース */
   xpHistory?:     XpHistoryEntry[];
+  tasks?:         UserTask[];
 }
 
 export interface SaveLogPayload {

@@ -10,6 +10,7 @@ const SHEET_LOGS           = 'logs';             // user_id, date, item_name, sc
 const SHEET_STATUS         = 'user_status';      // user_id, total_xp, level, title, last_practice_date, last_decay_date
 const SHEET_TECHNIQUE      = 'TechniqueMastery'; // user_id, ID, BodyPart, ActionType, SubCategory, Name, Points, LastRating
 const SHEET_XP_HIST        = 'xp_history';       // user_id, date, type, amount, reason, total_xp_after, level, title
+const SHEET_USER_TASKS     = 'user_tasks';       // id, user_id, task_text, status, created_at, updated_at
 
 // 全ユーザー共通マスタ（user_id なし）
 const SHEET_TITLE_MASTER   = 'title_master';
@@ -84,6 +85,10 @@ function filterRowsByUserId(sheet, userId) {
   return rows.slice(1).filter(function(r){ return String(r[0]) === String(userId); });
 }
 
+function nowJstTs() {
+  return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+}
+
 // =====================================================================
 // B. doGet
 // =====================================================================
@@ -124,6 +129,8 @@ function doPost(e) {
       case 'updateSettings':        return updateSettings(body);
       case 'resetStatus':           return resetStatus(body);
       case 'updateTechniqueRating': return updateTechniqueRating(body);
+      case 'saveTask':              return saveTask(body);
+      case 'completeTask':          return completeTask(body);
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -376,6 +383,10 @@ function getDashboard(params) {
   var titleMaster   = getTitleMasterData(ss);
   var epithetMaster = getEpithetMasterData(ss);
 
+  // ── user_tasks ───────────────────────────────────────────────────────
+  var tasks = getUserTasks(ss, userId);
+  // ─────────────────────────────────────────────────────────────────────
+
   // ── xp_history（イベントソーシング用）直近90件を返す ──────────────
   // 列構成: user_id(0), date(1), type(2), amount(3), reason(4), total_xp_after(5), level(6), title(7)
   var xpHistSheet = ss.getSheetByName(SHEET_XP_HIST);
@@ -403,7 +414,92 @@ function getDashboard(params) {
     status, settings, logs, nextLevelXp,
     decay: decayResult, titleMaster, epithetMaster,
     xpHistory,
+    tasks,
   });
+}
+
+// =====================================================================
+// H2. user_tasks
+// 列: id(0), user_id(1), task_text(2), status(3), created_at(4), updated_at(5)
+// =====================================================================
+
+function getUserTasksSheet(ss) {
+  var sheet = ss.getSheetByName(SHEET_USER_TASKS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_USER_TASKS);
+    sheet.appendRow(['id', 'user_id', 'task_text', 'status', 'created_at', 'updated_at']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.setFrozenRows(1);
+    gasLog('INFO', 'getUserTasksSheet', 'user_tasks シートを自動作成しました');
+  }
+  return sheet;
+}
+
+function getUserTasks(ss, userId) {
+  var sheet = getUserTasksSheet(ss);
+  var rows = sheet.getDataRange().getValues();
+  return rows.slice(1)
+    .filter(function(r) { return String(r[1]) === String(userId); })
+    .map(function(r) {
+      return {
+        id: String(r[0] || ''),
+        task_text: String(r[2] || ''),
+        status: String(r[3] || ''),
+        created_at: String(r[4] || ''),
+        updated_at: String(r[5] || ''),
+      };
+    })
+    .filter(function(t) { return t.id && t.task_text; });
+}
+
+function saveTask(body) {
+  var userId = body.user_id;
+  var taskText = body.task_text;
+  if (!userId) return createError('user_id は必須です', 400);
+  if (!taskText || String(taskText).trim() === '') return createError('task_text は必須です', 400);
+
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = getUserTasksSheet(ss);
+  var rows = sheet.getDataRange().getValues();
+  var ts = nowJstTs();
+
+  // 既存の active を completed に
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[1]) === String(userId) && String(r[3]) === 'active') {
+      sheet.getRange(i + 1, 4).setValue('completed'); // status
+      sheet.getRange(i + 1, 6).setValue(ts);          // updated_at
+    }
+  }
+
+  var newId = Utilities.getUuid();
+  sheet.appendRow([newId, userId, String(taskText).trim(), 'active', ts, ts]);
+  gasLog('INFO', 'saveTask', 'task saved user=' + userId, { id: newId });
+  return createResponse({ id: String(newId) });
+}
+
+function completeTask(body) {
+  var userId = body.user_id;
+  var taskId = body.task_id;
+  if (!userId) return createError('user_id は必須です', 400);
+  if (!taskId) return createError('task_id は必須です', 400);
+
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = getUserTasksSheet(ss);
+  var rows = sheet.getDataRange().getValues();
+  var ts = nowJstTs();
+
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[0]) === String(taskId) && String(r[1]) === String(userId)) {
+      sheet.getRange(i + 1, 4).setValue('completed'); // status
+      sheet.getRange(i + 1, 6).setValue(ts);          // updated_at
+      gasLog('INFO', 'completeTask', 'task completed user=' + userId, { id: taskId });
+      return createResponse({ id: String(taskId) });
+    }
+  }
+
+  return createError('task が見つかりません', 404);
 }
 
 // =====================================================================
