@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { TrendingUp, Flame, RotateCcw, Loader2, TrendingDown } from 'lucide-react';
+import { TrendingUp, Flame, RotateCcw, Loader2, TrendingDown, UserRoundPen } from 'lucide-react';
 import type { DashboardData, EpithetMasterEntry, Technique, UserTask } from '@/types';
 import {
   calcLevelFromXp, calcProgressPercent, calcNextLevel,
@@ -9,6 +9,7 @@ import {
 } from '@/types';
 import { fetchDashboard, fetchTechniques, resetStatus } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
+import { getAuthUser } from '@/lib/auth';
 import dynamic from 'next/dynamic';
 
 const RadarChart       = dynamic(() => import('@/components/charts/RadarChart'),       { ssr: false });
@@ -26,6 +27,7 @@ export default function DashboardPage() {
   const [error, setError]           = useState<string | null>(null);
   const [resetting, setReset]       = useState(false);
   const [showReset, setShowReset]   = useState(false);
+  const user = getAuthUser();
 
   const load = () => {
     setLoading(true);
@@ -54,6 +56,7 @@ export default function DashboardPage() {
   const nextTitle   = nextTitleLevel(level, tm);
   const color       = levelColor(level);
   const epithet     = calcEpithet(techniques, em);
+  const realRankLabel = status.real_rank ? status.real_rank : '無段';
 
   // 統計
   const today = new Date(); today.setHours(0,0,0,0);
@@ -161,6 +164,40 @@ export default function DashboardPage() {
         background:'linear-gradient(135deg,#1e1b4b 0%,#2d2666 100%)',
         border:'1px solid rgba(129,140,248,0.2)',
       }}>
+        {/* 名前 + リアル段位 + 編集 */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:'0.65rem' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+            <span style={{ fontSize:'0.78rem', fontWeight:800, color:'rgba(226,232,240,0.92)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {user?.name ?? '剣士'}
+            </span>
+            <span style={{
+              fontSize:'0.62rem', fontWeight:900,
+              padding:'0.15rem 0.5rem', borderRadius:999,
+              background:'rgba(255,255,255,0.08)',
+              border:'1px solid rgba(199,210,254,0.22)',
+              color:'rgba(199,210,254,0.78)',
+              whiteSpace:'nowrap',
+            }}>
+              リアル: {realRankLabel}
+            </span>
+          </div>
+          <a
+            href="/settings/profile"
+            style={{
+              width:34, height:34, borderRadius:12,
+              display:'flex', alignItems:'center', justifyContent:'center',
+              background:'rgba(255,255,255,0.06)',
+              border:'1px solid rgba(199,210,254,0.18)',
+              color:'rgba(199,210,254,0.8)',
+              textDecoration:'none',
+              flexShrink:0,
+            }}
+            title="プロフィールを編集"
+          >
+            <UserRoundPen style={{ width:16, height:16 }} />
+          </a>
+        </div>
+
         {/* 二つ名 + 称号 */}
         <div style={{ marginBottom:'0.85rem' }}>
           <span style={{ fontSize:'0.82rem', fontWeight:600, color:'#a5b4fc', letterSpacing:'0.06em', display:'block', lineHeight:1.3 }}>
@@ -173,6 +210,22 @@ export default function DashboardPage() {
             {epithet.description}
           </span>
         </div>
+
+        {/* 座右の銘 */}
+        {status.motto && status.motto.trim() !== '' && (
+          <p
+            className="font-serif italic"
+            style={{
+              margin:'-0.25rem 0 0.9rem',
+              color:'rgba(226,232,240,0.92)',
+              fontWeight:800,
+              letterSpacing:'0.06em',
+              textShadow:'0 1px 10px rgba(0,0,0,0.35)',
+            }}
+          >
+            「{status.motto}」
+          </p>
+        )}
 
         {/* XP + プログレス */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.6rem' }}>

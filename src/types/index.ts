@@ -19,6 +19,9 @@ export interface UserStatus {
   level:    number;
   title:    string;
   last_practice_date?: string | null; // 👈 この1行を追加！
+  real_rank?: string;
+  motto?: string;
+  favorite_technique?: string;
 }
 
 export interface NextLevelInfo {

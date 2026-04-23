@@ -127,6 +127,7 @@ function doPost(e) {
       case 'login':                 return login(body);
       case 'saveLog':               return saveLog(body);
       case 'updateSettings':        return updateSettings(body);
+      case 'updateProfile':         return updateProfile(body);
       case 'resetStatus':           return resetStatus(body);
       case 'updateTechniqueRating': return updateTechniqueRating(body);
       case 'updateTasks':           return updateTasks(body);
@@ -273,16 +274,23 @@ function saveLog(body) {
 
   var BASE_XP     = 50;
   var SCORE_BONUS = { 5:30, 4:20, 3:10, 2:5, 1:2 };
-  var totalXp     = BASE_XP;
+  var baseXp      = BASE_XP;
 
   items.forEach(function(item){
     var bonus = SCORE_BONUS[item.score] || 0;
-    totalXp += bonus;
+    baseXp += bonus;
     logSheet.appendRow([userId, date, item.item_name, item.score, bonus]);
   });
 
-  // user_status 更新
+  // 段位倍率（リアル段位）
+  // user_status列構成: user_id(0), total_xp(1), level(2), title(3), last_practice_date(4), last_decay_date(5), real_rank(6), motto(7), favorite_technique(8)
   var statRows  = filterRowsByUserId(statSheet, userId);
+  var realRank  = (statRows.length > 0) ? String(statRows[0][6] || '') : '';
+  var MULTI     = { '初段':1.2, '弐段':1.5, '参段':1.8, '四段':2.2, '五段':2.7, '六段':3.4, '七段':4.2, '八段':5.0 };
+  var mult      = MULTI[realRank] || 1.0;
+  var totalXp   = Math.ceil(baseXp * mult);
+
+  // user_status 更新
   var hasRow    = statRows.length > 0;
   var currentXp = hasRow ? (parseInt(statRows[0][1]) || 0) : 0;
   var newXp     = currentXp + totalXp;
@@ -300,11 +308,78 @@ function saveLog(body) {
       }
     }
   } else {
-    statSheet.appendRow([userId, newXp, newLevel, newTitle, today, today]);
+    statSheet.appendRow([userId, newXp, newLevel, newTitle, today, today, '', '', '']);
   }
 
   writeXpHistory(ss, userId, 'gain', totalXp, '稽古記録（' + date + '・' + items.length + '項目）', newXp, newLevel, newTitle);
   return createResponse({ xp_earned: totalXp, total_xp: newXp, level: newLevel, title: newTitle });
+}
+
+// =====================================================================
+// F2. profile（user_status 拡張）
+// =====================================================================
+
+function updateProfile(body) {
+  var userId = body.user_id;
+  if (!userId) return createError('user_id は必須です', 400);
+
+  var realRank = body.real_rank;
+  var motto    = body.motto;
+  var favTech  = body.favorite_technique;
+
+  // バリデーション（送られてきた項目のみ）
+  var allowed = ['無段','初段','弐段','参段','四段','五段','六段','七段','八段',''];
+  if (realRank !== undefined && realRank !== null) {
+    realRank = String(realRank).trim();
+    if (realRank === '無段') realRank = ''; // 無段は未設定扱い（倍率1.0）
+    if (allowed.indexOf(realRank) === -1) return createError('real_rank が不正です', 400);
+  }
+  if (motto !== undefined && motto !== null) {
+    motto = String(motto).trim();
+    if (motto.length > 20) motto = motto.slice(0, 20);
+  }
+  if (favTech !== undefined && favTech !== null) {
+    favTech = String(favTech).trim();
+    if (favTech.length > 30) favTech = favTech.slice(0, 30);
+  }
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(SHEET_STATUS);
+  if (!sheet) return createError('user_status シートが存在しません', 500);
+
+  var rows   = sheet.getDataRange().getValues();
+  var rowIdx = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(userId)) { rowIdx = i; break; }
+  }
+
+  var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  var current;
+  if (rowIdx === -1) {
+    // 初回ユーザーは最低限のstatus行を作る
+    current = [userId, 0, 1, '入門', '', today, '', '', ''];
+    sheet.appendRow(current);
+    rowIdx = rows.length; // append後のインデックス（ヘッダー込み rows.length）
+  } else {
+    current = rows[rowIdx];
+    // 9列未満なら拡張
+    while (current.length < 9) current.push('');
+  }
+
+  // 列: 7=real_rank, 8=motto, 9=favorite_technique
+  if (realRank !== undefined && realRank !== null) current[6] = realRank;
+  if (motto    !== undefined && motto    !== null) current[7] = motto;
+  if (favTech  !== undefined && favTech  !== null) current[8] = favTech;
+
+  sheet.getRange(rowIdx + 1, 1, 1, 9).setValues([[
+    current[0], current[1], current[2], current[3], current[4], current[5],
+    current[6], current[7], current[8],
+  ]]);
+
+  gasLog('INFO', 'updateProfile', 'profile updated user=' + userId, {
+    real_rank: current[6], motto: current[7], favorite_technique: current[8],
+  });
+  return createResponse({ updated: true });
 }
 
 // =====================================================================
@@ -326,6 +401,9 @@ function getUserStatus(params) {
   return createResponse({
     total_xp: parseInt(row[1]) || 0, level: parseInt(row[2]) || 1,
     title: String(row[3]) || '入門', last_practice_date: String(row[4] || ''),
+    real_rank: String(row[6] || ''),
+    motto: String(row[7] || ''),
+    favorite_technique: String(row[8] || ''),
   });
 }
 
@@ -338,7 +416,7 @@ function resetStatus(body) {
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
   deleteRowsByUserId(sheet, userId);
-  sheet.appendRow([userId, 0, 1, '入門', '', today]);
+  sheet.appendRow([userId, 0, 1, '入門', '', today, '', '', '']);
 
   writeXpHistory(ss, userId, 'reset', 0, 'レベルリセット', 0, 1, '入門');
   gasLog('INFO', 'resetStatus', 'リセット: ' + userId);
@@ -363,8 +441,9 @@ function getDashboard(params) {
   var statRows = statSheet ? filterRowsByUserId(statSheet, userId) : [];
   var status   = statRows.length > 0
     ? { total_xp: parseInt(statRows[0][1])||0, level: parseInt(statRows[0][2])||1,
-        title: String(statRows[0][3])||'入門', last_practice_date: String(statRows[0][4]||'') }
-    : { total_xp:0, level:1, title:'入門', last_practice_date:'' };
+        title: String(statRows[0][3])||'入門', last_practice_date: String(statRows[0][4]||''),
+        real_rank: String(statRows[0][6]||''), motto: String(statRows[0][7]||''), favorite_technique: String(statRows[0][8]||'') }
+    : { total_xp:0, level:1, title:'入門', last_practice_date:'', real_rank:'', motto:'', favorite_technique:'' };
 
   var setRows  = setSheet ? filterRowsByUserId(setSheet, userId) : [];
   var settings = setRows.map(function(r){

@@ -157,6 +157,10 @@ export async function resetStatus(): Promise<{ total_xp: number; level: number; 
   return gasPost<{ total_xp: number; level: number; title: string }>({ action: 'resetStatus' });
 }
 
+export async function updateProfile(data: { real_rank?: string; motto?: string; favorite_technique?: string }): Promise<{ updated: boolean }> {
+  return gasPost<{ updated: boolean }>({ action: 'updateProfile', ...data });
+}
+
 // =====================================================================
 // TechniqueMastery
 // =====================================================================
