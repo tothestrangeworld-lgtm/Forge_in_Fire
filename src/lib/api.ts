@@ -7,6 +7,7 @@
 import type {
   DashboardData,
   EpithetMasterEntry,
+  EvaluatePeerResponse,
   GASResponse,
   SaveLogPayload,
   SaveLogResponse,
@@ -189,6 +190,23 @@ export async function updateTechniqueRating(id: string, rating: number): Promise
 export async function updateTasks(tasks: string[]): Promise<{ active_count: number }> {
   logger.info('api', '評価項目をまとめて更新', { detail: { count: tasks.length } });
   return gasPost<{ active_count: number }>({ action: 'updateTasks', tasks });
+}
+
+// =====================================================================
+// 他者評価 ★ NEW
+// =====================================================================
+
+/**
+ * 対象ユーザーを評価する（1日1回制限）。
+ * 評価者のアプリ内レベルに応じた倍率が基本XP（10）に乗算され、対象者に付与される。
+ *
+ * @param targetId 評価対象のユーザーID
+ * @returns 付与XP・評価者レベル・倍率
+ * @throws 当日すでに評価済みの場合、GASが 429 エラーを返しスローされる
+ */
+export async function evaluatePeer(targetId: string): Promise<EvaluatePeerResponse> {
+  logger.info('api', `他者評価送信: target=${targetId}`);
+  return gasPost<EvaluatePeerResponse>({ action: 'evaluatePeer', target_id: targetId });
 }
 
 // =====================================================================

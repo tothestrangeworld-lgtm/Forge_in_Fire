@@ -18,7 +18,7 @@ export interface UserStatus {
   total_xp: number;
   level:    number;
   title:    string;
-  last_practice_date?: string | null; // 👈 この1行を追加！
+  last_practice_date?: string | null;
   real_rank?: string;
   motto?: string;
   favorite_technique?: string;
@@ -48,11 +48,17 @@ export interface TitleMasterEntry {
 export interface XpHistoryEntry {
   /** 記録日（タイムスタンプの日付部分）"YYYY-MM-DD" */
   date:           string;
-  /** イベント種別 */
-  type:           'gain' | 'decay' | 'reset' | string;
+  /**
+   * イベント種別
+   * 'gain'      : 自己稽古記録
+   * 'decay'     : XP減衰
+   * 'reset'     : レベルリセット
+   * 'peer_eval' : 他者からの評価 ★ NEW
+   */
+  type:           'gain' | 'decay' | 'reset' | 'peer_eval' | string;
   /** XP増減量。獲得は正値、減衰・リセットはマイナス値または 0 */
   amount:         number;
-  /** 理由テキスト（例: "稽古記録（4/13・9項目）", "3日間稽古なし"） */
+  /** 理由テキスト（例: "稽古記録（4/13・9項目）", "3日間稽古なし", "師範からの評価"） */
   reason:         string;
   /** イベント適用後の累積XP（グラフのY軸に直接使用） */
   total_xp_after: number;
@@ -98,6 +104,20 @@ export interface SaveLogResponse {
   total_xp:  number;
   level:     number;
   title:     string;
+}
+
+// =====================================================================
+// 他者評価 ★ NEW
+// =====================================================================
+
+/** evaluatePeer API のレスポンス */
+export interface EvaluatePeerResponse {
+  /** 対象者に付与されたXP（倍率適用済み） */
+  xp_granted:      number;
+  /** 評価者のアプリ内レベル */
+  evaluator_level: number;
+  /** 適用された倍率 */
+  multiplier:      number;
 }
 
 export interface GASResponse<T> {
@@ -198,6 +218,19 @@ export function levelColor(level: number): string {
   if (level >= 20) return '#10b981';
   if (level >= 10) return '#34d399';
   return '#94a3b8';
+}
+
+// =====================================================================
+// 他者評価XP倍率（アプリ内レベル） ★ NEW
+// GAS の getPeerLevelMultiplier と同じロジック（フロント表示用）
+// =====================================================================
+export function getPeerMultiplier(level: number): number {
+  if (level >= 80) return 5.0;
+  if (level >= 60) return 3.0;
+  if (level >= 40) return 2.0;
+  if (level >= 30) return 1.5;
+  if (level >= 20) return 1.2;
+  return 1.0;
 }
 
 // =====================================================================

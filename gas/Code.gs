@@ -11,6 +11,7 @@ const SHEET_STATUS         = 'user_status';      // user_id, total_xp, level, ti
 const SHEET_TECHNIQUE      = 'TechniqueMastery'; // user_id, ID, BodyPart, ActionType, SubCategory, Name, Points, LastRating
 const SHEET_XP_HIST        = 'xp_history';       // user_id, date, type, amount, reason, total_xp_after, level, title
 const SHEET_USER_TASKS     = 'user_tasks';       // id, user_id, task_text, status, created_at, updated_at
+const SHEET_PEER_EVALS     = 'peer_evaluations'; // evaluator_id, target_id, date, xp_granted
 
 // 全ユーザー共通マスタ（user_id なし）
 const SHEET_TITLE_MASTER   = 'title_master';
@@ -132,6 +133,7 @@ function doPost(e) {
       case 'updateTechniqueRating': return updateTechniqueRating(body);
       case 'updateTasks':           return updateTasks(body);
       case 'archiveTask':           return archiveTask(body);
+      case 'evaluatePeer':          return evaluatePeer(body);
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -419,8 +421,7 @@ function resetStatus(body) {
   sheet.appendRow([userId, 0, 1, '入門', '', today, '', '', '']);
 
   writeXpHistory(ss, userId, 'reset', 0, 'レベルリセット', 0, 1, '入門');
-  gasLog('INFO', 'resetStatus', 'リセット: ' + userId);
-  return createResponse({ total_xp:0, level:1, title:'入門' });
+  return createResponse({ total_xp: 0, level: 1, title: '入門' });
 }
 
 // =====================================================================
@@ -653,6 +654,116 @@ function updateTechniqueRating(body) {
 
   gasLog('INFO', 'updateTechniqueRating', 'ID=' + id + ' user=' + userId + ' ' + currentPts + '->' + newPoints);
   return createResponse({ id: String(id), points: newPoints, lastRating: ratingNum });
+}
+
+// =====================================================================
+// I2. 他者評価（peer_evaluations）
+// 列: evaluator_id(0), target_id(1), date(2), xp_granted(3)
+// =====================================================================
+
+/**
+ * 評価者のアプリ内レベルに応じたXP倍率を返す
+ * Lv1〜19:×1.0 / Lv20〜29:×1.2 / Lv30〜39:×1.5 / Lv40〜59:×2.0 / Lv60〜79:×3.0 / Lv80〜99:×5.0
+ */
+function getPeerLevelMultiplier(level) {
+  if (level >= 80) return 5.0;
+  if (level >= 60) return 3.0;
+  if (level >= 40) return 2.0;
+  if (level >= 30) return 1.5;
+  if (level >= 20) return 1.2;
+  return 1.0;
+}
+
+function evaluatePeer(body) {
+  var evaluatorId = body.user_id;
+  var targetId    = body.target_id;
+  if (!evaluatorId) return createError('user_id は必須です', 400);
+  if (!targetId)    return createError('target_id は必須です', 400);
+  if (String(evaluatorId) === String(targetId)) {
+    return createError('自分自身を評価することはできません', 400);
+  }
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+
+  // ── 1日1回レートリミット ─────────────────────────────────────────
+  var peSheet = ss.getSheetByName(SHEET_PEER_EVALS);
+  if (!peSheet) return createError('peer_evaluations シートが存在しません。管理者に連絡してください。', 500);
+
+  var peRows = peSheet.getDataRange().getValues();
+  for (var i = 1; i < peRows.length; i++) {
+    var pe = peRows[i];
+    if (String(pe[0]) === String(evaluatorId) &&
+        String(pe[1]) === String(targetId) &&
+        toDateStr(pe[2]) === today) {
+      return createError('本日はすでにこのユーザーを評価済みです', 429);
+    }
+  }
+
+  // ── 評価者レベル取得 ────────────────────────────────────────────
+  var statSheet = ss.getSheetByName(SHEET_STATUS);
+  if (!statSheet) return createError('user_status シートが存在しません', 500);
+
+  var evalRows  = filterRowsByUserId(statSheet, evaluatorId);
+  var evalLevel = evalRows.length > 0 ? (parseInt(evalRows[0][2]) || 1) : 1;
+  var mult      = getPeerLevelMultiplier(evalLevel);
+  var BASE_XP   = 10;
+  var xpGranted = Math.ceil(BASE_XP * mult);
+
+  // ── 評価者名の取得（xp_history の reason に使用） ──────────────
+  var umSheet  = ss.getSheetByName(SHEET_USER_MASTER);
+  var evalName = String(evaluatorId);
+  if (umSheet) {
+    var umRows = umSheet.getDataRange().getValues();
+    for (var j = 1; j < umRows.length; j++) {
+      if (String(umRows[j][0]) === String(evaluatorId)) {
+        evalName = String(umRows[j][1] || evaluatorId);
+        break;
+      }
+    }
+  }
+
+  // ── 対象者の user_status を更新 ──────────────────────────────────
+  var targetRows = filterRowsByUserId(statSheet, targetId);
+  var hasTarget  = targetRows.length > 0;
+  var currentXp  = hasTarget ? (parseInt(targetRows[0][1]) || 0) : 0;
+  var newXp      = currentXp + xpGranted;
+  var titleMD    = getTitleMasterData(ss);
+  var newLevel   = calcLevel(newXp);
+  var newTitle   = calcTitleFromMaster(newLevel, titleMD);
+
+  if (hasTarget) {
+    // XP・レベル・称号のみ更新。last_practice_date 等はそのまま残す
+    var allStatRows = statSheet.getDataRange().getValues();
+    for (var r = allStatRows.length; r >= 2; r--) {
+      if (String(allStatRows[r-1][0]) === String(targetId)) {
+        statSheet.getRange(r, 2).setValue(newXp);    // B: total_xp
+        statSheet.getRange(r, 3).setValue(newLevel);  // C: level
+        statSheet.getRange(r, 4).setValue(newTitle);  // D: title
+        break;
+      }
+    }
+  } else {
+    // 対象者のステータス行がまだ存在しない場合は初期行を追加
+    var todayStr = today;
+    statSheet.appendRow([targetId, newXp, newLevel, newTitle, '', todayStr, '', '', '']);
+  }
+
+  // ── peer_evaluations に記録 ──────────────────────────────────────
+  peSheet.appendRow([evaluatorId, targetId, nowJstTs(), xpGranted]);
+
+  // ── xp_history に記録 ────────────────────────────────────────────
+  writeXpHistory(ss, targetId, 'peer_eval', xpGranted, evalName + 'からの評価', newXp, newLevel, newTitle);
+
+  gasLog('INFO', 'evaluatePeer',
+    'evaluator=' + evaluatorId + '(' + evalLevel + ') -> target=' + targetId + ' +' + xpGranted + 'XP(×' + mult + ')',
+    { evalName: evalName, newLevel: newLevel });
+
+  return createResponse({
+    xp_granted:      xpGranted,
+    evaluator_level: evalLevel,
+    multiplier:      mult,
+  });
 }
 
 // =====================================================================

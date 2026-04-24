@@ -4,9 +4,10 @@
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Swords, Star, TrendingUp, Trophy, Calendar } from 'lucide-react';
-import { fetchDashboard, fetchTechniques, fetchUsers } from '@/lib/api';
+import { ArrowLeft, Swords, Star, TrendingUp, Trophy, Calendar, ThumbsUp, CheckCircle } from 'lucide-react';
+import { fetchDashboard, fetchTechniques, fetchUsers, evaluatePeer } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
+import { getCurrentUserId } from '@/lib/auth';
 import type { DashboardData, Technique, UserTask } from '@/types';
 
 export const runtime = 'edge';
@@ -43,6 +44,12 @@ export default function RivalDashboardPage({
   const [error,       setError]       = useState('');
   const [mounted,     setMounted]     = useState(false);
 
+  // ---- 他者評価ボタン用ステート ----
+  const [evalLoading,  setEvalLoading]  = useState(false);
+  const [evalResult,   setEvalResult]   = useState<{ xp: number; mult: number } | null>(null);
+  const [evalError,    setEvalError]    = useState('');
+  const [evalDone,     setEvalDone]     = useState(false);
+
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
@@ -69,6 +76,34 @@ export default function RivalDashboardPage({
 
     load();
   }, [targetId]);
+
+  // =====================================================================
+  // 他者評価ハンドラ
+  // =====================================================================
+  const handleEvaluate = async () => {
+    if (evalLoading || evalDone) return;
+    setEvalLoading(true);
+    setEvalError('');
+    setEvalResult(null);
+    try {
+      const res = await evaluatePeer(targetId);
+      setEvalResult({ xp: res.xp_granted, mult: res.multiplier });
+      setEvalDone(true);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if (err.message.includes('すでに評価済み') || err.message.includes('already')) {
+          setEvalError('本日はすでにこのユーザーを評価しました');
+          setEvalDone(true);
+        } else {
+          setEvalError('評価の送信に失敗しました。もう一度お試しください。');
+        }
+      } else {
+        setEvalError('評価の送信に失敗しました。もう一度お試しください。');
+      }
+    } finally {
+      setEvalLoading(false);
+    }
+  };
 
   // =====================================================================
   // ローディング
@@ -107,6 +142,8 @@ export default function RivalDashboardPage({
 
   const { status, logs, xpHistory, epithetMaster, settings } = dashboard;
   const activeTask: UserTask | null = (dashboard.tasks ?? []).find(t => t.status === 'active') ?? null;
+  const myUserId = getCurrentUserId();
+
   // 稽古評価レーダー用（page.tsxから移植）
   const activeItems = settings.filter(s => s.is_active).map(s => s.item_name);
   const totals: Record<string, { sum: number; count: number }> = {};
@@ -130,6 +167,9 @@ export default function RivalDashboardPage({
   const progressXp     = status.total_xp - currentLevelXp;
   const rangeXp        = nextLevelXp - currentLevelXp;
   const progressPct    = rangeXp > 0 ? Math.min(100, Math.round((progressXp / rangeXp) * 100)) : 100;
+
+  // 自分自身のページでは評価ボタンを非表示
+  const isSelf = myUserId === targetId;
 
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 90 }}>
@@ -262,7 +302,9 @@ export default function RivalDashboardPage({
           )}
         </div>
 
-        {/* ======================= 現在の課題（閲覧専用） ======================= */}
+        {/* =====================================================================
+            現在の課題 + 他者評価ボタン
+        ===================================================================== */}
         <div className="wa-card" style={{
           background: 'linear-gradient(135deg, rgba(13,11,42,0.92), rgba(30,27,75,0.82))',
           border: '1px solid rgba(139,92,246,0.25)',
@@ -270,14 +312,17 @@ export default function RivalDashboardPage({
           padding: '14px 12px',
           marginBottom: 14,
         }}>
+          {/* ヘッダー行 */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
             <div>
               <span style={{ fontSize: 12, fontWeight: 800, color: '#c4b5fd', letterSpacing: '0.06em' }}>
                 現在の課題
               </span>
-              <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.35)', marginTop: 2 }}>
-                READ ONLY
-              </div>
+              {isSelf && (
+                <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.35)', marginTop: 2 }}>
+                  READ ONLY
+                </div>
+              )}
             </div>
             <span style={{
               fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
@@ -292,6 +337,7 @@ export default function RivalDashboardPage({
             </span>
           </div>
 
+          {/* 課題テキスト */}
           {activeTask ? (
             <>
               <p style={{
@@ -312,6 +358,112 @@ export default function RivalDashboardPage({
             <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'rgba(199,210,254,0.55)' }}>
               課題はまだ設定されていません
             </p>
+          )}
+
+          {/* ── 他者評価ボタン（自分自身のページでは非表示） ── */}
+          {!isSelf && (
+            <div style={{ marginTop: 14 }}>
+              {/* 成功フィードバック */}
+              {evalResult && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 12px',
+                  background: 'rgba(34,197,94,0.1)',
+                  border: '1px solid rgba(34,197,94,0.3)',
+                  borderRadius: 10,
+                  marginBottom: 10,
+                }}>
+                  <CheckCircle style={{ width: 16, height: 16, color: '#86efac', flexShrink: 0 }} />
+                  <div>
+                    <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#86efac' }}>
+                      評価を送りました！
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(134,239,172,0.7)' }}>
+                      {targetName} に +{evalResult.xp} XP（×{evalResult.mult} 倍率）
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* エラーフィードバック */}
+              {evalError && !evalResult && (
+                <div style={{
+                  padding: '8px 12px',
+                  background: 'rgba(239,68,68,0.1)',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: 10,
+                  marginBottom: 10,
+                }}>
+                  <p style={{ margin: 0, fontSize: 12, color: '#fca5a5' }}>{evalError}</p>
+                </div>
+              )}
+
+              {/* 評価ボタン */}
+              <button
+                onClick={handleEvaluate}
+                disabled={evalLoading || evalDone || !activeTask}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  padding: '12px 16px',
+                  borderRadius: 12,
+                  border: evalDone
+                    ? '1px solid rgba(34,197,94,0.3)'
+                    : activeTask
+                      ? '1px solid rgba(139,92,246,0.5)'
+                      : '1px solid rgba(100,100,120,0.3)',
+                  background: evalDone
+                    ? 'rgba(34,197,94,0.08)'
+                    : activeTask
+                      ? 'linear-gradient(135deg, rgba(109,40,217,0.3), rgba(139,92,246,0.2))'
+                      : 'rgba(30,27,75,0.4)',
+                  color: evalDone
+                    ? '#86efac'
+                    : activeTask
+                      ? '#c4b5fd'
+                      : 'rgba(199,210,254,0.35)',
+                  fontSize: 13,
+                  fontWeight: 800,
+                  letterSpacing: '0.05em',
+                  cursor: (evalLoading || evalDone || !activeTask) ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  opacity: evalLoading ? 0.7 : 1,
+                }}
+              >
+                {evalLoading ? (
+                  <>
+                    <div style={{
+                      width: 14, height: 14, borderRadius: '50%',
+                      border: '2px solid rgba(167,139,250,0.3)',
+                      borderTopColor: '#a78bfa',
+                      animation: 'spin 0.7s linear infinite',
+                      flexShrink: 0,
+                    }} />
+                    送信中…
+                  </>
+                ) : evalDone ? (
+                  <>
+                    <CheckCircle style={{ width: 15, height: 15 }} />
+                    本日の評価送信済み
+                  </>
+                ) : (
+                  <>
+                    <ThumbsUp style={{ width: 15, height: 15 }} />
+                    {activeTask ? `「${activeTask.task_text.slice(0, 12)}${activeTask.task_text.length > 12 ? '…' : ''}」の取り組みを評価する` : '課題が設定されていません'}
+                  </>
+                )}
+              </button>
+
+              {/* 課題がない場合の補足テキスト */}
+              {!activeTask && (
+                <p style={{ margin: '6px 0 0', fontSize: 10, color: 'rgba(199,210,254,0.3)', textAlign: 'center' }}>
+                  課題が設定されると評価できるようになります
+                </p>
+              )}
+            </div>
           )}
         </div>
 
