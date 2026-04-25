@@ -1,19 +1,21 @@
 // =====================================================================
 // 百錬自得 - Google Apps Script バックエンド（マルチユーザー対応版）
+// ★ 改修2: technique_master / user_techniques への移行 + getDashboard に techniqueMaster 追加
 // =====================================================================
 
 const SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
 
 // ユーザー固有シート（A列 = user_id）
-const SHEET_SETTINGS       = 'settings';        // user_id, item_name, is_active
-const SHEET_LOGS           = 'logs';             // user_id, date, item_name, score, xp_earned
-const SHEET_STATUS         = 'user_status';      // user_id, total_xp, level, title, last_practice_date, last_decay_date
-const SHEET_TECHNIQUE      = 'TechniqueMastery'; // user_id, ID, BodyPart, ActionType, SubCategory, Name, Points, LastRating
-const SHEET_XP_HIST        = 'xp_history';       // user_id, date, type, amount, reason, total_xp_after, level, title
-const SHEET_USER_TASKS     = 'user_tasks';       // id, user_id, task_text, status, created_at, updated_at
-const SHEET_PEER_EVALS     = 'peer_evaluations'; // evaluator_id, target_id, date, xp_granted
+const SHEET_SETTINGS        = 'settings';           // user_id, item_name, is_active
+const SHEET_LOGS            = 'logs';               // user_id, date, item_name, score, xp_earned
+const SHEET_STATUS          = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
+const SHEET_XP_HIST         = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
+const SHEET_USER_TASKS      = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
+const SHEET_PEER_EVALS      = 'peer_evaluations';   // evaluator_id, target_id, date, xp_granted
+const SHEET_USER_TECHNIQUES = 'user_techniques';    // user_id, technique_id, Points, LastRating  ★ NEW
 
 // 全ユーザー共通マスタ（user_id なし）
+const SHEET_TECH_MASTER    = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name  ★ NEW
 const SHEET_TITLE_MASTER   = 'title_master';
 const SHEET_EPITHET_MASTER = 'EpithetMaster';
 const SHEET_USER_MASTER    = 'UserMaster';
@@ -39,15 +41,15 @@ function createError(message, code) {
 
 function gasLog(level, action, message, detail) {
   try {
-    const ss   = SpreadsheetApp.openById(SPREADSHEET_ID);
-    let sheet  = ss.getSheetByName(SHEET_ERRORLOGS);
+    var ss   = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_ERRORLOGS);
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_ERRORLOGS);
       sheet.appendRow(['timestamp', 'level', 'action', 'message', 'detail']);
       sheet.getRange(1,1,1,5).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
       sheet.setFrozenRows(1);
     }
-    const ts = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    var ts = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
     sheet.appendRow([ts, level, action, message, detail ? JSON.stringify(detail).slice(0,500) : '']);
     if (sheet.getLastRow() > 1001) sheet.deleteRows(2, 50);
   } catch(e) { console.error('gasLog failed:', e); }
@@ -55,14 +57,14 @@ function gasLog(level, action, message, detail) {
 
 function writeXpHistory(ss, userId, type, amount, reason, totalXpAfter, level, title) {
   try {
-    let sheet = ss.getSheetByName(SHEET_XP_HIST);
+    var sheet = ss.getSheetByName(SHEET_XP_HIST);
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_XP_HIST);
       sheet.appendRow(['user_id', 'date', 'type', 'amount', 'reason', 'total_xp_after', 'level', 'title']);
       sheet.getRange(1,1,1,8).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
       sheet.setFrozenRows(1);
     }
-    const ts = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+    var ts = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
     sheet.appendRow([userId, ts, type, amount, reason, totalXpAfter, level, title]);
   } catch(e) { console.error('writeXpHistory failed:', e); }
 }
@@ -72,7 +74,7 @@ function writeXpHistory(ss, userId, type, amount, reason, totalXpAfter, level, t
  * sheet.clearContents() は絶対に使わない
  */
 function deleteRowsByUserId(sheet, userId) {
-  const lastRow = sheet.getLastRow();
+  var lastRow = sheet.getLastRow();
   for (var r = lastRow; r >= 2; r--) {
     if (String(sheet.getRange(r, 1).getValue()) === String(userId)) {
       sheet.deleteRow(r);
@@ -327,9 +329,9 @@ function updateProfile(body) {
 
   var realRank = body.real_rank;
   var motto    = body.motto;
-  var favTech  = body.favorite_technique;
+  var favTech  = body.favorite_technique;  // 技ID（例: "T001"）★ UPDATED
 
-  // バリデーション（送られてきた項目のみ）
+  // バリデーション
   var allowed = ['無段','初段','弐段','参段','四段','五段','六段','七段','八段',''];
   if (realRank !== undefined && realRank !== null) {
     realRank = String(realRank).trim();
@@ -341,8 +343,9 @@ function updateProfile(body) {
     if (motto.length > 20) motto = motto.slice(0, 20);
   }
   if (favTech !== undefined && favTech !== null) {
+    // 技IDは英数字+記号のみ許可（例: T001, T999）
     favTech = String(favTech).trim();
-    if (favTech.length > 30) favTech = favTech.slice(0, 30);
+    if (favTech.length > 20) favTech = favTech.slice(0, 20);
   }
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -358,17 +361,14 @@ function updateProfile(body) {
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
   var current;
   if (rowIdx === -1) {
-    // 初回ユーザーは最低限のstatus行を作る
     current = [userId, 0, 1, '入門', '', today, '', '', ''];
     sheet.appendRow(current);
-    rowIdx = rows.length; // append後のインデックス（ヘッダー込み rows.length）
+    rowIdx = rows.length;
   } else {
     current = rows[rowIdx];
-    // 9列未満なら拡張
     while (current.length < 9) current.push('');
   }
 
-  // 列: 7=real_rank, 8=motto, 9=favorite_technique
   if (realRank !== undefined && realRank !== null) current[6] = realRank;
   if (motto    !== undefined && motto    !== null) current[7] = motto;
   if (favTech  !== undefined && favTech  !== null) current[8] = favTech;
@@ -401,11 +401,13 @@ function getUserStatus(params) {
 
   var row = rows[0];
   return createResponse({
-    total_xp: parseInt(row[1]) || 0, level: parseInt(row[2]) || 1,
-    title: String(row[3]) || '入門', last_practice_date: String(row[4] || ''),
-    real_rank: String(row[6] || ''),
-    motto: String(row[7] || ''),
-    favorite_technique: String(row[8] || ''),
+    total_xp:            parseInt(row[1]) || 0,
+    level:               parseInt(row[2]) || 1,
+    title:               String(row[3]) || '入門',
+    last_practice_date:  String(row[4] || ''),
+    real_rank:           String(row[6] || ''),
+    motto:               String(row[7] || ''),
+    favorite_technique:  String(row[8] || ''),
   });
 }
 
@@ -421,86 +423,12 @@ function resetStatus(body) {
   sheet.appendRow([userId, 0, 1, '入門', '', today, '', '', '']);
 
   writeXpHistory(ss, userId, 'reset', 0, 'レベルリセット', 0, 1, '入門');
+  gasLog('INFO', 'resetStatus', 'reset user=' + userId);
   return createResponse({ total_xp: 0, level: 1, title: '入門' });
 }
 
 // =====================================================================
-// H. getDashboard
-// =====================================================================
-
-function getDashboard(params) {
-  var userId = params.user_id;
-  if (!userId) return createError('user_id は必須です', 400);
-
-  var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var statSheet = ss.getSheetByName(SHEET_STATUS);
-  var setSheet  = ss.getSheetByName(SHEET_SETTINGS);
-  var logSheet  = ss.getSheetByName(SHEET_LOGS);
-
-  var decayResult = applyDecay(ss, userId);
-
-  var statRows = statSheet ? filterRowsByUserId(statSheet, userId) : [];
-  var status   = statRows.length > 0
-    ? { total_xp: parseInt(statRows[0][1])||0, level: parseInt(statRows[0][2])||1,
-        title: String(statRows[0][3])||'入門', last_practice_date: String(statRows[0][4]||''),
-        real_rank: String(statRows[0][6]||''), motto: String(statRows[0][7]||''), favorite_technique: String(statRows[0][8]||'') }
-    : { total_xp:0, level:1, title:'入門', last_practice_date:'', real_rank:'', motto:'', favorite_technique:'' };
-
-  var setRows  = setSheet ? filterRowsByUserId(setSheet, userId) : [];
-  var settings = setRows.map(function(r){
-    return { item_name: String(r[1]), is_active: r[2]===true||r[2]==='TRUE'||r[2]==='true' };
-  }).filter(function(r){ return r.item_name; });
-
-  var logRows = logSheet ? filterRowsByUserId(logSheet, userId) : [];
-  var logs    = logRows.map(function(r){
-    return {
-      date: r[1] ? Utilities.formatDate(new Date(r[1]),'Asia/Tokyo','yyyy-MM-dd') : '',
-      item_name: String(r[2]), score: parseInt(r[3]), xp_earned: parseInt(r[4]),
-    };
-  }).filter(function(r){ return r.date && r.item_name; });
-
-  var nextLevelXp   = calcNextLevelXp(status.total_xp);
-  var titleMaster   = getTitleMasterData(ss);
-  var epithetMaster = getEpithetMasterData(ss);
-
-  // ── user_tasks ───────────────────────────────────────────────────────
-  var tasks = getUserTasks(ss, userId);
-  // ─────────────────────────────────────────────────────────────────────
-
-  // ── xp_history（イベントソーシング用）直近90件を返す ──────────────
-  // 列構成: user_id(0), date(1), type(2), amount(3), reason(4), total_xp_after(5), level(6), title(7)
-  var xpHistSheet = ss.getSheetByName(SHEET_XP_HIST);
-  var xpHistory   = [];
-  if (xpHistSheet) {
-    var histRows = filterRowsByUserId(xpHistSheet, userId);
-    xpHistory = histRows
-      .map(function(r) {
-        return {
-          date:           r[1] ? Utilities.formatDate(new Date(r[1]), 'Asia/Tokyo', 'yyyy-MM-dd') : '',
-          type:           String(r[2] || ''),
-          amount:         Number(r[3]) || 0,
-          reason:         String(r[4] || ''),
-          total_xp_after: Number(r[5]) || 0,
-          level:          Number(r[6]) || 1,
-          title:          String(r[7] || ''),
-        };
-      })
-      .filter(function(r) { return r.date; })
-      .slice(-90); // 直近90件（約3ヶ月分）に絞る
-  }
-  // ─────────────────────────────────────────────────────────────────────
-
-  return createResponse({
-    status, settings, logs, nextLevelXp,
-    decay: decayResult, titleMaster, epithetMaster,
-    xpHistory,
-    tasks,
-  });
-}
-
-// =====================================================================
-// H2. user_tasks
-// 列: id(0), user_id(1), task_text(2), status(3), created_at(4), updated_at(5)
+// H. user_tasks
 // =====================================================================
 
 function getUserTasksSheet(ss) {
@@ -508,25 +436,26 @@ function getUserTasksSheet(ss) {
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_USER_TASKS);
     sheet.appendRow(['id', 'user_id', 'task_text', 'status', 'created_at', 'updated_at']);
-    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.getRange(1,1,1,6).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
     sheet.setFrozenRows(1);
     gasLog('INFO', 'getUserTasksSheet', 'user_tasks シートを自動作成しました');
   }
   return sheet;
 }
 
-function getUserTasks(ss, userId) {
+function getTasksData(ss, userId) {
   var sheet = getUserTasksSheet(ss);
-  var rows = sheet.getDataRange().getValues();
+  var rows  = sheet.getDataRange().getValues();
+  // 列: id(0), user_id(1), task_text(2), status(3), created_at(4), updated_at(5)
   return rows.slice(1)
-    .filter(function(r) { return String(r[1]) === String(userId); })
-    .map(function(r) {
+    .filter(function(r){ return String(r[1]) === String(userId); })
+    .map(function(r){
       return {
-        id: String(r[0] || ''),
-        task_text: String(r[2] || ''),
-        status: String(r[3] || ''),
-        created_at: String(r[4] || ''),
-        updated_at: String(r[5] || ''),
+        id:         String(r[0]),
+        task_text:  String(r[2]),
+        status:     String(r[3]),
+        created_at: r[4] ? String(r[4]).slice(0,10) : '',
+        updated_at: r[5] ? String(r[5]).slice(0,10) : '',
       };
     })
     .filter(function(t) { return t.id && t.task_text; });
@@ -534,21 +463,21 @@ function getUserTasks(ss, userId) {
 
 function updateTasks(body) {
   var userId = body.user_id;
-  var tasks = body.tasks;
+  var tasks  = body.tasks;
   if (!userId) return createError('user_id は必須です', 400);
   if (!tasks || !Array.isArray(tasks)) return createError('tasks は文字列配列で必須です', 400);
 
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = getUserTasksSheet(ss);
-  var ts = nowJstTs();
+  var ts    = nowJstTs();
 
   // 1) 既存 active を全て archived に
   var rows = sheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (String(r[1]) === String(userId) && String(r[3]) === 'active') {
-      sheet.getRange(i + 1, 4).setValue('archived'); // status
-      sheet.getRange(i + 1, 6).setValue(ts);         // updated_at
+      sheet.getRange(i + 1, 4).setValue('archived');
+      sheet.getRange(i + 1, 6).setValue(ts);
     }
   }
 
@@ -574,16 +503,16 @@ function archiveTask(body) {
   if (!userId) return createError('user_id は必須です', 400);
   if (!taskId) return createError('task_id は必須です', 400);
 
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = getUserTasksSheet(ss);
-  var rows = sheet.getDataRange().getValues();
-  var ts = nowJstTs();
+  var rows  = sheet.getDataRange().getValues();
+  var ts    = nowJstTs();
 
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (String(r[0]) === String(taskId) && String(r[1]) === String(userId)) {
-      sheet.getRange(i + 1, 4).setValue('archived'); // status
-      sheet.getRange(i + 1, 6).setValue(ts);          // updated_at
+      sheet.getRange(i + 1, 4).setValue('archived');
+      sheet.getRange(i + 1, 6).setValue(ts);
       gasLog('INFO', 'archiveTask', 'task archived user=' + userId, { id: taskId });
       return createResponse({ id: String(taskId) });
     }
@@ -593,44 +522,122 @@ function archiveTask(body) {
 }
 
 // =====================================================================
-// I. TechniqueMastery
-// 列: user_id(0), ID(1), BodyPart(2), ActionType(3), SubCategory(4), Name(5), Points(6), LastRating(7)
+// I. technique_master（全ユーザー共通マスタ）★ NEW
+// 列: ID(0), BodyPart(1), ActionType(2), SubCategory(3), Name(4)
 // =====================================================================
 
+/**
+ * technique_master シートの全件を返す。
+ * シートが存在しない場合は空配列を返す（手動移行済み前提のため自動作成しない）。
+ */
+function getTechniqueMasterData(ss) {
+  var sheet = ss.getSheetByName(SHEET_TECH_MASTER);
+  if (!sheet) return [];
+
+  var rows = sheet.getDataRange().getValues();
+  return rows.slice(1)
+    .filter(function(r){ return r[0] !== '' && r[4] !== ''; })
+    .map(function(r){
+      return {
+        id:          String(r[0]),
+        bodyPart:    String(r[1] || ''),
+        actionType:  String(r[2] || ''),
+        subCategory: String(r[3] || ''),
+        name:        String(r[4] || ''),
+      };
+    });
+}
+
+// =====================================================================
+// I2. user_techniques（ユーザーごとの習熟度）★ NEW
+// 列: user_id(0), technique_id(1), Points(2), LastRating(3)
+// =====================================================================
+
+/**
+ * getTechniques: technique_master × user_techniques を JOIN して返す。
+ * 記録がない技は Points=0, LastRating=0 として全件返す。
+ */
 function getTechniques(params) {
   var userId = params.user_id;
   if (!userId) return createError('user_id は必須です', 400);
 
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(SHEET_TECHNIQUE);
-  if (!sheet) return createResponse([]);
+  var ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var master = getTechniqueMasterData(ss);
+  if (master.length === 0) {
+    gasLog('WARN', 'getTechniques', 'technique_master シートが存在しないか空です');
+    return createResponse([]);
+  }
 
-  var rows = filterRowsByUserId(sheet, userId);
-  var techs = rows.map(function(r){
+  // user_techniques からユーザーの記録をマップ化（technique_id → {points, lastRating}）
+  var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
+  var userMap = {};
+  if (utSheet) {
+    var utRows = filterRowsByUserId(utSheet, userId);
+    // 列: user_id(0), technique_id(1), Points(2), LastRating(3)
+    utRows.forEach(function(r){
+      var tid = String(r[1]);
+      userMap[tid] = {
+        points:     Number(r[2]) || 0,
+        lastRating: Number(r[3]) || 0,
+      };
+    });
+  }
+
+  // JOIN: マスタ全件にユーザー記録をマージ
+  var techs = master.map(function(m){
+    var rec = userMap[m.id] || { points: 0, lastRating: 0 };
     return {
-      id: String(r[1]), bodyPart: String(r[2]||''), actionType: String(r[3]||''),
-      subCategory: String(r[4]||''), name: String(r[5]||''),
-      points: Number(r[6])||0, lastRating: Number(r[7])||0,
+      id:          m.id,
+      bodyPart:    m.bodyPart,
+      actionType:  m.actionType,
+      subCategory: m.subCategory,
+      name:        m.name,
+      points:      rec.points,
+      lastRating:  rec.lastRating,
     };
-  }).filter(function(t){ return t.id && t.name; });
+  });
 
   gasLog('INFO', 'getTechniques', techs.length + '件 user:' + userId);
   return createResponse(techs);
 }
 
+/**
+ * updateTechniqueRating: user_techniques シートを upsert する。
+ * レコードが存在すれば Points を加算・LastRating を更新。
+ * なければ新規行を追加。
+ */
 function updateTechniqueRating(body) {
   var userId    = body.user_id;
   var id        = body.id;
   var ratingNum = parseInt(body.rating);
 
-  if (!userId) return createError('user_id は必須です', 400);
-  if (!id)     return createError('id は必須です', 400);
+  if (!userId)  return createError('user_id は必須です', 400);
+  if (!id)      return createError('id は必須です', 400);
   if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5)
     return createError('rating は 1〜5 の整数で指定してください', 400);
 
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(SHEET_TECHNIQUE);
-  if (!sheet) return createError('TechniqueMastery シートが存在しません', 404);
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  // technique_master に存在する ID か確認
+  var master   = getTechniqueMasterData(ss);
+  var masterEntry = null;
+  for (var m = 0; m < master.length; m++) {
+    if (master[m].id === String(id)) { masterEntry = master[m]; break; }
+  }
+  if (!masterEntry) {
+    gasLog('WARN', 'updateTechniqueRating', 'technique_master に ID=' + id + ' が見つかりません');
+    return createError('technique_master に ID=' + id + ' が存在しません', 404);
+  }
+
+  // user_techniques シートを取得（なければ作成）
+  var sheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_USER_TECHNIQUES);
+    sheet.appendRow(['user_id', 'technique_id', 'Points', 'LastRating']);
+    sheet.getRange(1,1,1,4).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.setFrozenRows(1);
+    gasLog('INFO', 'updateTechniqueRating', 'user_techniques シートを自動作成しました');
+  }
 
   var rows   = sheet.getDataRange().getValues();
   var rowIdx = -1;
@@ -640,30 +647,32 @@ function updateTechniqueRating(body) {
     }
   }
 
+  var newPoints;
   if (rowIdx === -1) {
-    gasLog('WARN', 'updateTechniqueRating', 'ID=' + id + ' user=' + userId + ' 未発見');
-    return createError('user=' + userId + ' の ID=' + id + ' の技が見つかりません', 404);
+    // 新規追加
+    newPoints = ratingNum;
+    sheet.appendRow([userId, id, newPoints, ratingNum]);
+    gasLog('INFO', 'updateTechniqueRating', 'INSERT user=' + userId + ' id=' + id + ' pts=' + newPoints);
+  } else {
+    // 更新
+    var currentPts = Number(rows[rowIdx][2]) || 0;
+    newPoints = currentPts + ratingNum;
+    var sheetRow = rowIdx + 1;
+    sheet.getRange(sheetRow, 3).setValue(newPoints);
+    sheet.getRange(sheetRow, 4).setValue(ratingNum);
+    gasLog('INFO', 'updateTechniqueRating', 'UPDATE user=' + userId + ' id=' + id + ' ' + currentPts + '->' + newPoints);
   }
 
-  var sheetRow   = rowIdx + 1;
-  var currentPts = Number(rows[rowIdx][6]) || 0;
-  var newPoints  = currentPts + ratingNum;
-
-  sheet.getRange(sheetRow, 7).setValue(newPoints);
-  sheet.getRange(sheetRow, 8).setValue(ratingNum);
-
-  gasLog('INFO', 'updateTechniqueRating', 'ID=' + id + ' user=' + userId + ' ' + currentPts + '->' + newPoints);
   return createResponse({ id: String(id), points: newPoints, lastRating: ratingNum });
 }
 
 // =====================================================================
-// I2. 他者評価（peer_evaluations）
+// I3. 他者評価（peer_evaluations）
 // 列: evaluator_id(0), target_id(1), date(2), xp_granted(3)
 // =====================================================================
 
 /**
  * 評価者のアプリ内レベルに応じたXP倍率を返す
- * Lv1〜19:×1.0 / Lv20〜29:×1.2 / Lv30〜39:×1.5 / Lv40〜59:×2.0 / Lv60〜79:×3.0 / Lv80〜99:×5.0
  */
 function getPeerLevelMultiplier(level) {
   if (level >= 80) return 5.0;
@@ -686,7 +695,7 @@ function evaluatePeer(body) {
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
-  // ── 1日1回レートリミット ─────────────────────────────────────────
+  // 1日1回レートリミット
   var peSheet = ss.getSheetByName(SHEET_PEER_EVALS);
   if (!peSheet) return createError('peer_evaluations シートが存在しません。管理者に連絡してください。', 500);
 
@@ -700,7 +709,7 @@ function evaluatePeer(body) {
     }
   }
 
-  // ── 評価者レベル取得 ────────────────────────────────────────────
+  // 評価者レベル取得
   var statSheet = ss.getSheetByName(SHEET_STATUS);
   if (!statSheet) return createError('user_status シートが存在しません', 500);
 
@@ -710,7 +719,7 @@ function evaluatePeer(body) {
   var BASE_XP   = 10;
   var xpGranted = Math.ceil(BASE_XP * mult);
 
-  // ── 評価者名の取得（xp_history の reason に使用） ──────────────
+  // 評価者名（xp_history の reason に使用）
   var umSheet  = ss.getSheetByName(SHEET_USER_MASTER);
   var evalName = String(evaluatorId);
   if (umSheet) {
@@ -723,7 +732,7 @@ function evaluatePeer(body) {
     }
   }
 
-  // ── 対象者の user_status を更新 ──────────────────────────────────
+  // 対象者の user_status を更新
   var targetRows = filterRowsByUserId(statSheet, targetId);
   var hasTarget  = targetRows.length > 0;
   var currentXp  = hasTarget ? (parseInt(targetRows[0][1]) || 0) : 0;
@@ -733,26 +742,20 @@ function evaluatePeer(body) {
   var newTitle   = calcTitleFromMaster(newLevel, titleMD);
 
   if (hasTarget) {
-    // XP・レベル・称号のみ更新。last_practice_date 等はそのまま残す
     var allStatRows = statSheet.getDataRange().getValues();
     for (var r = allStatRows.length; r >= 2; r--) {
       if (String(allStatRows[r-1][0]) === String(targetId)) {
-        statSheet.getRange(r, 2).setValue(newXp);    // B: total_xp
-        statSheet.getRange(r, 3).setValue(newLevel);  // C: level
-        statSheet.getRange(r, 4).setValue(newTitle);  // D: title
+        statSheet.getRange(r, 2).setValue(newXp);
+        statSheet.getRange(r, 3).setValue(newLevel);
+        statSheet.getRange(r, 4).setValue(newTitle);
         break;
       }
     }
   } else {
-    // 対象者のステータス行がまだ存在しない場合は初期行を追加
-    var todayStr = today;
-    statSheet.appendRow([targetId, newXp, newLevel, newTitle, '', todayStr, '', '', '']);
+    statSheet.appendRow([targetId, newXp, newLevel, newTitle, '', today, '', '', '']);
   }
 
-  // ── peer_evaluations に記録 ──────────────────────────────────────
   peSheet.appendRow([evaluatorId, targetId, nowJstTs(), xpGranted]);
-
-  // ── xp_history に記録 ────────────────────────────────────────────
   writeXpHistory(ss, targetId, 'peer_eval', xpGranted, evalName + 'からの評価', newXp, newLevel, newTitle);
 
   gasLog('INFO', 'evaluatePeer',
@@ -767,7 +770,109 @@ function evaluatePeer(body) {
 }
 
 // =====================================================================
-// J. 称号マスタ（共通）
+// J. getDashboard（統合取得）
+// =====================================================================
+
+function getDashboard(params) {
+  var userId = params.user_id;
+  if (!userId) return createError('user_id は必須です', 400);
+
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  // ── 1. XP減衰を先に適用 ──
+  var decayResult = applyDecay(ss, userId);
+
+  // ── 2. user_status ──
+  var statSheet = ss.getSheetByName(SHEET_STATUS);
+  var status    = { total_xp: 0, level: 1, title: '入門', last_practice_date: '', real_rank: '', motto: '', favorite_technique: '' };
+  if (statSheet) {
+    var statRows = filterRowsByUserId(statSheet, userId);
+    if (statRows.length > 0) {
+      var sr = statRows[0];
+      status = {
+        total_xp:           parseInt(sr[1]) || 0,
+        level:              parseInt(sr[2]) || 1,
+        title:              String(sr[3]) || '入門',
+        last_practice_date: String(sr[4] || ''),
+        real_rank:          String(sr[6] || ''),
+        motto:              String(sr[7] || ''),
+        favorite_technique: String(sr[8] || ''),
+      };
+    }
+  }
+
+  // ── 3. settings（後方互換） ──
+  var settingsSheet = ss.getSheetByName(SHEET_SETTINGS);
+  var settings      = [];
+  if (settingsSheet) {
+    settings = filterRowsByUserId(settingsSheet, userId).map(function(r){
+      return { item_name: String(r[1]), is_active: r[2] === true || r[2] === 'TRUE' || r[2] === 'true' };
+    }).filter(function(r){ return r.item_name; });
+  }
+
+  // ── 4. user_tasks ──
+  var tasks = getTasksData(ss, userId);
+
+  // ── 5. logs（直近200件） ──
+  var logSheet = ss.getSheetByName(SHEET_LOGS);
+  var logs     = [];
+  if (logSheet) {
+    logs = filterRowsByUserId(logSheet, userId).map(function(r){
+      return {
+        date:      r[1] ? Utilities.formatDate(new Date(r[1]), 'Asia/Tokyo', 'yyyy-MM-dd') : '',
+        item_name: String(r[2]),
+        score:     parseInt(r[3]),
+        xp_earned: parseInt(r[4]),
+      };
+    }).filter(function(r){ return r.date && r.item_name; }).slice(-200);
+  }
+
+  // ── 6. nextLevelXp ──
+  var nextLevelXp = calcNextLevelXp(status.total_xp);
+
+  // ── 7. title_master ──
+  var titleMaster = getTitleMasterData(ss);
+
+  // ── 8. epithet_master ──
+  var epithetMaster = getEpithetMasterData(ss);
+
+  // ── 9. xp_history（直近90件） ──
+  var xpHistory = [];
+  var xpHistSheet = ss.getSheetByName(SHEET_XP_HIST);
+  if (xpHistSheet) {
+    var xpRows = filterRowsByUserId(xpHistSheet, userId);
+    xpHistory = xpRows.slice(-90).map(function(r){
+      return {
+        date:           r[1] ? String(r[1]).slice(0,10) : '',
+        type:           String(r[2] || ''),
+        amount:         Number(r[3]) || 0,
+        reason:         String(r[4] || ''),
+        total_xp_after: Number(r[5]) || 0,
+        level:          Number(r[6]) || 1,
+        title:          String(r[7] || ''),
+      };
+    }).filter(function(e){ return e.date; });
+  }
+
+  // ── 10. technique_master（全件）★ NEW ──
+  var techniqueMaster = getTechniqueMasterData(ss);
+
+  return createResponse({
+    status:          status,
+    settings:        settings,
+    tasks:           tasks,
+    logs:            logs,
+    nextLevelXp:     nextLevelXp,
+    decay:           decayResult,
+    titleMaster:     titleMaster,
+    epithetMaster:   epithetMaster,
+    xpHistory:       xpHistory,
+    techniqueMaster: techniqueMaster,
+  });
+}
+
+// =====================================================================
+// K. 称号マスタ（共通）
 // =====================================================================
 
 function getTitleMasterData(ss) {
@@ -799,7 +904,7 @@ function calcTitleFromMaster(level, master) {
 }
 
 // =====================================================================
-// K. 二つ名マスタ（共通）
+// L. 二つ名マスタ（共通）
 // =====================================================================
 
 function getEpithetMasterData(ss) {
@@ -831,7 +936,7 @@ function getEpithetMaster() {
 }
 
 // =====================================================================
-// L. レベル・XP計算
+// M. レベル・XP計算
 // =====================================================================
 
 function xpForLevel(level) {
@@ -855,7 +960,7 @@ function calcNextLevelXp(xp) {
 }
 
 // =====================================================================
-// M. XP減衰ロジック
+// N. XP減衰ロジック
 // =====================================================================
 
 function dailyPenalty(d) {
@@ -863,7 +968,6 @@ function dailyPenalty(d) {
   return Math.floor(20 * Math.pow(d - 3, 1.3));
 }
 
-// Sheetsの日付セルはDateオブジェクトで返るため、Utilities.formatDate で文字列化する
 function toDateStr(val) {
   if (!val) return '';
   try {
@@ -884,11 +988,10 @@ function applyDecay(ss, userId) {
   }
   if (rowIdx === -1) return { applied:0, days_absent:0, today_penalty:0 };
 
-  var row      = allRows[rowIdx];
-  // 列構成: user_id(0), total_xp(1), level(2), title(3), last_practice_date(4), last_decay_date(5)
+  var row        = allRows[rowIdx];
   var totalXp    = parseInt(row[1]) || 0;
-  var lastPractS = toDateStr(row[4]);   // E列: last_practice_date
-  var lastDecayS = toDateStr(row[5]);   // F列: last_decay_date
+  var lastPractS = toDateStr(row[4]);
+  var lastDecayS = toDateStr(row[5]);
   var today      = new Date(); today.setHours(0,0,0,0);
   var todayStr   = Utilities.formatDate(today, 'Asia/Tokyo', 'yyyy-MM-dd');
   var sheetRow   = rowIdx + 1;
@@ -899,24 +1002,23 @@ function applyDecay(ss, userId) {
   }
 
   // last_practice_date が空なら logs シートから自動補完
-  // logs列構成: user_id(0), date(1), item_name(2), score(3), xp_earned(4)
   var resolvedLP = lastPractS;
   if (!resolvedLP) {
     var logSheet = ss.getSheetByName(SHEET_LOGS);
     if (logSheet) {
       var logDates = filterRowsByUserId(logSheet, userId)
-        .map(function(r){ return toDateStr(r[1]); })   // B列(r[1])が date
+        .map(function(r){ return toDateStr(r[1]); })
         .filter(function(d){ return d.match(/^\d{4}-\d{2}-\d{2}$/); })
         .sort();
       if (logDates.length > 0) {
         resolvedLP = logDates[logDates.length - 1];
-        sheet.getRange(sheetRow, 5).setValue(resolvedLP);  // E列に書き戻し
+        sheet.getRange(sheetRow, 5).setValue(resolvedLP);
         gasLog('INFO', 'applyDecay', 'last_practice_date 自動補完 user:' + userId, { resolvedLP: resolvedLP });
       }
     }
   }
   if (!resolvedLP) {
-    sheet.getRange(sheetRow, 6).setValue(todayStr);  // F列
+    sheet.getRange(sheetRow, 6).setValue(todayStr);
     return { applied:0, days_absent:0, today_penalty:0 };
   }
 
@@ -945,7 +1047,6 @@ function applyDecay(ss, userId) {
   var titleMD  = getTitleMasterData(ss);
   var newTitle = calcTitleFromMaster(newLevel, titleMD);
 
-  // user_status 更新: 6列（user_id〜last_decay_date）
   sheet.getRange(sheetRow, 1, 1, 6).setValues([[userId, newXp, newLevel, newTitle, resolvedLP, todayStr]]);
   gasLog('INFO', 'applyDecay', 'user=' + userId + ' -' + totalDecay + 'XP (' + daysAbsent + '日)', { newXp: newXp });
   writeXpHistory(ss, userId, 'decay', -totalDecay, daysAbsent + '日間稽古なし', newXp, newLevel, newTitle);

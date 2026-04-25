@@ -1,5 +1,6 @@
 // =====================================================================
 // 百錬自得 - 型定義・レベル/XPロジック
+// ★ 改修2: TechniqueMasterEntry 追加、DashboardData に techniqueMaster 追加
 // =====================================================================
 
 export interface Setting {
@@ -15,12 +16,17 @@ export interface LogEntry {
 }
 
 export interface UserStatus {
-  total_xp: number;
-  level:    number;
-  title:    string;
+  total_xp:            number;
+  level:               number;
+  title:               string;
   last_practice_date?: string | null;
-  real_rank?: string;
-  motto?: string;
+  real_rank?:          string;
+  motto?:              string;
+  /**
+   * 得意技ID（例: "T001"）。
+   * ★ UPDATED: 自由記述テキストから technique_master の ID に変更。
+   * 表示時は techniqueMaster を参照して技名に変換すること。
+   */
   favorite_technique?: string;
 }
 
@@ -42,6 +48,18 @@ export interface TitleMasterEntry {
 }
 
 // =====================================================================
+// technique_master シートの1行（全ユーザー共通マスタ）★ NEW
+// GAS列構成: ID, BodyPart, ActionType, SubCategory, Name
+// =====================================================================
+export interface TechniqueMasterEntry {
+  id:          string;   // 例: "T001"
+  bodyPart:    string;   // 例: "面"
+  actionType:  string;   // 例: "仕掛け技"
+  subCategory: string;   // 例: "出端技"
+  name:        string;   // 例: "出小手"
+}
+
+// =====================================================================
 // xp_history シートの1行（イベントソーシング用）
 // GAS列構成: user_id, date, type, amount, reason, total_xp_after, level, title
 // =====================================================================
@@ -53,7 +71,7 @@ export interface XpHistoryEntry {
    * 'gain'      : 自己稽古記録
    * 'decay'     : XP減衰
    * 'reset'     : レベルリセット
-   * 'peer_eval' : 他者からの評価 ★ NEW
+   * 'peer_eval' : 他者からの評価
    */
   type:           'gain' | 'decay' | 'reset' | 'peer_eval' | string;
   /** XP増減量。獲得は正値、減衰・リセットはマイナス値または 0 */
@@ -81,16 +99,22 @@ export interface UserTask {
 }
 
 export interface DashboardData {
-  status:         UserStatus;
-  settings:       Setting[];
-  logs:           LogEntry[];
-  nextLevelXp:    NextLevelInfo;
-  decay?:         DecayInfo;
-  titleMaster?:   TitleMasterEntry[];
-  epithetMaster?: EpithetMasterEntry[];
+  status:           UserStatus;
+  settings:         Setting[];
+  logs:             LogEntry[];
+  nextLevelXp:      NextLevelInfo;
+  decay?:           DecayInfo;
+  titleMaster?:     TitleMasterEntry[];
+  epithetMaster?:   EpithetMasterEntry[];
   /** XP全イベント履歴（直近90件）。XPTimelineChart の正データソース */
-  xpHistory?:     XpHistoryEntry[];
-  tasks?:         UserTask[];
+  xpHistory?:       XpHistoryEntry[];
+  tasks?:           UserTask[];
+  /**
+   * technique_master の全件。getDashboard で返される。
+   * プロフィールの得意技ID → 技名変換や SkillGrid のハイライトに使用。
+   * ★ NEW
+   */
+  techniqueMaster?: TechniqueMasterEntry[];
 }
 
 export interface SaveLogPayload {
@@ -107,7 +131,7 @@ export interface SaveLogResponse {
 }
 
 // =====================================================================
-// 他者評価 ★ NEW
+// 他者評価
 // =====================================================================
 
 /** evaluatePeer API のレスポンス */
@@ -129,14 +153,12 @@ export interface GASResponse<T> {
 // =====================================================================
 // レベル1〜99 指数カーブXPテーブル
 // xpForLevel(n) = floor(100 * (n-1)^1.8)
-// 低レベルはサクサク、高レベルになるほど重くなる
 // =====================================================================
 export function xpForLevel(level: number): number {
   if (level <= 1) return 0;
   return Math.floor(100 * Math.pow(level - 1, 1.8));
 }
 
-// 称号はキリのいいレベルのみ（剣道にちなんだ称号）
 const TITLE_MAP: Record<number, string> = {
   1:  '入門',
   5:  '素振り',
@@ -155,7 +177,6 @@ const TITLE_MAP: Record<number, string> = {
   99: '剣道の神',
 };
 
-// 称号マスタをオブジェクト化（動的データ or ハードコードフォールバック）
 function buildTitleTable(master?: TitleMasterEntry[]): Record<number, string> {
   if (master && master.length > 0) {
     return Object.fromEntries(master.map(e => [e.level, e.title]));
@@ -163,7 +184,6 @@ function buildTitleTable(master?: TitleMasterEntry[]): Record<number, string> {
   return TITLE_MAP;
 }
 
-// 現在レベルの称号（動的マスタ対応）
 export function titleForLevel(level: number, master?: TitleMasterEntry[]): string {
   const table = buildTitleTable(master);
   let title = Object.values(table)[0] ?? '入門';
@@ -174,7 +194,6 @@ export function titleForLevel(level: number, master?: TitleMasterEntry[]): strin
   return title;
 }
 
-// 次の称号が得られるレベルと名前（動的マスタ対応）
 export function nextTitleLevel(level: number, master?: TitleMasterEntry[]): { level: number; title: string } | null {
   const table = buildTitleTable(master);
   for (const lv of Object.keys(table).map(Number).sort((a, b) => a - b)) {
@@ -183,7 +202,6 @@ export function nextTitleLevel(level: number, master?: TitleMasterEntry[]): { le
   return null;
 }
 
-// XPからレベルを計算
 export function calcLevelFromXp(xp: number): number {
   let level = 1;
   for (let n = 1; n <= 99; n++) {
@@ -193,7 +211,6 @@ export function calcLevelFromXp(xp: number): number {
   return Math.min(level, 99);
 }
 
-// 現在レベルのXP進捗率（0〜100）
 export function calcProgressPercent(xp: number): number {
   const level = calcLevelFromXp(xp);
   if (level >= 99) return 100;
@@ -202,14 +219,12 @@ export function calcProgressPercent(xp: number): number {
   return Math.round(((xp - current) / (next - current)) * 100);
 }
 
-// 旧API互換（dashboard page で使用）
 export function calcNextLevel(xp: number, master?: TitleMasterEntry[]): { xp: number; title: string } | null {
   const level = calcLevelFromXp(xp);
   if (level >= 99) return null;
   return { xp: xpForLevel(level + 1), title: titleForLevel(level + 1, master) };
 }
 
-// レベルカラー
 export function levelColor(level: number): string {
   if (level >= 99) return '#f59e0b';
   if (level >= 80) return '#8b5cf6';
@@ -221,8 +236,8 @@ export function levelColor(level: number): string {
 }
 
 // =====================================================================
-// 他者評価XP倍率（アプリ内レベル） ★ NEW
-// GAS の getPeerLevelMultiplier と同じロジック（フロント表示用）
+// 他者評価XP倍率（アプリ内レベル）
+// GAS の getPeerLevelMultiplier と常に同期を保つこと
 // =====================================================================
 export function getPeerMultiplier(level: number): number {
   if (level >= 80) return 5.0;
@@ -234,18 +249,18 @@ export function getPeerMultiplier(level: number): number {
 }
 
 // =====================================================================
-// 技の習熟度（TechniqueMastery）
+// 技の習熟度（Technique）
 // =====================================================================
 
-/** TechniqueMastery シートの1行に対応する型 */
+/** user_techniques × technique_master を JOIN した結果の型 */
 export interface Technique {
   id:          string;
-  bodyPart:    string;  // 部位（例: 上半身, 下半身, 全身）
-  actionType:  string;  // 動作種別（例: 打突, 足さばき, 構え）
-  subCategory: string;  // サブカテゴリ（例: 面, 小手, 胴）
-  name:        string;  // 技の名前
-  points:      number;  // 累積ポイント
-  lastRating:  number;  // 直近の星評価（1〜5）
+  bodyPart:    string;
+  actionType:  string;
+  subCategory: string;
+  name:        string;
+  points:      number;
+  lastRating:  number;
 }
 
 /** updateTechniqueRating のレスポンス */
@@ -263,12 +278,30 @@ export interface TechniqueUpdateResponse {
 export interface EpithetMasterEntry {
   id:           string;
   category:     string;       // 'status' | 'actionType' | 'subCategory' | 'balance'
-  triggerValue: string;       // 照合キー（例: '仕掛け技', '出端技', '初期', 'バランス'）
-  name:         string;       // 修飾語（例: '怒涛の', '後の先を極めし'）
-  description:  string;       // 説明文
+  triggerValue: string;
+  name:         string;
+  description:  string;
 }
 
-/** getDashboard レスポンスに含まれる二つ名マスタ */
 export interface DashboardWithEpithet {
   epithetMaster?: EpithetMasterEntry[];
+}
+
+// =====================================================================
+// ユーティリティ: 得意技IDから技名を解決する
+// ★ NEW: favorite_technique がIDになったため、表示箇所で使用する
+// =====================================================================
+
+/**
+ * 技ID（例: "T001"）を techniqueMaster から検索して技名（例: "出小手"）を返す。
+ * 見つからない場合は id をそのまま返す。
+ */
+export function resolveTechniqueName(
+  id: string | undefined | null,
+  master: TechniqueMasterEntry[] | undefined,
+): string {
+  if (!id) return '';
+  if (!master || master.length === 0) return id;
+  const found = master.find(m => m.id === id);
+  return found ? found.name : id;
 }

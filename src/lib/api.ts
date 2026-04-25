@@ -13,6 +13,7 @@ import type {
   SaveLogResponse,
   Setting,
   Technique,
+  TechniqueMasterEntry,
   TechniqueUpdateResponse,
 } from '@/types';
 import { loggedFetch, logger } from '@/lib/logger';
@@ -20,7 +21,7 @@ import { getCurrentUserId } from '@/lib/auth';
 
 const PROXY = '/api/gas';
 
-// user_id が不要なアクション一覧（GET / POST 共通で参照）
+// user_id が不要なアクション一覧
 const NO_USER_ID_ACTIONS = ['getEpithetMaster', 'getUsers', 'ping'] as const;
 
 // ===== レスポンスパーサー =====
@@ -43,30 +44,24 @@ async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
   }
 }
 
-// ===== GET（user_id を自動付与、ただし params に user_id が明示されていればそちらを優先） =====
+// ===== GET（user_id を自動付与） =====
 async function gasGet<T>(params: Record<string, string>): Promise<T> {
-  const action = params.action ?? 'unknown';
-  const userId = getCurrentUserId();
+  const action  = params.action ?? 'unknown';
+  const userId  = getCurrentUserId();
   const needsUserId = !(NO_USER_ID_ACTIONS as readonly string[]).includes(action);
 
-  // --- 認証ガード ---
-  // user_id が必要なアクションで未認証の場合はフェッチを物理的にブロックする。
-  // AuthGuard の router.replace('/login') が完了するコンマ数秒の間に
-  // page.tsx の useEffect が発火してしまうレースコンディション対策。
-  // 呼び出し元は err.message === 'AUTH_REQUIRED' を catch して無視すること。
+  // 認証ガード: user_id が必要なのに未認証ならフェッチをブロック
   if (needsUserId && !userId) {
     logger.warn('api', `AUTH_REQUIRED: gasGet blocked (action=${action})`);
     throw new Error('AUTH_REQUIRED');
   }
 
-  // params に user_id が明示的に渡された場合はそれを優先（他ユーザー閲覧用）。
-  // 渡されていない場合は getCurrentUserId() を自動付与。
   const merged = needsUserId
     ? { ...params, user_id: params.user_id ?? userId }
     : params;
 
   const url = new URL(PROXY, location.origin);
-  Object.entries(merged).forEach(([k, v]) => url.searchParams.set(k, v));
+  Object.entries(merged).forEach(([k, v]) => url.searchParams.set(k, v as string));
 
   const res = await loggedFetch(url.toString(), { cache: 'no-store' }, { category: 'gas', action });
   return parseGASResponse<T>(res, action);
@@ -74,12 +69,10 @@ async function gasGet<T>(params: Record<string, string>): Promise<T> {
 
 // ===== POST（user_id を自動付与） =====
 async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
-  const action = (body.action as string) ?? 'unknown';
-  const userId = getCurrentUserId();
+  const action    = (body.action as string) ?? 'unknown';
+  const userId    = getCurrentUserId();
   const needsUserId = action !== 'login';
 
-  // --- 認証ガード ---
-  // login 以外で user_id が必要なアクションで未認証の場合はフェッチをブロックする。
   if (needsUserId && !userId) {
     logger.warn('api', `AUTH_REQUIRED: gasPost blocked (action=${action})`);
     throw new Error('AUTH_REQUIRED');
@@ -102,7 +95,7 @@ async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
 // 認証
 // =====================================================================
 
-export interface LoginPayload { user_id?: string; name?: string; password: string; }
+export interface LoginPayload  { user_id?: string; name?: string; password: string; }
 export interface LoginResponse { user_id: string; name: string; role: string; }
 
 export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
@@ -119,6 +112,7 @@ export async function fetchUsers(): Promise<{ user_id: string; name: string; rol
 
 /**
  * ダッシュボードを取得する。
+ * レスポンスには techniqueMaster（technique_master 全件）が含まれる。★ UPDATED
  * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
  */
 export async function fetchDashboard(targetUserId?: string): Promise<DashboardData> {
@@ -158,7 +152,15 @@ export async function resetStatus(): Promise<{ total_xp: number; level: number; 
   return gasPost<{ total_xp: number; level: number; title: string }>({ action: 'resetStatus' });
 }
 
-export async function updateProfile(data: { real_rank?: string; motto?: string; favorite_technique?: string }): Promise<{ updated: boolean }> {
+export async function updateProfile(data: {
+  real_rank?:          string;
+  motto?:              string;
+  /**
+   * 得意技ID（例: "T001"）。
+   * ★ UPDATED: 自由記述テキストから technique_master の ID に変更。
+   */
+  favorite_technique?: string;
+}): Promise<{ updated: boolean }> {
   return gasPost<{ updated: boolean }>({ action: 'updateProfile', ...data });
 }
 
@@ -167,7 +169,7 @@ export async function updateProfile(data: { real_rank?: string; motto?: string; 
 // =====================================================================
 
 /**
- * 技の習熟度一覧を取得する。
+ * 技の習熟度一覧を取得する（technique_master × user_techniques の JOIN済み）。
  * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
  */
 export async function fetchTechniques(targetUserId?: string): Promise<Technique[]> {
@@ -193,7 +195,7 @@ export async function updateTasks(tasks: string[]): Promise<{ active_count: numb
 }
 
 // =====================================================================
-// 他者評価 ★ NEW
+// 他者評価
 // =====================================================================
 
 /**
@@ -215,4 +217,20 @@ export async function evaluatePeer(targetId: string): Promise<EvaluatePeerRespon
 
 export async function fetchEpithetMaster(): Promise<EpithetMasterEntry[]> {
   return gasGet<EpithetMasterEntry[]>({ action: 'getEpithetMaster' });
+}
+
+/**
+ * technique_master の全件を取得する（全ユーザー共通静的マスタ）。
+ * 通常は fetchDashboard の戻り値に含まれる techniqueMaster を使うこと。
+ * 単独で必要な場合（プロフィール設定画面など）にのみ使用する。
+ * ★ NEW
+ */
+export async function fetchTechniqueMaster(): Promise<TechniqueMasterEntry[]> {
+  // getDashboard 経由で取得するのが本来だが、
+  // profile 画面のように getDashboard 全体を呼びたくない場合に使う。
+  // GAS 側は getDashboard の techniqueMaster フィールドに含める設計なので、
+  // ここでは getDashboard を呼んで techniqueMaster だけを返す。
+  logger.info('api', 'techniqueMaster 取得');
+  const dashboard = await fetchDashboard();
+  return dashboard.techniqueMaster ?? [];
 }
