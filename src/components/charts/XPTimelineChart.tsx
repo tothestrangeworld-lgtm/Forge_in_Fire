@@ -8,29 +8,26 @@ import {
 import type { XpHistoryEntry } from '@/types';
 
 // =====================================================================
-// XPTimelineChart
+// XPTimelineChart（改修2）
 //
 // 【設計方針】
-//   旧実装では LogEntry[] からフロントエンドでXPを疑似再計算していたため、
-//   レベルリセット・減衰が正しく反映されない構造的欠陥があった。
-//   本コンポーネントは GAS の xp_history（イベントソーシング）を正として
-//   受け取り、total_xp_after をそのまま Y軸にマッピングするだけのシンプルな実装。
+//   - type="stepAfter" でステップライン（階段状）に変更
+//   - ネオングラデーション塗りつぶしで「積み上がるオーラ」を表現
+//   - xp_history（イベントソーシング）を正データソースとして使用
 // =====================================================================
 
 interface Props {
   xpHistory?: XpHistoryEntry[];
-  compact?:   boolean; // true = ホーム用の小さい版
+  compact?:   boolean;
 }
 
-// "YYYY-MM-DD HH:mm:ss" または "YYYY-MM-DD" → "M/DD" 表示用文字列
 function toDisplayDate(dateStr: string): string {
-  const d = dateStr.slice(0, 10); // "YYYY-MM-DD"
+  const d = dateStr.slice(0, 10);
   const parts = d.split('-');
   if (parts.length < 3) return dateStr;
   return `${parseInt(parts[1])}/${parts[2]}`;
 }
 
-// X軸ティック：月初め "M/01" の重複を除いたラベルのみ
 function buildXTicks(data: XpHistoryEntry[]): string[] {
   const seen = new Set<string>();
   return data
@@ -43,15 +40,15 @@ function buildXTicks(data: XpHistoryEntry[]): string[] {
     });
 }
 
-// Tooltip の種別ラベル
 const TYPE_LABEL: Record<string, string> = {
-  gain:  '稽古獲得',
-  decay: 'XP減衰',
-  reset: 'リセット',
+  gain:      '稽古獲得',
+  decay:     'XP減衰',
+  reset:     'リセット',
+  peer_eval: '他者評価',
 };
 
-// Tooltip カスタムコンテンツ
-interface TooltipPayloadItem {
+// ===== カスタム Tooltip =====
+interface PayloadItem {
   payload?: {
     type?:   string;
     reason?: string;
@@ -65,38 +62,80 @@ function CustomTooltip({
   active, payload, label,
 }: {
   active?: boolean;
-  payload?: TooltipPayloadItem[];
+  payload?: PayloadItem[];
   label?:  string;
 }) {
   if (!active || !payload?.length) return null;
-  const item    = payload[0];
-  const xp      = item.value ?? 0;
+  const item   = payload[0];
+  const xp     = item.value ?? 0;
   const { type, reason, level, amount } = item.payload ?? {};
   const typeLabel = TYPE_LABEL[type ?? ''] ?? type ?? '';
   const sign      = (amount ?? 0) >= 0 ? '+' : '';
+  const amtColor  = (amount ?? 0) >= 0 ? '#34d399' : '#f87171';
 
   return (
     <div style={{
-      background: '#1e1b4b', border: 'none', borderRadius: 10,
-      color: '#fff', fontSize: 11, padding: '8px 12px', lineHeight: 1.7,
+      background: 'rgba(10,9,24,0.96)',
+      border: '1px solid rgba(129,140,248,0.3)',
+      borderRadius: 10,
+      color: '#e0e7ff',
+      fontSize: 11,
+      padding: '8px 12px',
+      lineHeight: 1.7,
+      boxShadow: '0 0 16px rgba(99,102,241,0.25)',
     }}>
-      <div style={{ color: '#c7d2fe', marginBottom: 2 }}>{label}</div>
-      <div style={{ color: '#a5b4fc' }}>{typeLabel}</div>
+      <div style={{ color: 'rgba(129,140,248,0.7)', marginBottom: 2 }}>{label}</div>
+      <div style={{ color: 'rgba(167,139,250,0.8)' }}>{typeLabel}</div>
       {amount !== undefined && (
-        <div style={{ color: (amount ?? 0) >= 0 ? '#34d399' : '#f87171' }}>
+        <div style={{ color: amtColor, fontWeight: 700 }}>
           {sign}{amount?.toLocaleString()} XP
         </div>
       )}
-      <div style={{ color: '#fff', fontWeight: 'bold' }}>
+      <div style={{ color: '#e0e7ff', fontWeight: 800 }}>
         累積 {xp.toLocaleString()} XP
       </div>
       {level && (
-        <div style={{ color: '#a5b4fc' }}>Lv {level}</div>
+        <div style={{ color: 'rgba(129,140,248,0.7)' }}>Lv {level}</div>
       )}
       {reason && (
-        <div style={{ color: '#818cf8', fontSize: 10, marginTop: 2 }}>{reason}</div>
+        <div style={{ color: 'rgba(99,102,241,0.7)', fontSize: 10, marginTop: 2 }}>{reason}</div>
       )}
     </div>
+  );
+}
+
+// ===== カスタムドット（gain/decay等でアイコン切り替え） =====
+interface DotProps {
+  cx?: number;
+  cy?: number;
+  payload?: { type?: string };
+}
+function CustomDot({ cx, cy, payload }: DotProps) {
+  if (cx === undefined || cy === undefined) return null;
+  const type = payload?.type ?? '';
+
+  if (type === 'decay') {
+    return (
+      <circle cx={cx} cy={cy} r={3}
+        fill="#f87171" stroke="rgba(248,113,113,0.4)" strokeWidth={4} />
+    );
+  }
+  if (type === 'peer_eval') {
+    return (
+      <circle cx={cx} cy={cy} r={3.5}
+        fill="#fbbf24" stroke="rgba(251,191,36,0.4)" strokeWidth={4} />
+    );
+  }
+  if (type === 'reset') {
+    return (
+      <circle cx={cx} cy={cy} r={3}
+        fill="#818cf8" stroke="rgba(129,140,248,0.4)" strokeWidth={4} />
+    );
+  }
+  // gain
+  return (
+    <circle cx={cx} cy={cy} r={2}
+      fill="#a78bfa" stroke="transparent" strokeWidth={0} />
   );
 }
 
@@ -110,7 +149,7 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
     return (
       <div style={{
         textAlign: 'center', padding: '2rem',
-        color: '#a8a29e', fontSize: '0.85rem',
+        color: 'rgba(99,102,241,0.4)', fontSize: '0.85rem',
       }}>
         稽古を記録するとXP推移が表示されます
       </div>
@@ -118,10 +157,9 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
   }
 
   const maxXP  = Math.max(...xpHistory.map(e => e.total_xp_after));
-  const height = compact ? 160 : 240;
+  const height = compact ? 180 : 260;
   const xTicks = buildXTicks(xpHistory);
 
-  // Recharts 用フラット配列へ変換（余計なフィールドを展開）
   const chartData = xpHistory.map(e => ({
     label:          toDisplayDate(e.date),
     total_xp_after: Math.max(0, e.total_xp_after),
@@ -132,28 +170,43 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
     title:          e.title,
   }));
 
+  // グラデーション ID（複数インスタンスの衝突防止）
+  const gradId = compact ? 'xpGradientCompact' : 'xpGradientFull';
+
   return (
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 8, right: 4, left: -28, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 10, right: 6, left: -26, bottom: 0 }}>
           <defs>
-            <linearGradient id="xpGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor="#4f46e5" stopOpacity={0.35} />
-              <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} />
+            {/* ★ ネオングラデーション（積み上がるオーラ） */}
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"   stopColor="#7c3aed" stopOpacity={0.55} />
+              <stop offset="40%"  stopColor="#4f46e5" stopOpacity={0.30} />
+              <stop offset="80%"  stopColor="#38bdf8" stopOpacity={0.12} />
+              <stop offset="100%" stopColor="#0f0e2a" stopOpacity={0.05} />
             </linearGradient>
+            {/* ストローク用グロー（filter） */}
+            <filter id="neonGlow">
+              <feGaussianBlur stdDeviation="2" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
           </defs>
 
-          <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" vertical={false} />
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="rgba(99,102,241,0.08)"
+            vertical={false}
+          />
 
           <XAxis
             dataKey="label"
             ticks={xTicks}
-            tick={{ fontSize: 9, fill: '#a5b4fc' }}
+            tick={{ fontSize: 9, fill: 'rgba(99,102,241,0.5)' }}
             tickLine={false}
             axisLine={false}
           />
           <YAxis
-            tick={{ fontSize: 9, fill: '#a5b4fc' }}
+            tick={{ fontSize: 9, fill: 'rgba(99,102,241,0.5)' }}
             tickLine={false}
             axisLine={false}
             tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
@@ -161,27 +214,35 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
 
           <Tooltip content={<CustomTooltip />} />
 
+          {/* 最高XPの基準線 */}
           <ReferenceLine
             y={maxXP}
-            stroke="#818cf8"
+            stroke="rgba(167,139,250,0.35)"
             strokeDasharray="4 4"
             strokeWidth={1}
             label={{
               value: `最高 ${maxXP.toLocaleString()}`,
               position: 'insideTopRight',
               fontSize: 9,
-              fill: '#818cf8',
+              fill: 'rgba(167,139,250,0.55)',
             }}
           />
 
+          {/* ★ type="stepAfter" でステップライン（階段状）に変更 */}
           <Area
-            type="monotone"
+            type="stepAfter"
             dataKey="total_xp_after"
-            stroke="#3730a3"
+            stroke="#a78bfa"
             strokeWidth={compact ? 1.5 : 2}
-            fill="url(#xpGradient)"
-            dot={false}
-            activeDot={{ r: 4, fill: '#1e1b4b', strokeWidth: 0 }}
+            fill={`url(#${gradId})`}
+            dot={<CustomDot />}
+            activeDot={{
+              r: 5,
+              fill: '#a78bfa',
+              stroke: 'rgba(167,139,250,0.4)',
+              strokeWidth: 4,
+            }}
+            style={{ filter: 'drop-shadow(0 0 4px rgba(167,139,250,0.5))' }}
           />
         </AreaChart>
       </ResponsiveContainer>

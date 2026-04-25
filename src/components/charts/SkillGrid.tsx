@@ -16,20 +16,30 @@ import {
 import '@xyflow/react/dist/style.css';
 import type { Technique } from '@/types';
 
-interface Props { techniques: Technique[]; }
+// =====================================================================
+// Props
+// =====================================================================
+interface Props {
+  techniques:          Technique[];
+  /**
+   * 得意技ID（例: "T001"）。
+   * 一致するノードを黄金色に発光させる「シグネチャームーブ・ハイライト」。
+   * ★ NEW: DashboardData.status.favorite_technique を渡す。
+   */
+  signatureTechId?: string;
+}
 
 // =====================================================================
 // ハンドル（不可視・全方向）
 // =====================================================================
-// ハンドルを円の中心に配置（エッジが中心から伸びるように）
 const CENTER_HANDLE: React.CSSProperties = {
-  opacity:   0,
-  width:     2,
-  height:    2,
-  top:       '50%',
-  left:      '50%',
-  transform: 'translate(-50%, -50%)',
-  border:    'none',
+  opacity:    0,
+  width:      2,
+  height:     2,
+  top:        '50%',
+  left:       '50%',
+  transform:  'translate(-50%, -50%)',
+  border:     'none',
   background: 'transparent',
 };
 
@@ -53,13 +63,12 @@ function CoreNode(_: NodeProps) {
   return (
     <div style={{
       width: 76, height: 76, borderRadius: '50%',
-      background: 'linear-gradient(135deg,#1e1b4b,#312e81)',
-      border: '3px solid #818cf8',
+      background: 'linear-gradient(135deg, #0a0918, #1e1b4b)',
+      border: '2.5px solid rgba(129,140,248,0.7)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', fontSize: 12, fontWeight: 800, letterSpacing: '0.08em',
-      boxShadow: '0 0 32px rgba(99,102,241,0.8)',
+      color: '#e0e7ff', fontSize: 13, fontWeight: 800, letterSpacing: '0.1em',
+      boxShadow: '0 0 24px rgba(99,102,241,0.8), 0 0 48px rgba(99,102,241,0.3)',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
-      flexShrink: 0,
     }}>
       <AllHandles />
       技
@@ -75,32 +84,36 @@ interface BodyPartData { label: string; totalPoints: number; norm: number; }
 function BodyPartNode({ data }: NodeProps) {
   const d = data as unknown as BodyPartData;
 
-  // ポイントに応じてサイズ・グロー
-  const size        = Math.round(62 + d.norm * 28);  // 62〜90 px
-  const borderColor = d.norm > 0.6 ? '#f59e0b' : d.norm > 0.2 ? '#818cf8' : '#4f46e5';
+  const size        = Math.round(62 + d.norm * 28);
+  const borderColor = d.norm > 0.6 ? '#fbbf24' : d.norm > 0.2 ? '#818cf8' : 'rgba(99,102,241,0.5)';
   const glow        = d.norm > 0.6
-    ? '0 0 22px rgba(245,158,11,0.7)'
-    : d.norm > 0.2 ? '0 0 16px rgba(129,140,248,0.6)' : '0 0 8px rgba(99,102,241,0.3)';
+    ? '0 0 20px rgba(251,191,36,0.65), 0 0 40px rgba(251,191,36,0.25)'
+    : d.norm > 0.2
+    ? '0 0 16px rgba(129,140,248,0.55), 0 0 32px rgba(99,102,241,0.2)'
+    : '0 0 8px rgba(99,102,241,0.2)';
   const bg = d.norm > 0.6
-    ? 'linear-gradient(135deg,#92400e,#d97706)'
-    : 'linear-gradient(135deg,#1e1b4b,#4338ca)';
+    ? 'linear-gradient(135deg, #78350f, #b45309)'
+    : d.norm > 0.2
+    ? 'linear-gradient(135deg, #0f0e2a, #312e81)'
+    : 'linear-gradient(135deg, #0a0918, #1e1b4b)';
 
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
-      background: bg, border: `2.5px solid ${borderColor}`,
+      background: bg,
+      border: `2px solid ${borderColor}`,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      color: '#fff', textAlign: 'center', padding: 4,
+      color: '#e0e7ff', textAlign: 'center', padding: 4,
       boxShadow: glow,
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
     }}>
       <AllHandles />
-      <span style={{ fontSize: Math.max(10, size * 0.175), fontWeight: 800, lineHeight: 1.2 }}>
+      <span style={{ fontSize: Math.max(10, size * 0.175), fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em' }}>
         {d.label}
       </span>
       {d.totalPoints > 0 && (
-        <span style={{ fontSize: Math.max(8, size * 0.13), opacity: 0.8, marginTop: 1 }}>
+        <span style={{ fontSize: Math.max(8, size * 0.13), opacity: 0.7, marginTop: 1 }}>
           {d.totalPoints}pt
         </span>
       )}
@@ -111,39 +124,93 @@ function BodyPartNode({ data }: NodeProps) {
 // =====================================================================
 // カスタムノード③ Name（第2階層：具体的な技）
 // =====================================================================
-interface TechData { technique: Technique; norm: number; }
+interface TechData {
+  technique:   Technique;
+  norm:        number;
+  isSignature: boolean;  // ★ NEW: 得意技フラグ
+}
 
 function TechniqueNode({ data }: NodeProps) {
-  const { technique: t, norm } = data as unknown as TechData;
+  const { technique: t, norm, isSignature } = data as unknown as TechData;
 
-  const size = Math.round(40 + norm * 26);  // 40〜66 px
-  const bg =
-    norm > 0.75 ? 'linear-gradient(135deg,#b45309,#f59e0b)' :
-    norm > 0.4  ? 'linear-gradient(135deg,#3730a3,#6366f1)' :
-    norm > 0    ? 'linear-gradient(135deg,#1e1b4b,#4f46e5)' : '#111128';
-  const borderColor = norm > 0.75 ? '#f59e0b' : norm > 0.4 ? '#6366f1' : '#312e81';
-  const glow =
-    norm > 0.75 ? '0 0 14px rgba(245,158,11,0.65)' :
-    norm > 0.4  ? '0 0 10px rgba(99,102,241,0.5)' : 'none';
+  // ★ シグネチャー（得意技）は特別スタイル
+  const size = isSignature
+    ? Math.round(54 + norm * 20)           // 一回り大きく
+    : Math.round(40 + norm * 26);
+
+  let bg, borderColor, glow, textColor;
+
+  if (isSignature) {
+    // 黄金に輝く
+    bg          = 'linear-gradient(135deg, #78350f, #d97706, #fbbf24)';
+    borderColor = '#fde68a';
+    glow        = '0 0 16px rgba(251,191,36,0.9), 0 0 32px rgba(251,191,36,0.5), 0 0 48px rgba(251,191,36,0.2)';
+    textColor   = '#fff';
+  } else if (norm > 0.75) {
+    bg          = 'linear-gradient(135deg, #92400e, #d97706)';
+    borderColor = '#fbbf24';
+    glow        = '0 0 12px rgba(251,191,36,0.6), 0 0 24px rgba(251,191,36,0.25)';
+    textColor   = '#fff';
+  } else if (norm > 0.4) {
+    bg          = 'linear-gradient(135deg, #1e1b4b, #4f46e5)';
+    borderColor = '#818cf8';
+    glow        = '0 0 10px rgba(129,140,248,0.5), 0 0 20px rgba(99,102,241,0.2)';
+    textColor   = '#e0e7ff';
+  } else if (norm > 0) {
+    bg          = 'linear-gradient(135deg, #0f0e2a, #312e81)';
+    borderColor = 'rgba(99,102,241,0.5)';
+    glow        = '0 0 6px rgba(99,102,241,0.3)';
+    textColor   = '#c7d2fe';
+  } else {
+    bg          = '#0a0918';
+    borderColor = 'rgba(99,102,241,0.2)';
+    glow        = 'none';
+    textColor   = 'rgba(99,102,241,0.4)';
+  }
 
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
-      background: bg, border: `2px solid ${borderColor}`,
+      background: bg,
+      border: `${isSignature ? 2.5 : 1.5}px solid ${borderColor}`,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      color: norm > 0 ? '#fff' : '#4a4870',
+      color: textColor,
       textAlign: 'center', padding: 3,
       boxShadow: glow,
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
+      // ★ シグネチャーはアニメーション
+      animation: isSignature ? 'signature-pulse 2.5s ease-in-out infinite' : undefined,
     }}>
       <AllHandles />
-      <span style={{ fontSize: Math.max(7, size * 0.14), fontWeight: 700, lineHeight: 1.2, wordBreak: 'break-all', maxWidth: size - 6 }}>
+      <span style={{
+        fontSize: Math.max(7, size * 0.145),
+        fontWeight: isSignature ? 800 : 700,
+        lineHeight: 1.2,
+        wordBreak: 'break-all',
+        maxWidth: size - 6,
+      }}>
         {t.name}
       </span>
       {t.points > 0 && (
-        <span style={{ fontSize: Math.max(6, size * 0.11), opacity: 0.7, marginTop: 1 }}>
+        <span style={{ fontSize: Math.max(6, size * 0.11), opacity: 0.75, marginTop: 1 }}>
           {t.points}pt
+        </span>
+      )}
+      {/* ★ シグネチャーバッジ */}
+      {isSignature && (
+        <span style={{
+          position: 'absolute',
+          top: -6, right: -4,
+          fontSize: 10,
+          lineHeight: 1,
+          background: 'linear-gradient(135deg, #d97706, #fbbf24)',
+          borderRadius: '50%',
+          width: 16, height: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 6px rgba(251,191,36,0.8)',
+        }}>
+          ★
         </span>
       )}
     </div>
@@ -162,19 +229,20 @@ const NODE_TYPES: NodeTypes = {
 // =====================================================================
 // グラフ生成ロジック
 // =====================================================================
-const BODY_PART_R  = 220;  // COREから第1階層への距離
-const TECH_R_BASE  = 170;  // 第1階層から第2階層への基本距離
-const TECH_R_EXTRA = 60;   // 技が多いほど奥に伸ばす追加距離/列
-const TECH_SPREAD  = 95;   // 技の横間隔
+const BODY_PART_R  = 220;
+const TECH_R_BASE  = 170;
+const TECH_R_EXTRA = 60;
+const TECH_SPREAD  = 95;
 
-// techId → actionType のマップ（フィルター用）
 type TechActionMap = Record<string, string>;
 
-function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[]; techActionMap: TechActionMap } {
+function buildGraph(
+  techniques:    Technique[],
+  signatureTechId?: string,
+): { nodes: Node[]; edges: Edge[]; techActionMap: TechActionMap } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  // BodyPart ごとに技をグループ化
   const byBodyPart: Record<string, Technique[]> = {};
   techniques.forEach(t => {
     const bp = t.bodyPart || '未分類';
@@ -184,21 +252,18 @@ function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[]; te
 
   const bodyParts  = Object.keys(byBodyPart);
   const N          = bodyParts.length;
-  const maxBpPts   = Math.max(
-    ...bodyParts.map(bp => byBodyPart[bp].reduce((s, t) => s + t.points, 0)), 1
-  );
+  const maxBpPts   = Math.max(...bodyParts.map(bp => byBodyPart[bp].reduce((s, t) => s + t.points, 0)), 1);
   const maxTechPts = Math.max(...techniques.map(t => t.points), 1);
 
-  // ── CORE ──────────────────────────────────────────────
+  // CORE
   nodes.push({
     id: 'core', type: 'coreNode',
     position: { x: -38, y: -38 },
     data: {},
   });
 
-  // ── 第1階層・第2階層 ────────────────────────────────
+  // 第1・第2階層
   bodyParts.forEach((bp, bi) => {
-    // BodyPart を12時方向から等間隔に配置
     const bpAngle = (bi / N) * 2 * Math.PI - Math.PI / 2;
     const bpCos   = Math.cos(bpAngle);
     const bpSin   = Math.sin(bpAngle);
@@ -216,37 +281,33 @@ function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[]; te
       data: { label: bp, totalPoints: totalPts, norm: bpNorm } as unknown as Record<string, unknown>,
     });
 
-    // CORE → BodyPart エッジ
-    const bpEdgeWidth = Math.max(2, Math.round(2 + bpNorm * 4));
-    const bpEdgeColor = bpNorm > 0.6 ? '#d97706' : '#4f46e5';
+    const bpEdgeWidth = Math.max(1.5, Math.round(2 + bpNorm * 4));
+    const bpEdgeColor = bpNorm > 0.6 ? '#b45309' : 'rgba(99,102,241,0.6)';
     edges.push({
       id: `e-core-${bpId}`, source: 'core', target: bpId,
       type: 'straight',
-      style: { stroke: bpEdgeColor, strokeWidth: bpEdgeWidth, opacity: 0.55 + bpNorm * 0.45, zIndex: -1 },
+      style: { stroke: bpEdgeColor, strokeWidth: bpEdgeWidth, opacity: 0.4 + bpNorm * 0.5 },
     });
 
-    // ── 第2階層（技ノード）───────────────────────────
-    const techs = [...byBodyPart[bp]].sort((a, b) => b.points - a.points);
-    const total = techs.length;
-
-    // BodyPart の放射方向に直交する単位ベクトル（横方向）
-    const perpCos = Math.cos(bpAngle + Math.PI / 2);
-    const perpSin = Math.sin(bpAngle + Math.PI / 2);
-
-    // BodyPart の中心座標（ノードの基準点）
+    const techs    = [...byBodyPart[bp]].sort((a, b) => b.points - a.points);
+    const total    = techs.length;
+    const perpCos  = Math.cos(bpAngle + Math.PI / 2);
+    const perpSin  = Math.sin(bpAngle + Math.PI / 2);
     const bpCenterX = bpCos * BODY_PART_R;
     const bpCenterY = bpSin * BODY_PART_R;
 
     techs.forEach((tech, ti) => {
-      // 奥行き：5個ごとに1列追加
       const col         = Math.floor(ti / 5);
       const rowIdx      = ti % 5;
       const totalInCol  = Math.min(5, total - col * 5);
-      const spreadIdx   = rowIdx - (totalInCol - 1) / 2;  // 中央揃え
+      const spreadIdx   = rowIdx - (totalInCol - 1) / 2;
       const radDist     = TECH_R_BASE + col * TECH_R_EXTRA;
 
-      const techNorm = tech.points / maxTechPts;
-      const techSize = Math.round(40 + techNorm * 26);
+      const techNorm      = tech.points / maxTechPts;
+      const isSignature   = !!signatureTechId && tech.id === signatureTechId;
+      const techSize      = isSignature
+        ? Math.round(54 + techNorm * 20)
+        : Math.round(40 + techNorm * 26);
 
       const tx = bpCenterX + bpCos * radDist + perpCos * spreadIdx * TECH_SPREAD;
       const ty = bpCenterY + bpSin * radDist + perpSin * spreadIdx * TECH_SPREAD;
@@ -255,72 +316,75 @@ function buildGraph(techniques: Technique[]): { nodes: Node[]; edges: Edge[]; te
       nodes.push({
         id: techId, type: 'techniqueNode',
         position: { x: tx - techSize / 2, y: ty - techSize / 2 },
-        data: { technique: tech, norm: techNorm } as unknown as Record<string, unknown>,
+        data: { technique: tech, norm: techNorm, isSignature } as unknown as Record<string, unknown>,
       });
 
-      // BodyPart → 技 エッジ
-      const edgeColor = techNorm > 0.75 ? '#f59e0b' : techNorm > 0.4 ? '#6366f1' : '#312e81';
-      const edgeWidth = Math.max(1, Math.round(1 + techNorm * 3.5));
+      // ★ シグネチャー技へのエッジは金色に
+      const edgeColor = isSignature
+        ? '#fbbf24'
+        : techNorm > 0.75 ? '#d97706' : techNorm > 0.4 ? '#6366f1' : 'rgba(99,102,241,0.35)';
+      const edgeWidth = isSignature
+        ? Math.max(2, Math.round(2 + techNorm * 3))
+        : Math.max(1, Math.round(1 + techNorm * 3));
+      const edgeGlow = isSignature
+        ? '0 0 6px rgba(251,191,36,0.7)'
+        : undefined;
+
       edges.push({
         id: `e-${bpId}-${techId}`, source: bpId, target: techId,
         type: 'straight',
-        style: { stroke: edgeColor, strokeWidth: edgeWidth, opacity: 0.45 + techNorm * 0.55, zIndex: -1 },
+        style: {
+          stroke: edgeColor,
+          strokeWidth: edgeWidth,
+          opacity: isSignature ? 0.9 : 0.35 + techNorm * 0.5,
+          filter: edgeGlow,
+        },
       });
     });
   });
 
-  // techId → actionType のマップを生成
   const techActionMap: TechActionMap = {};
-  techniques.forEach(t => {
-    techActionMap[`tech-${t.id}`] = t.actionType ?? '';
-  });
+  techniques.forEach(t => { techActionMap[`tech-${t.id}`] = t.actionType ?? ''; });
 
   return { nodes, edges, techActionMap };
 }
 
 // =====================================================================
-// ActionType フィルターに基づいてノード・エッジの opacity を適用
+// ActionType フィルター
 // =====================================================================
 type FilterType = 'all' | string;
 
 function applyFilter(
-  nodes: Node[],
-  edges: Edge[],
-  filter: FilterType,
+  nodes:        Node[],
+  edges:        Edge[],
+  filter:       FilterType,
   techActionMap: TechActionMap,
 ): { nodes: Node[]; edges: Edge[] } {
   if (filter === 'all') return { nodes, edges };
 
   const filteredNodes = nodes.map(n => {
-    // CORE・BodyPart は常に通常表示
     if (n.type === 'coreNode' || n.type === 'bodyPartNode') return n;
-    // 技ノード：ActionType が一致するか判定
     const actionType = techActionMap[n.id] ?? '';
-    const match = actionType === filter;
+    const match      = actionType === filter;
     return {
       ...n,
       style: {
         ...(n.style ?? {}),
-        opacity: match ? 1 : 0.15,
-        // 一致する技ノードは少し強調
-        filter: match ? 'drop-shadow(0 0 8px rgba(99,102,241,0.9))' : 'none',
+        opacity: match ? 1 : 0.12,
+        filter:  match ? 'drop-shadow(0 0 10px rgba(129,140,248,0.9))' : 'none',
       },
     };
   });
 
   const filteredEdges = edges.map(e => {
-    // CORE → BodyPart エッジは常に通常表示
     if (e.id.startsWith('e-core-')) return e;
-    // BodyPart → 技 エッジ：技ノードの ActionType で判定
     const actionType = techActionMap[e.target] ?? '';
-    const match = actionType === filter;
+    const match      = actionType === filter;
     return {
       ...e,
       style: {
         ...(e.style ?? {}),
-        opacity: match
-          ? Math.max((e.style?.opacity as number) ?? 0.8, 0.8)
-          : 0.08,
+        opacity: match ? Math.max((e.style?.opacity as number) ?? 0.8, 0.8) : 0.06,
       },
     };
   });
@@ -331,13 +395,12 @@ function applyFilter(
 // =====================================================================
 // メインコンポーネント
 // =====================================================================
-export default function SkillGrid({ techniques }: Props) {
+export default function SkillGrid({ techniques, signatureTechId }: Props) {
   const [filter, setFilter] = useState<FilterType>('all');
 
   const { nodes: rawNodes, edges: rawEdges, techActionMap } =
-    useMemo(() => buildGraph(techniques), [techniques]);
+    useMemo(() => buildGraph(techniques, signatureTechId), [techniques, signatureTechId]);
 
-  // ActionType の一覧を動的に取得（「すべて」+ 実データの種類）
   const actionTypes = useMemo(() => {
     const types = [...new Set(techniques.map(t => t.actionType).filter(Boolean))];
     return types;
@@ -350,7 +413,10 @@ export default function SkillGrid({ techniques }: Props) {
 
   if (!techniques.length) {
     return (
-      <div style={{ textAlign:'center', padding:'2rem 1rem', color:'#a8a29e', fontSize:'0.85rem' }}>
+      <div style={{
+        textAlign: 'center', padding: '2rem 1rem',
+        color: 'rgba(129,140,248,0.45)', fontSize: '0.85rem',
+      }}>
         技データがありません
       </div>
     );
@@ -361,14 +427,37 @@ export default function SkillGrid({ techniques }: Props) {
     ...actionTypes.map(t => ({ key: t, label: t })),
   ];
 
+  // ★ 得意技が存在する場合、技名を取得して表示
+  const signatureTech = signatureTechId
+    ? techniques.find(t => t.id === signatureTechId)
+    : null;
+
   return (
     <div style={{ width: '100%' }}>
 
+      {/* ★ シグネチャームーブ表示 */}
+      {signatureTech && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          marginBottom: 10,
+          padding: '6px 12px',
+          borderRadius: 10,
+          background: 'rgba(120,53,15,0.25)',
+          border: '1px solid rgba(251,191,36,0.3)',
+          boxShadow: '0 0 12px rgba(251,191,36,0.1)',
+        }}>
+          <span style={{ fontSize: 14 }}>★</span>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(251,191,36,0.8)', letterSpacing: '0.08em' }}>
+            得意技
+          </span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fde68a' }}>
+            {signatureTech.name}
+          </span>
+        </div>
+      )}
+
       {/* フィルタートグルボタン */}
-      <div style={{
-        display: 'flex', gap: 6, marginBottom: 8,
-        flexWrap: 'wrap',
-      }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
         {FILTER_BUTTONS.map(({ key, label }) => {
           const active = filter === key;
           return (
@@ -378,15 +467,15 @@ export default function SkillGrid({ techniques }: Props) {
               style={{
                 padding: '4px 14px',
                 borderRadius: 999,
-                border: `1.5px solid ${active ? '#818cf8' : 'rgba(129,140,248,0.3)'}`,
-                background: active ? '#312e81' : 'rgba(30,27,75,0.5)',
-                color: active ? '#c7d2fe' : '#6366f1',
+                border: `1.5px solid ${active ? 'rgba(129,140,248,0.7)' : 'rgba(99,102,241,0.2)'}`,
+                background: active ? 'rgba(49,46,129,0.7)' : 'rgba(15,14,42,0.6)',
+                color: active ? '#c7d2fe' : 'rgba(99,102,241,0.6)',
                 fontSize: '0.72rem',
                 fontWeight: active ? 700 : 500,
                 fontFamily: 'inherit',
                 cursor: 'pointer',
                 transition: 'all .15s',
-                boxShadow: active ? '0 0 12px rgba(99,102,241,0.5)' : 'none',
+                boxShadow: active ? '0 0 10px rgba(99,102,241,0.4)' : 'none',
               }}
             >
               {label}
@@ -399,8 +488,17 @@ export default function SkillGrid({ techniques }: Props) {
       <div style={{
         width: '100%', height: 500,
         borderRadius: 16, overflow: 'hidden',
-        background: '#07071a',
+        background: 'linear-gradient(135deg, #050412, #0a0918)',
+        border: '1px solid rgba(99,102,241,0.15)',
+        boxShadow: 'inset 0 0 40px rgba(99,102,241,0.05)',
       }}>
+        {/* ★ シグネチャーパルスアニメーション用キーフレーム */}
+        <style>{`
+          @keyframes signature-pulse {
+            0%,100% { filter: drop-shadow(0 0 6px rgba(251,191,36,0.9)) drop-shadow(0 0 12px rgba(251,191,36,0.5)); }
+            50%      { filter: drop-shadow(0 0 14px rgba(251,191,36,1.0)) drop-shadow(0 0 28px rgba(251,191,36,0.7)); }
+          }
+        `}</style>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -418,8 +516,20 @@ export default function SkillGrid({ techniques }: Props) {
           maxZoom={3}
           colorMode="dark"
         >
-          <Background variant={BackgroundVariant.Dots} color="#1a1a3a" gap={28} size={1.5} />
-          <Controls showInteractive={false} style={{ background:'#1e1b4b', border:'1px solid #312e81' }} />
+          <Background
+            variant={BackgroundVariant.Dots}
+            color="rgba(99,102,241,0.15)"
+            gap={28}
+            size={1.5}
+          />
+          <Controls
+            showInteractive={false}
+            style={{
+              background: 'rgba(15,14,42,0.9)',
+              border: '1px solid rgba(99,102,241,0.25)',
+              borderRadius: 8,
+            }}
+          />
         </ReactFlow>
       </div>
     </div>
