@@ -140,12 +140,16 @@ export default function RivalDashboardPage({
     );
   }
 
-  const { status, logs, xpHistory, epithetMaster, settings } = dashboard;
+  // ★ Phase4: settings を削除。tasks（UserTask[]）を使用。
+  const { status, logs, xpHistory, epithetMaster } = dashboard;
   const activeTask: UserTask | null = (dashboard.tasks ?? []).find(t => t.status === 'active') ?? null;
   const myUserId = getCurrentUserId();
 
-  // 稽古評価レーダー用（page.tsxから移植）
-  const activeItems = settings.filter(s => s.is_active).map(s => s.item_name);
+  // 稽古評価レーダー用
+  // ★ Phase4: settings.filter(is_active) → tasks.filter(status === 'active') に変更
+  const activeItems = (dashboard.tasks ?? [])
+    .filter(t => t.status === 'active')
+    .map(t => t.task_text);
   const totals: Record<string, { sum: number; count: number }> = {};
   activeItems.forEach(i => { totals[i] = { sum: 0, count: 0 }; });
   logs.slice(-50).forEach(l => {
@@ -156,10 +160,12 @@ export default function RivalDashboardPage({
     score:   totals[item].count > 0 ? +(totals[item].sum / totals[item].count).toFixed(1) : 0,
     fullMark: 5,
   }));
+  const hasRadarData = radarData.some(r => r.score > 0);
+
   // 二つ名の算出
   const epithet = epithetMaster && techniques.length > 0
-  ? calcEpithet(techniques, epithetMaster)
-  : null;
+    ? calcEpithet(techniques, epithetMaster)
+    : null;
 
   // 次レベルまでのXP進捗
   const currentLevelXp = xpForLevel(status.level);
@@ -494,7 +500,8 @@ export default function RivalDashboardPage({
         )}
 
         {/* ======================= スコアバランス ======================= */}
-        {mounted && logs && logs.length > 0 && (
+        {/* ★ Phase4: hasRadarData ガードを追加（activeItems が空の場合に空チャートを出さない）*/}
+        {mounted && hasRadarData && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
               <Star style={{ width: 15, height: 15, color: '#a78bfa' }} />
@@ -526,7 +533,10 @@ export default function RivalDashboardPage({
             </div>
             {/* ポインターイベントを無効にして操作不可にする */}
             <div style={{ pointerEvents: 'none', userSelect: 'none' }}>
-              <SkillGrid techniques={techniques} />
+              <SkillGrid
+                techniques={techniques}
+                signatureTechId={status.favorite_technique ?? undefined}
+              />
             </div>
           </div>
         )}
@@ -540,9 +550,7 @@ export default function RivalDashboardPage({
                 プレイスタイル分析
               </span>
             </div>
-            <PlaystyleCharts
-              techniques={techniques}
-            />
+            <PlaystyleCharts techniques={techniques} />
           </div>
         )}
 
