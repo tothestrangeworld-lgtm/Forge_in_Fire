@@ -82,7 +82,8 @@ export default function RecordPage() {
 }
 
 // =====================================================================
-// タブ①：稽古を記録（既存のXP獲得フォーム）
+// タブ①：稽古を記録（XP獲得フォーム）
+// ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
@@ -97,9 +98,10 @@ function PracticeTab() {
   useEffect(() => {
     fetchDashboard()
       .then(d => { setDashboard(d); setLoading(false); })
-      .catch(e => { 
-        if (e.message === 'AUTH_REQUIRED') return; // この1行を一番上に追加！
-        setError(e.message); setLoading(false); });
+      .catch(e => {
+        if (e.message === 'AUTH_REQUIRED') return;
+        setError(e.message); setLoading(false);
+      });
   }, []);
 
   const activeTasks: UserTask[] = (dashboard?.tasks ?? []).filter(t => t.status === 'active');
@@ -112,11 +114,12 @@ function PracticeTab() {
     try {
       const res = await saveLog({
         date,
-        items: activeTasks.map(t => ({ item_name: t.task_text, score: scores[t.id] })),
+        // ★ Phase4: task_id（UUID）を送信。item_name は廃止。
+        items: activeTasks.map(t => ({ task_id: t.id, score: scores[t.id] })),
       });
       setResult({ xp: res.xp_earned, title: res.title });
     } catch (e: unknown) {
-      if (e instanceof Error && e.message === 'AUTH_REQUIRED') return; // この1行を追加！
+      if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
       setError(e instanceof Error ? e.message : '送信に失敗しました');
     } finally { setSubmitting(false); }
   }
@@ -171,6 +174,14 @@ function PracticeTab() {
           {[1,2,3].map(i => <div key={i} style={{ height:100, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
         </div>
+      ) : activeTasks.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
+          <p style={{ fontSize:'2rem', marginBottom:8 }}>📋</p>
+          <p style={{ color:'#78716c', fontWeight:600 }}>評価項目がありません</p>
+          <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:6 }}>
+            <a href="/settings/tasks" style={{ color:'#6366f1', fontWeight:700 }}>設定 → 評価項目</a> から課題を登録してください
+          </p>
+        </div>
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
           {activeTasks.map((task, idx) => {
@@ -186,61 +197,53 @@ function PracticeTab() {
                     </span>
                   )}
                 </div>
-                <div style={{ display:'flex', flexDirection:'row', gap:8, width:'100%' }}>
-                  {[1,2,3,4,5].map(n => (
-                    <button key={n} onClick={() => setScores(prev => ({...prev,[task.id]:n}))} style={{
-                      flex:1, minWidth:0, height:42, borderRadius:'50%',
-                      border:`2px solid ${current===n ? 'var(--ai)' : '#c7d2fe'}`,
-                      background: current===n ? 'var(--ai)' : '#fff',
-                      color:      current===n ? '#fff' : '#a5b4fc',
-                      fontSize:'0.85rem', fontWeight:700, fontFamily:'inherit',
-                      cursor:'pointer', transition:'all .15s',
-                      transform: current===n ? 'scale(1.12)' : 'scale(1)',
-                      boxShadow: current===n ? '0 4px 12px rgba(99,102,241,.35)' : 'none',
-                    }}>{n}</button>
+                {/* 星評価ボタン */}
+                <div style={{ display:'flex', gap:6 }}>
+                  {[1,2,3,4,5].map(star => (
+                    <button
+                      key={star}
+                      onClick={() => setScores(prev => ({ ...prev, [task.id]: star }))}
+                      style={{
+                        flex:1, height:40, borderRadius:10,
+                        border:`2px solid ${(current ?? 0) >= star ? '#4f46e5' : '#e0e7ff'}`,
+                        background: (current ?? 0) >= star ? '#4f46e5' : '#fff',
+                        color:      (current ?? 0) >= star ? '#fff' : '#c7d2fe',
+                        fontSize:'0.9rem', fontWeight:700, fontFamily:'inherit',
+                        cursor:'pointer', transition:'all .12s',
+                      }}
+                    >
+                      {star}
+                    </button>
                   ))}
-                </div>
-                <div style={{ display:'flex', flexDirection:'row', marginTop:6, paddingInline:2 }}>
-                  <span style={{ flex:1, fontSize:8, color:'#ccc', textAlign:'center' }}>悪</span>
-                  <span style={{ flex:1 }} />
-                  <span style={{ flex:1, fontSize:8, color:'#ccc', textAlign:'center' }}>普通</span>
-                  <span style={{ flex:1 }} />
-                  <span style={{ flex:1, fontSize:8, color:'#ccc', textAlign:'center' }}>良</span>
                 </div>
               </div>
             );
           })}
-        </div>
-      )}
 
-      {error && (
-        <div style={{ marginTop:16, padding:12, background:'#fee2e2', border:'1px solid #fca5a5', borderRadius:12, fontSize:'0.85rem', color:'#b91c1c' }}>
-          {error}
-        </div>
-      )}
+          {/* エラー */}
+          {error && (
+            <div style={{ padding:12, background:'#fee2e2', border:'1px solid #fca5a5', borderRadius:12, fontSize:'0.85rem', color:'#b91c1c' }}>
+              {error}
+            </div>
+          )}
 
-      {!allScored && activeTasks.length > 0 && (
-        <p style={{ textAlign:'center', fontSize:'0.72rem', color:'#a8a29e', margin:'1rem 0 0.5rem' }}>
-          {Object.keys(scores).filter(k => scores[k]).length} / {activeTasks.length} 項目を評価済み
-        </p>
-      )}
-
-      <div style={{ marginTop:20 }}>
-        <button className="btn-ai" disabled={!canSubmit} onClick={handleSubmit} style={{ width:'100%' }}>
-          {submitting
-            ? <span style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                <Loader2 style={{ width:16, height:16, animation:'spin .8s linear infinite' }} />保存中...
+          {/* 送信ボタン */}
+          <button
+            className="btn-ai"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            style={{ marginTop:4, opacity: canSubmit ? 1 : 0.45 }}
+          >
+            {submitting ? (
+              <>
+                <Loader2 style={{ width:18, height:18, animation:'spin .8s linear infinite' }} />
+                記録中...
                 <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-              </span>
-            : '稽古を記録する'}
-        </button>
-      </div>
-
-      {!loading && activeTasks.length === 0 && (
-        <div style={{ textAlign:'center', marginTop:'4rem' }}>
-          <p style={{ fontSize:'2.5rem', marginBottom:'1rem' }}>📝</p>
-          <p style={{ fontWeight:700, color:'var(--ai)', marginBottom:8 }}>現在設定されている課題（評価項目）がありません</p>
-          <p style={{ fontSize:'0.75rem', color:'#a8a29e' }}>ホーム画面から課題を設定してください。</p>
+              </>
+            ) : (
+              `稽古を記録する（${activeTasks.filter(t => scores[t.id]).length}/${activeTasks.length}）`
+            )}
+          </button>
         </div>
       )}
     </div>
@@ -248,7 +251,7 @@ function PracticeTab() {
 }
 
 // =====================================================================
-// タブ②：技を記録（習熟度リスト）
+// タブ②：技を記録（習熟度評価）
 // =====================================================================
 function TechniqueTab() {
   const [techniques, setTechniques] = useState<Technique[]>([]);
@@ -261,7 +264,7 @@ function TechniqueTab() {
     fetchTechniques()
       .then(data => { setTechniques(data); })
       .catch(e => {
-        if (e.message === 'AUTH_REQUIRED') return; // この1行を追加！
+        if (e.message === 'AUTH_REQUIRED') return;
         setError(e.message);
       })
       .finally(() => setLoading(false));
@@ -318,7 +321,7 @@ function TechniqueTab() {
     <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
       <p style={{ fontSize:'2.5rem', marginBottom:12 }}>🗡️</p>
       <p style={{ color:'#78716c', fontWeight:600 }}>技データがありません</p>
-      <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:6 }}>TechniqueMastery シートにデータを追加してください</p>
+      <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:6 }}>technique_master シートにデータを追加してください</p>
     </div>
   );
 

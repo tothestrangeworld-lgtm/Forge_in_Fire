@@ -1,16 +1,14 @@
 // =====================================================================
 // 百錬自得 - 型定義・レベル/XPロジック
-// ★ 改修2: TechniqueMasterEntry 追加、DashboardData に techniqueMaster 追加
+// ★ Phase4 正規化:
+//   - SaveLogPayload.items を item_name → task_id に変更
+//   - DashboardData.settings フィールドを廃止
+//   - Setting 型を廃止
 // =====================================================================
-
-export interface Setting {
-  item_name: string;
-  is_active: boolean;
-}
 
 export interface LogEntry {
   date:      string;
-  item_name: string;
+  item_name: string; // GAS 側で task_id → task_text に JOIN して返す
   score:     number;
   xp_earned: number;
 }
@@ -24,8 +22,7 @@ export interface UserStatus {
   motto?:              string;
   /**
    * 得意技ID（例: "T001"）。
-   * ★ UPDATED: 自由記述テキストから technique_master の ID に変更。
-   * 表示時は techniqueMaster を参照して技名に変換すること。
+   * 表示時は techniqueMaster を参照して技名に変換する。
    */
   favorite_technique?: string;
 }
@@ -48,7 +45,7 @@ export interface TitleMasterEntry {
 }
 
 // =====================================================================
-// technique_master シートの1行（全ユーザー共通マスタ）★ NEW
+// technique_master シートの1行（全ユーザー共通マスタ）
 // GAS列構成: ID, BodyPart, ActionType, SubCategory, Name
 // =====================================================================
 export interface TechniqueMasterEntry {
@@ -60,29 +57,15 @@ export interface TechniqueMasterEntry {
 }
 
 // =====================================================================
-// xp_history シートの1行（イベントソーシング用）
-// GAS列構成: user_id, date, type, amount, reason, total_xp_after, level, title
+// xp_history シートの1行
 // =====================================================================
 export interface XpHistoryEntry {
-  /** 記録日（タイムスタンプの日付部分）"YYYY-MM-DD" */
   date:           string;
-  /**
-   * イベント種別
-   * 'gain'      : 自己稽古記録
-   * 'decay'     : XP減衰
-   * 'reset'     : レベルリセット
-   * 'peer_eval' : 他者からの評価
-   */
   type:           'gain' | 'decay' | 'reset' | 'peer_eval' | string;
-  /** XP増減量。獲得は正値、減衰・リセットはマイナス値または 0 */
   amount:         number;
-  /** 理由テキスト（例: "稽古記録（4/13・9項目）", "3日間稽古なし", "師範からの評価"） */
   reason:         string;
-  /** イベント適用後の累積XP（グラフのY軸に直接使用） */
   total_xp_after: number;
-  /** 適用後のレベル */
   level:          number;
-  /** 適用後の称号 */
   title:          string;
 }
 
@@ -100,27 +83,29 @@ export interface UserTask {
 
 export interface DashboardData {
   status:           UserStatus;
-  settings:         Setting[];
-  logs:             LogEntry[];
+  tasks?:           UserTask[];        // 評価項目（active / archived 含む）
+  logs:             LogEntry[];        // GASがJOINして item_name を復元済み
   nextLevelXp:      NextLevelInfo;
   decay?:           DecayInfo;
   titleMaster?:     TitleMasterEntry[];
   epithetMaster?:   EpithetMasterEntry[];
-  /** XP全イベント履歴（直近90件）。XPTimelineChart の正データソース */
+  /** XP全イベント履歴（直近90件）*/
   xpHistory?:       XpHistoryEntry[];
-  tasks?:           UserTask[];
   /**
    * technique_master の全件。getDashboard で返される。
-   * プロフィールの得意技ID → 技名変換や SkillGrid のハイライトに使用。
-   * ★ NEW
+   * 得意技ID → 技名変換や SkillGrid のハイライトに使用。
    */
   techniqueMaster?: TechniqueMasterEntry[];
 }
 
+// =====================================================================
+// SaveLogPayload
+// ★ Phase4: items[].task_id（UUID）を使用。item_name は廃止。
+// =====================================================================
 export interface SaveLogPayload {
   action: 'saveLog';
   date:   string;
-  items:  Array<{ item_name: string; score: number }>;
+  items:  Array<{ task_id: string; score: number }>;
 }
 
 export interface SaveLogResponse {
@@ -131,16 +116,23 @@ export interface SaveLogResponse {
 }
 
 // =====================================================================
+// updateTasks ペイロード
+// ★ Phase4: スマート差分に対応
+//   - id あり: 既存タスクを再アクティブ化（テキスト不変＝IDを維持）
+//   - id なし: 新規タスクとして UUID 発行
+// =====================================================================
+export interface TaskDiff {
+  id?:  string;   // 既存タスクの UUID（テキスト変更なしの場合に渡す）
+  text: string;   // タスクテキスト
+}
+
+// =====================================================================
 // 他者評価
 // =====================================================================
 
-/** evaluatePeer API のレスポンス */
 export interface EvaluatePeerResponse {
-  /** 対象者に付与されたXP（倍率適用済み） */
   xp_granted:      number;
-  /** 評価者のアプリ内レベル */
   evaluator_level: number;
-  /** 適用された倍率 */
   multiplier:      number;
 }
 
@@ -277,7 +269,7 @@ export interface TechniqueUpdateResponse {
 /** EpithetMaster シートの1行 */
 export interface EpithetMasterEntry {
   id:           string;
-  category:     string;       // 'status' | 'actionType' | 'subCategory' | 'balance'
+  category:     string;
   triggerValue: string;
   name:         string;
   description:  string;
@@ -289,7 +281,6 @@ export interface DashboardWithEpithet {
 
 // =====================================================================
 // ユーティリティ: 得意技IDから技名を解決する
-// ★ NEW: favorite_technique がIDになったため、表示箇所で使用する
 // =====================================================================
 
 /**

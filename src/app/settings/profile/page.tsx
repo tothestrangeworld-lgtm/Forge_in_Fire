@@ -8,8 +8,8 @@ import { fetchDashboard, updateProfile } from '@/lib/api';
 
 // =====================================================================
 // プロフィール設定画面
-// ★ Phase4 / 改修2:
-//   - favorite_technique をテキスト入力 → ドロップダウン選択（技ID）に変更
+// ★ Phase4:
+//   - favorite_technique をテキスト入力 → <select>（技ID）に変更
 //   - techniqueMaster（getDashboard レスポンス）を利用
 // =====================================================================
 
@@ -18,15 +18,15 @@ type RankOption = (typeof RANK_OPTIONS)[number];
 
 export default function ProfileSettingsPage() {
   const router = useRouter();
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState<string | null>(null);
 
   // フォーム値
-  const [realRank, setRealRank]                 = useState<RankOption>('無段');
-  const [motto, setMotto]                       = useState('');
-  const [favTechId, setFavTechId]               = useState('');   // 技ID（例: "T001"）
-  const [techniqueMaster, setTechniqueMaster]   = useState<TechniqueMasterEntry[]>([]);
+  const [realRank, setRealRank]               = useState<RankOption>('無段');
+  const [motto, setMotto]                     = useState('');
+  const [favTechId, setFavTechId]             = useState('');   // 技ID（例: "T001"）
+  const [techniqueMaster, setTechniqueMaster] = useState<TechniqueMasterEntry[]>([]);
 
   useEffect(() => {
     fetchDashboard()
@@ -56,7 +56,7 @@ export default function ProfileSettingsPage() {
 
   const mottoLen = useMemo(() => motto.length, [motto]);
 
-  // technique_master を actionType > subCategory > name の順でグループ化
+  // technique_master を actionType でグループ化
   const groupedTechs = useMemo(() => {
     const map: Record<string, TechniqueMasterEntry[]> = {};
     techniqueMaster.forEach(t => {
@@ -126,16 +126,12 @@ export default function ProfileSettingsPage() {
         </h1>
       </header>
 
-      <div
-        className="hud-card"
-        style={{ marginBottom: '0.75rem' }}
-      >
+      <div className="hud-card" style={{ marginBottom: '0.75rem' }}>
         <p style={{ margin: '0 0 14px', fontSize: '0.8rem', fontWeight: 700, color: 'rgba(129,140,248,0.5)', lineHeight: 1.5 }}>
           段位に応じて獲得XPに倍率がかかります。得意技は技盤で黄金色にハイライト表示されます。
         </p>
 
         {loading ? (
-          /* スケルトン */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[44, 44, 80].map((h, i) => (
               <div key={i} style={{ height: h, borderRadius: 12, background: 'rgba(99,102,241,0.06)' }} />
@@ -187,7 +183,7 @@ export default function ProfileSettingsPage() {
               />
             </div>
 
-            {/* ── 得意技（ドロップダウン）★ UPDATED ── */}
+            {/* ── 得意技（ドロップダウン）── */}
             <div>
               <span className="section-title">得意技</span>
 

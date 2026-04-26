@@ -19,12 +19,11 @@ const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleChart
 
 // =====================================================================
 // メインページ
-// ★ 改修2 / Phase4:
-//   - サイバー和風 HUD デザインに全面刷新
-//   - HUD風デジタルカウンター群（連続稽古日数・総稽古・XP等）
-//   - SkillGrid に signatureTechId を渡す（得意技ハイライト）
-//   - techniqueMaster を参照して得意技名を表示
-//   - settings フィールドの参照を削除
+// ★ Phase4:
+//   - settings フィールドの参照を完全削除
+//   - fetchTechniques を fetchDashboard と独立して実行
+//     （技データ取得失敗がダッシュボード表示をブロックしないよう修正）
+//   - SkillGrid 表示不具合修正: techniques が空の場合のガード強化
 // =====================================================================
 export default function DashboardPage() {
   const [data, setData]             = useState<DashboardData | null>(null);
@@ -37,11 +36,26 @@ export default function DashboardPage() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([fetchDashboard(), fetchTechniques()])
-      .then(([dash, techs]) => { setData(dash); setTechniques(techs); })
+    setError(null);
+
+    // ── fetchDashboard と fetchTechniques を独立して実行 ──
+    // fetchTechniques が失敗してもダッシュボードは表示する
+    fetchDashboard()
+      .then(dash => {
+        setData(dash);
+        // technique_master が dashboard に含まれているか確認
+        if (dash.techniqueMaster && dash.techniqueMaster.length > 0) {
+          // dashboard 取得完了後に fetchTechniques を実行
+          return fetchTechniques().then(techs => {
+            setTechniques(techs);
+          }).catch(() => {
+            // fetchTechniques が失敗しても無視（SkillGrid は空表示）
+          });
+        }
+      })
       .catch(e => {
-        if (e.message === 'AUTH_REQUIRED') return;
-        setError(e.message);
+        if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
+        setError(e instanceof Error ? e.message : 'データ取得に失敗しました');
       })
       .finally(() => setLoading(false));
   };
@@ -66,7 +80,7 @@ export default function DashboardPage() {
   const epithet       = calcEpithet(techniques, em);
   const realRankLabel = status.real_rank ? status.real_rank : '無段';
 
-  // 得意技名（techniqueMaster から解決）★ NEW
+  // 得意技名（techniqueMaster から解決）
   const favTechName = resolveTechniqueName(status.favorite_technique, techMaster);
 
   // 統計
@@ -80,7 +94,7 @@ export default function DashboardPage() {
       return d >= monday && d <= sunday && d <= today;
     }).map(l => l.date)
   ).size;
-  const streak       = calcStreak(logs.map(l => l.date));
+  const streak        = calcStreak(logs.map(l => l.date));
   const totalSessions = new Set(logs.map(l => l.date)).size;
   const avgScore      = logs.length > 0
     ? (logs.reduce((a, b) => a + b.score, 0) / logs.length).toFixed(1) : '—';
@@ -282,7 +296,7 @@ export default function DashboardPage() {
           </p>
         )}
 
-        {/* 得意技バッジ ★ NEW */}
+        {/* 得意技バッジ */}
         {favTechName && (
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -352,14 +366,14 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── HUDカウンター群 ★ NEW ───────────────────── */}
+      {/* ── HUDカウンター群 ───────────────────── */}
       <div className="hud-card hud-scanline animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">STATS</span>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
           {[
-            { value: String(streak),        unit: '日',  label: 'STREAK',   variant: streak >= 7 ? 'gold' : '' },
+            { value: String(streak),        unit: '日',  label: 'STREAK',    variant: streak >= 7 ? 'gold' : '' },
             { value: String(thisWeek),      unit: '回',  label: 'THIS WEEK', variant: 'cyan' },
-            { value: String(totalSessions), unit: '回',  label: 'TOTAL',    variant: '' },
+            { value: String(totalSessions), unit: '回',  label: 'TOTAL',     variant: '' },
             { value: String(avgScore),      unit: '',    label: 'AVG SCORE', variant: '' },
           ].map(({ value, unit, label, variant }) => (
             <div key={label} style={{
@@ -434,13 +448,25 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── スキルグリッド ★ signatureTechId を渡す ── */}
+      {/* ── スキルグリッド ── */}
       <div className="animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">スキルグリッド</span>
-        <SkillGrid
-          techniques={techniques}
-          signatureTechId={status.favorite_technique}
-        />
+        {techniques.length > 0 ? (
+          <SkillGrid
+            techniques={techniques}
+            signatureTechId={status.favorite_technique ?? undefined}
+          />
+        ) : (
+          <div style={{
+            padding: '2rem 1rem', textAlign: 'center',
+            border: '1px solid rgba(99,102,241,0.1)', borderRadius: 16,
+            background: 'rgba(99,102,241,0.03)',
+          }}>
+            <p style={{ fontSize: '0.85rem', color: 'rgba(99,102,241,0.4)', margin: 0 }}>
+              技データがありません。technique_master シートにデータを追加してください。
+            </p>
+          </div>
+        )}
         <p style={{ fontSize: '0.62rem', color: 'rgba(99,102,241,0.35)', marginTop: 5, textAlign: 'right' }}>
           ピンチ/スクロールで拡大・縮小
         </p>

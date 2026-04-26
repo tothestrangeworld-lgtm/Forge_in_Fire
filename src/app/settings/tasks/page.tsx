@@ -3,23 +3,40 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Save } from 'lucide-react';
-import type { UserTask } from '@/types';
+import type { TaskDiff, UserTask } from '@/types';
 import { fetchDashboard, updateTasks } from '@/lib/api';
+
+// =====================================================================
+// 課題設定画面
+// ★ Phase4: スマートテキスト変更検知を実装
+//   - テキスト変更なし → 既存 ID を維持（id を送信）
+//   - テキスト変更あり → 新規 UUID を発行（id を送らない）
+//   - 一度変更しても保存前に元テキストに戻した場合は「変更なし」扱い
+// =====================================================================
 
 const INPUT_COUNT = 5 as const;
 
 export default function TaskSettingsPage() {
   const router = useRouter();
+
+  /** 初期ロード時のアクティブタスク（比較基準）*/
+  const [originalTasks, setOriginalTasks] = useState<UserTask[]>([]);
+
+  /** 各テキストボックスの現在値（0〜4 のインデックスで originalTasks と対応）*/
   const [values, setValues] = useState<string[]>(Array.from({ length: INPUT_COUNT }, () => ''));
+
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
     fetchDashboard()
       .then(d => {
-        const active = (d.tasks ?? []).filter((t: UserTask) => t.status === 'active').map(t => t.task_text);
-        const seeded = Array.from({ length: INPUT_COUNT }, (_, i) => active[i] ?? '');
+        const active = (d.tasks ?? [])
+          .filter((t: UserTask) => t.status === 'active')
+          .slice(0, INPUT_COUNT);
+        setOriginalTasks(active);
+        const seeded = Array.from({ length: INPUT_COUNT }, (_, i) => active[i]?.task_text ?? '');
         setValues(seeded);
       })
       .catch((e: unknown) => {
@@ -39,7 +56,30 @@ export default function TaskSettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      await updateTasks(values);
+      // ── スマート差分ロジック ──
+      const taskDiffs: TaskDiff[] = [];
+
+      for (let i = 0; i < INPUT_COUNT; i++) {
+        const text    = values[i].trim();
+        const original = originalTasks[i]; // UserTask | undefined
+
+        if (!text) {
+          // 空欄: このスロットのタスクは送らない → GAS が archived に変更
+          continue;
+        }
+
+        if (original && text === original.task_text) {
+          // ── テキスト変更なし（元に戻した場合も含む）── ID を維持
+          taskDiffs.push({ id: original.id, text });
+        } else {
+          // ── テキスト変更あり / 新規 ──
+          // id を送らない → GAS が新 UUID を発行
+          // 旧 original.id は taskDiffs に含まれないので GAS がアーカイブする
+          taskDiffs.push({ text });
+        }
+      }
+
+      await updateTasks(taskDiffs);
       router.push('/');
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
@@ -65,6 +105,7 @@ export default function TaskSettingsPage() {
       }}>
         <p style={{ margin: '0 0 10px', fontSize: '0.8rem', fontWeight: 700, color: 'rgba(199,210,254,0.55)' }}>
           稽古記録（/record）で毎日 1〜5 評価する項目です（最大 {INPUT_COUNT} 件）。
+          テキストを変更して保存すると新しいIDで別項目として登録されます。元のテキストに戻した場合は変更なし扱いになります。
         </p>
 
         {loading ? (
@@ -75,38 +116,71 @@ export default function TaskSettingsPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {values.map((v, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: 10,
-                  background: 'rgba(129,140,248,0.12)',
-                  border: '1px solid rgba(129,140,248,0.18)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'rgba(199,210,254,0.55)',
-                  fontWeight: 900,
-                  flexShrink: 0,
-                }}>
-                  {i + 1}
+            {values.map((v, i) => {
+              const original    = originalTasks[i];
+              const trimmed     = v.trim();
+              const isChanged   = trimmed !== '' && original && trimmed !== original.task_text;
+              const isNew       = trimmed !== '' && !original;
+              const willArchive = !trimmed && !!original;
+
+              return (
+                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 10,
+                    background: 'rgba(129,140,248,0.12)',
+                    border: '1px solid rgba(129,140,248,0.18)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'rgba(199,210,254,0.55)',
+                    fontWeight: 900,
+                    flexShrink: 0,
+                  }}>
+                    {i + 1}
+                  </div>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <input
+                      value={v}
+                      onChange={e => setValues(prev => prev.map((x, idx) => (idx === i ? e.target.value : x)))}
+                      placeholder="例）打突後の残心"
+                      style={{
+                        width: '100%',
+                        borderRadius: 12,
+                        border: `1.5px solid ${
+                          isChanged || isNew  ? 'rgba(251,191,36,0.5)' :
+                          willArchive         ? 'rgba(239,68,68,0.4)'  :
+                                                'rgba(129,140,248,0.25)'
+                        }`,
+                        background: 'rgba(255,255,255,0.06)',
+                        color: '#fff',
+                        padding: '10px 12px',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                        fontSize: '0.85rem',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    {/* 変更インジケーター */}
+                    {(isChanged || isNew) && (
+                      <span style={{
+                        position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                        fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.05em',
+                        color: 'rgba(251,191,36,0.8)',
+                      }}>
+                        {isNew ? '新規' : '変更'}
+                      </span>
+                    )}
+                    {willArchive && (
+                      <span style={{
+                        position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                        fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.05em',
+                        color: 'rgba(239,68,68,0.6)',
+                      }}>
+                        削除
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <input
-                  value={v}
-                  onChange={e => setValues(prev => prev.map((x, idx) => (idx === i ? e.target.value : x)))}
-                  placeholder="例）打突後の残心"
-                  style={{
-                    flex: 1,
-                    width: '100%',
-                    borderRadius: 12,
-                    border: '1.5px solid rgba(129,140,248,0.25)',
-                    background: 'rgba(255,255,255,0.06)',
-                    color: '#fff',
-                    padding: '10px 12px',
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                    fontSize: '0.85rem',
-                  }}
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -145,4 +219,3 @@ export default function TaskSettingsPage() {
     </div>
   );
 }
-

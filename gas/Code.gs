@@ -1,21 +1,23 @@
 // =====================================================================
 // 百錬自得 - Google Apps Script バックエンド（マルチユーザー対応版）
-// ★ 改修2: technique_master / user_techniques への移行 + getDashboard に techniqueMaster 追加
+// ★ Phase4 正規化: logs.C列 = task_id（UUID）に変更
+// ★ settings シート関連を全廃止
+// ★ updateTasks: スマート差分（IDを維持/新規UUID）対応
 // =====================================================================
 
 const SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
 
 // ユーザー固有シート（A列 = user_id）
-const SHEET_SETTINGS        = 'settings';           // user_id, item_name, is_active
-const SHEET_LOGS            = 'logs';               // user_id, date, item_name, score, xp_earned
+// SHEET_SETTINGS は廃止済み
+const SHEET_LOGS            = 'logs';               // user_id, date, task_id, score, xp_earned
 const SHEET_STATUS          = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
 const SHEET_XP_HIST         = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
 const SHEET_USER_TASKS      = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
 const SHEET_PEER_EVALS      = 'peer_evaluations';   // evaluator_id, target_id, date, xp_granted
-const SHEET_USER_TECHNIQUES = 'user_techniques';    // user_id, technique_id, Points, LastRating  ★ NEW
+const SHEET_USER_TECHNIQUES = 'user_techniques';    // user_id, technique_id, Points, LastRating
 
 // 全ユーザー共通マスタ（user_id なし）
-const SHEET_TECH_MASTER    = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name  ★ NEW
+const SHEET_TECH_MASTER    = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name
 const SHEET_TITLE_MASTER   = 'title_master';
 const SHEET_EPITHET_MASTER = 'EpithetMaster';
 const SHEET_USER_MASTER    = 'UserMaster';
@@ -92,6 +94,25 @@ function nowJstTs() {
   return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
 }
 
+/**
+ * user_tasks シートから { task_id -> task_text } のマップを構築する。
+ * getDashboard / getLogs の JOIN処理で使用。
+ * archived 含む全タスクを対象にする（過去ログの復元のため）。
+ */
+function buildTaskTextMap(ss, userId) {
+  var sheet = ss.getSheetByName(SHEET_USER_TASKS);
+  if (!sheet) return {};
+  var rows = sheet.getDataRange().getValues();
+  var map  = {};
+  // 列: id(0), user_id(1), task_text(2), status(3)
+  rows.slice(1).forEach(function(r) {
+    if (String(r[1]) === String(userId) && r[0] && r[2]) {
+      map[String(r[0])] = String(r[2]);
+    }
+  });
+  return map;
+}
+
 // =====================================================================
 // B. doGet
 // =====================================================================
@@ -101,7 +122,6 @@ function doGet(e) {
     gasLog('INFO', action, 'doGet', { user_id: e.parameter.user_id || '' });
     switch (action) {
       case 'getDashboard':     return getDashboard(e.parameter);
-      case 'getSettings':      return getSettings(e.parameter);
       case 'getLogs':          return getLogs(e.parameter);
       case 'getUserStatus':    return getUserStatus(e.parameter);
       case 'getTechniques':    return getTechniques(e.parameter);
@@ -129,7 +149,6 @@ function doPost(e) {
     switch (action) {
       case 'login':                 return login(body);
       case 'saveLog':               return saveLog(body);
-      case 'updateSettings':        return updateSettings(body);
       case 'updateProfile':         return updateProfile(body);
       case 'resetStatus':           return resetStatus(body);
       case 'updateTechniqueRating': return updateTechniqueRating(body);
@@ -204,44 +223,8 @@ function login(body) {
 }
 
 // =====================================================================
-// E. settings
-// =====================================================================
-
-function getSettings(params) {
-  var userId = params.user_id;
-  if (!userId) return createError('user_id は必須です', 400);
-
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(SHEET_SETTINGS);
-  if (!sheet) return createResponse([]);
-
-  var rows  = filterRowsByUserId(sheet, userId);
-  var items = rows.map(function(r){
-    return { item_name: String(r[1]), is_active: r[2] === true || r[2] === 'TRUE' || r[2] === 'true' };
-  }).filter(function(r){ return r.item_name; });
-
-  return createResponse(items);
-}
-
-function updateSettings(body) {
-  var userId = body.user_id;
-  var items  = body.items;
-  if (!userId) return createError('user_id は必須です', 400);
-
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(SHEET_SETTINGS);
-  if (!sheet) return createError('settings シートが存在しません', 500);
-
-  deleteRowsByUserId(sheet, userId);
-  items.forEach(function(item){
-    sheet.appendRow([userId, item.item_name, item.is_active]);
-  });
-
-  return createResponse({ updated: items.length });
-}
-
-// =====================================================================
 // F. logs
+// ★ Phase4: C列は task_id（UUID）。フロント返却時に user_tasks と JOIN して item_name に変換。
 // =====================================================================
 
 function getLogs(params) {
@@ -252,12 +235,17 @@ function getLogs(params) {
   var sheet = ss.getSheetByName(SHEET_LOGS);
   if (!sheet) return createResponse([]);
 
+  // task_id → task_text マップ
+  var taskMap = buildTaskTextMap(ss, userId);
+
   var limit = parseInt(params.limit) || 500;
   var rows  = filterRowsByUserId(sheet, userId);
   var logs  = rows.map(function(r){
+    var taskId   = String(r[2] || '');
+    var itemName = taskMap[taskId] || taskId; // マップになければ task_id をそのまま使用
     return {
       date:      r[1] ? Utilities.formatDate(new Date(r[1]), 'Asia/Tokyo', 'yyyy-MM-dd') : '',
-      item_name: String(r[2]),
+      item_name: itemName,
       score:     parseInt(r[3]),
       xp_earned: parseInt(r[4]),
     };
@@ -266,14 +254,26 @@ function getLogs(params) {
   return createResponse(logs.slice(-limit));
 }
 
+/**
+ * saveLog
+ * ★ Phase4: items[].task_id（UUID）を受け取り、logs シートの C列に task_id として保存。
+ * item_name は保存しない。
+ */
 function saveLog(body) {
   var userId = body.user_id;
   var date   = body.date;
-  var items  = body.items;
+  var items  = body.items; // Array<{ task_id: string, score: number }>
   if (!userId) return createError('user_id は必須です', 400);
+  if (!items || items.length === 0) return createError('items は必須です', 400);
 
   var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
   var logSheet  = ss.getSheetByName(SHEET_LOGS);
+  if (!logSheet) {
+    logSheet = ss.insertSheet(SHEET_LOGS);
+    logSheet.appendRow(['user_id', 'date', 'task_id', 'score', 'xp_earned']);
+    logSheet.getRange(1,1,1,5).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    logSheet.setFrozenRows(1);
+  }
   var statSheet = ss.getSheetByName(SHEET_STATUS);
 
   var BASE_XP     = 50;
@@ -281,13 +281,13 @@ function saveLog(body) {
   var baseXp      = BASE_XP;
 
   items.forEach(function(item){
-    var bonus = SCORE_BONUS[item.score] || 0;
-    baseXp += bonus;
-    logSheet.appendRow([userId, date, item.item_name, item.score, bonus]);
+    var bonus  = SCORE_BONUS[item.score] || 0;
+    baseXp    += bonus;
+    // C列に task_id を保存（★ Phase4 変更点）
+    logSheet.appendRow([userId, date, String(item.task_id), item.score, bonus]);
   });
 
   // 段位倍率（リアル段位）
-  // user_status列構成: user_id(0), total_xp(1), level(2), title(3), last_practice_date(4), last_decay_date(5), real_rank(6), motto(7), favorite_technique(8)
   var statRows  = filterRowsByUserId(statSheet, userId);
   var realRank  = (statRows.length > 0) ? String(statRows[0][6] || '') : '';
   var MULTI     = { '初段':1.2, '弐段':1.5, '参段':1.8, '四段':2.2, '五段':2.7, '六段':3.4, '七段':4.2, '八段':5.0 };
@@ -329,13 +329,12 @@ function updateProfile(body) {
 
   var realRank = body.real_rank;
   var motto    = body.motto;
-  var favTech  = body.favorite_technique;  // 技ID（例: "T001"）★ UPDATED
+  var favTech  = body.favorite_technique;  // 技ID（例: "T001"）
 
-  // バリデーション
   var allowed = ['無段','初段','弐段','参段','四段','五段','六段','七段','八段',''];
   if (realRank !== undefined && realRank !== null) {
     realRank = String(realRank).trim();
-    if (realRank === '無段') realRank = ''; // 無段は未設定扱い（倍率1.0）
+    if (realRank === '無段') realRank = '';
     if (allowed.indexOf(realRank) === -1) return createError('real_rank が不正です', 400);
   }
   if (motto !== undefined && motto !== null) {
@@ -343,7 +342,6 @@ function updateProfile(body) {
     if (motto.length > 20) motto = motto.slice(0, 20);
   }
   if (favTech !== undefined && favTech !== null) {
-    // 技IDは英数字+記号のみ許可（例: T001, T999）
     favTech = String(favTech).trim();
     if (favTech.length > 20) favTech = favTech.slice(0, 20);
   }
@@ -461,40 +459,83 @@ function getTasksData(ss, userId) {
     .filter(function(t) { return t.id && t.task_text; });
 }
 
+/**
+ * updateTasks
+ * ★ スマート差分対応版
+ *
+ * body.tasks: Array<{ id?: string, text: string }>
+ *   - id あり: 既存タスクを再アクティブ化（テキスト変更なし＝IDを維持）
+ *   - id なし: 新規タスクとして UUID を発行
+ *   - 送られてこなかった既存アクティブタスク: 自動アーカイブ
+ */
 function updateTasks(body) {
   var userId = body.user_id;
-  var tasks  = body.tasks;
+  var tasks  = body.tasks; // Array<{id?: string, text: string}>
   if (!userId) return createError('user_id は必須です', 400);
-  if (!tasks || !Array.isArray(tasks)) return createError('tasks は文字列配列で必須です', 400);
+  if (!tasks || !Array.isArray(tasks)) return createError('tasks は配列で必須です', 400);
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = getUserTasksSheet(ss);
   var ts    = nowJstTs();
 
-  // 1) 既存 active を全て archived に
+  // 受け取ったタスクを分類
+  var tasksWithId = {};  // id -> text（テキスト変更なしの既存タスク）
+  var newTasks    = [];  // text のみ（新規 or テキスト変更）
+
+  tasks.forEach(function(t) {
+    var text = (t.text || '').trim();
+    if (!text) return;
+    if (t.id) {
+      tasksWithId[String(t.id)] = text;
+    } else {
+      newTasks.push(text);
+    }
+  });
+
+  var foundIds = {}; // シートで実際に発見した ID
+
+  // ── Step 1: 既存行を走査し、維持/アーカイブを振り分け ──
   var rows = sheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
-    if (String(r[1]) === String(userId) && String(r[3]) === 'active') {
+    if (String(r[1]) !== String(userId)) continue;
+    var rowId = String(r[0]);
+
+    if (tasksWithId[rowId] !== undefined) {
+      // 受け取った ID と一致 → アクティブに戻す（テキストも更新）
+      sheet.getRange(i + 1, 3).setValue(tasksWithId[rowId]);
+      sheet.getRange(i + 1, 4).setValue('active');
+      sheet.getRange(i + 1, 6).setValue(ts);
+      foundIds[rowId] = true;
+    } else if (String(r[3]) === 'active') {
+      // 送られてこなかった → アーカイブ
       sheet.getRange(i + 1, 4).setValue('archived');
       sheet.getRange(i + 1, 6).setValue(ts);
     }
   }
 
-  // 2) 新しい tasks を active で一括追加（空文字は除外）
-  var cleaned = tasks
-    .map(function(t) { return (t === null || t === undefined) ? '' : String(t).trim(); })
-    .filter(function(t) { return t !== ''; });
+  // ── Step 2: 新規行を追加 ──
+  var newRows = [];
 
-  if (cleaned.length > 0) {
-    var newRows = cleaned.map(function(text) {
-      return [Utilities.getUuid(), userId, text, 'active', ts, ts];
-    });
+  // ID 指定だがシートに存在しなかった（万一のフォールバック）
+  Object.keys(tasksWithId).forEach(function(id) {
+    if (!foundIds[id]) {
+      newRows.push([id, userId, tasksWithId[id], 'active', ts, ts]);
+    }
+  });
+
+  // 完全な新規タスク（UUID を発行）
+  newTasks.forEach(function(text) {
+    newRows.push([Utilities.getUuid(), userId, text, 'active', ts, ts]);
+  });
+
+  if (newRows.length > 0) {
     sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
   }
 
-  gasLog('INFO', 'updateTasks', 'tasks updated user=' + userId, { active_count: cleaned.length });
-  return createResponse({ active_count: cleaned.length });
+  var activeCount = Object.keys(tasksWithId).length + newTasks.length;
+  gasLog('INFO', 'updateTasks', 'tasks updated user=' + userId, { active_count: activeCount });
+  return createResponse({ active_count: activeCount });
 }
 
 function archiveTask(body) {
@@ -522,14 +563,10 @@ function archiveTask(body) {
 }
 
 // =====================================================================
-// I. technique_master（全ユーザー共通マスタ）★ NEW
+// I. technique_master（全ユーザー共通マスタ）
 // 列: ID(0), BodyPart(1), ActionType(2), SubCategory(3), Name(4)
 // =====================================================================
 
-/**
- * technique_master シートの全件を返す。
- * シートが存在しない場合は空配列を返す（手動移行済み前提のため自動作成しない）。
- */
 function getTechniqueMasterData(ss) {
   var sheet = ss.getSheetByName(SHEET_TECH_MASTER);
   if (!sheet) return [];
@@ -549,14 +586,10 @@ function getTechniqueMasterData(ss) {
 }
 
 // =====================================================================
-// I2. user_techniques（ユーザーごとの習熟度）★ NEW
+// I2. user_techniques（ユーザーごとの習熟度）
 // 列: user_id(0), technique_id(1), Points(2), LastRating(3)
 // =====================================================================
 
-/**
- * getTechniques: technique_master × user_techniques を JOIN して返す。
- * 記録がない技は Points=0, LastRating=0 として全件返す。
- */
 function getTechniques(params) {
   var userId = params.user_id;
   if (!userId) return createError('user_id は必須です', 400);
@@ -568,12 +601,10 @@ function getTechniques(params) {
     return createResponse([]);
   }
 
-  // user_techniques からユーザーの記録をマップ化（technique_id → {points, lastRating}）
   var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
   var userMap = {};
   if (utSheet) {
     var utRows = filterRowsByUserId(utSheet, userId);
-    // 列: user_id(0), technique_id(1), Points(2), LastRating(3)
     utRows.forEach(function(r){
       var tid = String(r[1]);
       userMap[tid] = {
@@ -583,7 +614,6 @@ function getTechniques(params) {
     });
   }
 
-  // JOIN: マスタ全件にユーザー記録をマージ
   var techs = master.map(function(m){
     var rec = userMap[m.id] || { points: 0, lastRating: 0 };
     return {
@@ -601,11 +631,6 @@ function getTechniques(params) {
   return createResponse(techs);
 }
 
-/**
- * updateTechniqueRating: user_techniques シートを upsert する。
- * レコードが存在すれば Points を加算・LastRating を更新。
- * なければ新規行を追加。
- */
 function updateTechniqueRating(body) {
   var userId    = body.user_id;
   var id        = body.id;
@@ -618,8 +643,7 @@ function updateTechniqueRating(body) {
 
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 
-  // technique_master に存在する ID か確認
-  var master   = getTechniqueMasterData(ss);
+  var master      = getTechniqueMasterData(ss);
   var masterEntry = null;
   for (var m = 0; m < master.length; m++) {
     if (master[m].id === String(id)) { masterEntry = master[m]; break; }
@@ -629,7 +653,6 @@ function updateTechniqueRating(body) {
     return createError('technique_master に ID=' + id + ' が存在しません', 404);
   }
 
-  // user_techniques シートを取得（なければ作成）
   var sheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_USER_TECHNIQUES);
@@ -649,12 +672,10 @@ function updateTechniqueRating(body) {
 
   var newPoints;
   if (rowIdx === -1) {
-    // 新規追加
     newPoints = ratingNum;
     sheet.appendRow([userId, id, newPoints, ratingNum]);
     gasLog('INFO', 'updateTechniqueRating', 'INSERT user=' + userId + ' id=' + id + ' pts=' + newPoints);
   } else {
-    // 更新
     var currentPts = Number(rows[rowIdx][2]) || 0;
     newPoints = currentPts + ratingNum;
     var sheetRow = rowIdx + 1;
@@ -668,12 +689,8 @@ function updateTechniqueRating(body) {
 
 // =====================================================================
 // I3. 他者評価（peer_evaluations）
-// 列: evaluator_id(0), target_id(1), date(2), xp_granted(3)
 // =====================================================================
 
-/**
- * 評価者のアプリ内レベルに応じたXP倍率を返す
- */
 function getPeerLevelMultiplier(level) {
   if (level >= 80) return 5.0;
   if (level >= 60) return 3.0;
@@ -695,7 +712,6 @@ function evaluatePeer(body) {
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
-  // 1日1回レートリミット
   var peSheet = ss.getSheetByName(SHEET_PEER_EVALS);
   if (!peSheet) return createError('peer_evaluations シートが存在しません。管理者に連絡してください。', 500);
 
@@ -709,7 +725,6 @@ function evaluatePeer(body) {
     }
   }
 
-  // 評価者レベル取得
   var statSheet = ss.getSheetByName(SHEET_STATUS);
   if (!statSheet) return createError('user_status シートが存在しません', 500);
 
@@ -719,7 +734,6 @@ function evaluatePeer(body) {
   var BASE_XP   = 10;
   var xpGranted = Math.ceil(BASE_XP * mult);
 
-  // 評価者名（xp_history の reason に使用）
   var umSheet  = ss.getSheetByName(SHEET_USER_MASTER);
   var evalName = String(evaluatorId);
   if (umSheet) {
@@ -732,7 +746,6 @@ function evaluatePeer(body) {
     }
   }
 
-  // 対象者の user_status を更新
   var targetRows = filterRowsByUserId(statSheet, targetId);
   var hasTarget  = targetRows.length > 0;
   var currentXp  = hasTarget ? (parseInt(targetRows[0][1]) || 0) : 0;
@@ -771,6 +784,7 @@ function evaluatePeer(body) {
 
 // =====================================================================
 // J. getDashboard（統合取得）
+// ★ Phase4: settings フィールド廃止。logs は task_id → item_name に JOIN して返す。
 // =====================================================================
 
 function getDashboard(params) {
@@ -801,42 +815,36 @@ function getDashboard(params) {
     }
   }
 
-  // ── 3. settings（後方互換） ──
-  var settingsSheet = ss.getSheetByName(SHEET_SETTINGS);
-  var settings      = [];
-  if (settingsSheet) {
-    settings = filterRowsByUserId(settingsSheet, userId).map(function(r){
-      return { item_name: String(r[1]), is_active: r[2] === true || r[2] === 'TRUE' || r[2] === 'true' };
-    }).filter(function(r){ return r.item_name; });
-  }
-
-  // ── 4. user_tasks ──
+  // ── 3. user_tasks ──
   var tasks = getTasksData(ss, userId);
 
-  // ── 5. logs（直近200件） ──
+  // ── 4. logs（直近200件）— task_id → item_name に JOIN ──
+  var taskMap  = buildTaskTextMap(ss, userId);
   var logSheet = ss.getSheetByName(SHEET_LOGS);
   var logs     = [];
   if (logSheet) {
     logs = filterRowsByUserId(logSheet, userId).map(function(r){
+      var taskId   = String(r[2] || '');
+      var itemName = taskMap[taskId] || taskId;
       return {
         date:      r[1] ? Utilities.formatDate(new Date(r[1]), 'Asia/Tokyo', 'yyyy-MM-dd') : '',
-        item_name: String(r[2]),
+        item_name: itemName,
         score:     parseInt(r[3]),
         xp_earned: parseInt(r[4]),
       };
     }).filter(function(r){ return r.date && r.item_name; }).slice(-200);
   }
 
-  // ── 6. nextLevelXp ──
+  // ── 5. nextLevelXp ──
   var nextLevelXp = calcNextLevelXp(status.total_xp);
 
-  // ── 7. title_master ──
+  // ── 6. title_master ──
   var titleMaster = getTitleMasterData(ss);
 
-  // ── 8. epithet_master ──
+  // ── 7. epithet_master ──
   var epithetMaster = getEpithetMasterData(ss);
 
-  // ── 9. xp_history（直近90件） ──
+  // ── 8. xp_history（直近90件） ──
   var xpHistory = [];
   var xpHistSheet = ss.getSheetByName(SHEET_XP_HIST);
   if (xpHistSheet) {
@@ -854,12 +862,11 @@ function getDashboard(params) {
     }).filter(function(e){ return e.date; });
   }
 
-  // ── 10. technique_master（全件）★ NEW ──
+  // ── 9. technique_master（全件） ──
   var techniqueMaster = getTechniqueMasterData(ss);
 
   return createResponse({
     status:          status,
-    settings:        settings,
     tasks:           tasks,
     logs:            logs,
     nextLevelXp:     nextLevelXp,
