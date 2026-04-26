@@ -38,20 +38,15 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
 
-    // ── fetchDashboard と fetchTechniques を独立して実行 ──
-    // fetchTechniques が失敗してもダッシュボードは表示する
-    fetchDashboard()
-      .then(dash => {
+    // fetchDashboard と fetchTechniques を最初から並列実行
+    // どちらか一方が失敗してもダッシュボード表示を妨げない
+    Promise.all([
+      fetchDashboard(),
+      fetchTechniques().catch(() => [] as Technique[]),
+    ])
+      .then(([dash, techs]) => {
         setData(dash);
-        // technique_master が dashboard に含まれているか確認
-        if (dash.techniqueMaster && dash.techniqueMaster.length > 0) {
-          // dashboard 取得完了後に fetchTechniques を実行
-          return fetchTechniques().then(techs => {
-            setTechniques(techs);
-          }).catch(() => {
-            // fetchTechniques が失敗しても無視（SkillGrid は空表示）
-          });
-        }
+        setTechniques(techs);
       })
       .catch(e => {
         if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
@@ -59,7 +54,7 @@ export default function DashboardPage() {
       })
       .finally(() => setLoading(false));
   };
-
+  
   useEffect(() => { load(); }, []);
 
   if (loading) return <DashboardSkeleton />;
