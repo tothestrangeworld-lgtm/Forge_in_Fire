@@ -133,6 +133,9 @@ interface TechData {
 function TechniqueNode({ data }: NodeProps) {
   const { technique: t, norm, isSignature } = data as unknown as TechData;
 
+  // technique が undefined の場合は何も描画しない（防御的ガード）
+  if (!t || !t.id) return null;
+
   // ★ シグネチャー（得意技）は特別スタイル
   const size = isSignature
     ? Math.round(54 + norm * 20)           // 一回り大きく
@@ -190,9 +193,9 @@ function TechniqueNode({ data }: NodeProps) {
         wordBreak: 'break-all',
         maxWidth: size - 6,
       }}>
-        {t.name}
+        {t?.name ?? '不明な技'}
       </span>
-      {t.points > 0 && (
+      {(t?.points ?? 0) > 0 && (
         <span style={{ fontSize: Math.max(6, size * 0.11), opacity: 0.75, marginTop: 1 }}>
           {t.points}pt
         </span>
@@ -227,6 +230,34 @@ const NODE_TYPES: NodeTypes = {
 };
 
 // =====================================================================
+// データサニタイズ
+// =====================================================================
+
+/**
+ * GAS から届く techniques 配列には、スプレッドシートの空行に由来する
+ * undefined / null / 不完全なオブジェクトが混在することがある。
+ * このヘルパーで無効エントリを除去し、各プロパティにフォールバックを設定する。
+ */
+function sanitizeTechniques(raw: Technique[]): Technique[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(item => {
+      // undefined / null / id なし → 弾く
+      if (!item || !item.id) return null;
+      return {
+        id:          item.id,
+        bodyPart:    item.bodyPart    ?? item.body_part    ?? '未分類',
+        actionType:  item.actionType  ?? item.action_type  ?? '',
+        subCategory: item.subCategory ?? item.sub_category ?? '',
+        name:        item.name        ?? item.technique_name ?? '不明な技',
+        points:      typeof item.points     === 'number' ? item.points     : 0,
+        lastRating:  typeof item.lastRating === 'number' ? item.lastRating : 0,
+      } satisfies Technique;
+    })
+    .filter((item): item is Technique => item !== null);
+}
+
+// =====================================================================
 // グラフ生成ロジック
 // =====================================================================
 const BODY_PART_R  = 220;
@@ -237,11 +268,14 @@ const TECH_SPREAD  = 95;
 type TechActionMap = Record<string, string>;
 
 function buildGraph(
-  techniques:    Technique[],
+  rawTechniques: Technique[],
   signatureTechId?: string,
 ): { nodes: Node[]; edges: Edge[]; techActionMap: TechActionMap } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
+
+  // 無効エントリを除去してから処理する
+  const techniques = sanitizeTechniques(rawTechniques);
 
   const byBodyPart: Record<string, Technique[]> = {};
   techniques.forEach(t => {
@@ -252,8 +286,8 @@ function buildGraph(
 
   const bodyParts  = Object.keys(byBodyPart);
   const N          = bodyParts.length;
-  const maxBpPts   = Math.max(...bodyParts.map(bp => byBodyPart[bp].reduce((s, t) => s + t.points, 0)), 1);
-  const maxTechPts = Math.max(...techniques.map(t => t.points), 1);
+  const maxBpPts   = Math.max(...bodyParts.map(bp => byBodyPart[bp].reduce((s, t) => s + (t.points ?? 0), 0)), 1);
+  const maxTechPts = Math.max(...techniques.map(t => t.points ?? 0), 1);
 
   // CORE
   nodes.push({
@@ -289,7 +323,7 @@ function buildGraph(
       style: { stroke: bpEdgeColor, strokeWidth: bpEdgeWidth, opacity: 0.4 + bpNorm * 0.5 },
     });
 
-    const techs    = [...byBodyPart[bp]].sort((a, b) => b.points - a.points);
+    const techs    = [...byBodyPart[bp]].sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
     const total    = techs.length;
     const perpCos  = Math.cos(bpAngle + Math.PI / 2);
     const perpSin  = Math.sin(bpAngle + Math.PI / 2);
@@ -303,7 +337,7 @@ function buildGraph(
       const spreadIdx   = rowIdx - (totalInCol - 1) / 2;
       const radDist     = TECH_R_BASE + col * TECH_R_EXTRA;
 
-      const techNorm      = tech.points / maxTechPts;
+      const techNorm      = (tech.points ?? 0) / maxTechPts;
       const isSignature   = !!signatureTechId && tech.id === signatureTechId;
       const techSize      = isSignature
         ? Math.round(54 + techNorm * 20)
@@ -344,7 +378,9 @@ function buildGraph(
   });
 
   const techActionMap: TechActionMap = {};
-  techniques.forEach(t => { techActionMap[`tech-${t.id}`] = t.actionType ?? ''; });
+  techniques.forEach(t => {
+    if (t?.id) techActionMap[`tech-${t.id}`] = t.actionType ?? '';
+  });
 
   return { nodes, edges, techActionMap };
 }
@@ -402,7 +438,8 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
     useMemo(() => buildGraph(techniques, signatureTechId), [techniques, signatureTechId]);
 
   const actionTypes = useMemo(() => {
-    const types = [...new Set(techniques.map(t => t.actionType).filter(Boolean))];
+    const safe  = sanitizeTechniques(techniques);
+    const types = [...new Set(safe.map(t => t.actionType).filter(Boolean))];
     return types;
   }, [techniques]);
 
@@ -411,7 +448,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
     [rawNodes, rawEdges, filter, techActionMap],
   );
 
-  if (!techniques.length) {
+  if (!sanitizeTechniques(techniques).length) {
     return (
       <div style={{
         textAlign: 'center', padding: '2rem 1rem',
@@ -429,7 +466,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
 
   // ★ 得意技が存在する場合、技名を取得して表示
   const signatureTech = signatureTechId
-    ? techniques.find(t => t.id === signatureTechId)
+    ? sanitizeTechniques(techniques).find(t => t.id === signatureTechId)
     : null;
 
   return (
