@@ -40,7 +40,7 @@ export default function RecordPage() {
       {/* ヘッダー */}
       <header style={{ marginBottom:'1.25rem' }}>
         <span className="section-title">記録</span>
-        <h1 style={{ fontSize:'1.75rem', fontWeight:800, color:'var(--ai)', margin:0, letterSpacing:'-0.02em' }}>
+        <h1 style={{ fontSize:'1.75rem', fontWeight:800, color:'#e0e7ff', margin:0, letterSpacing:'-0.02em' }}>
           今日の稽古
         </h1>
       </header>
@@ -135,11 +135,11 @@ function PracticeTab() {
         }}>
           <CheckCircle style={{ width:36, height:36, color:'#fff' }} />
         </div>
-        <h2 style={{ fontSize:'1.5rem', fontWeight:800, color:'var(--ai)', marginBottom:8 }}>稽古お疲れ様！</h2>
+        <h2 style={{ fontSize:'1.5rem', fontWeight:800, color:'#e0e7ff', marginBottom:8 }}>稽古お疲れ様！</h2>
         <p style={{ color:'#a8a29e', marginBottom:'2rem', fontSize:'0.9rem' }}>本日の記録を保存しました</p>
         <div className="wa-card" style={{ display:'inline-block', padding:'1.5rem 3rem', marginBottom:'2rem' }}>
           <p style={{ fontSize:'0.7rem', color:'#a5b4fc', marginBottom:4 }}>獲得XP</p>
-          <p style={{ fontSize:'3rem', fontWeight:800, color:'var(--ai)', lineHeight:1 }}>+{result.xp}</p>
+          <p style={{ fontSize:'3rem', fontWeight:800, color:'#e0e7ff', lineHeight:1 }}>+{result.xp}</p>
           <p style={{ fontSize:'0.8rem', color:'#a8a29e', marginTop:4 }}>XP</p>
           {result.title && (
             <div style={{ marginTop:16, background:'#fffbeb', borderRadius:12, padding:'8px 16px' }}>
@@ -190,7 +190,7 @@ function PracticeTab() {
             return (
               <div key={task.id} className="wa-card animate-slide-in" style={{ animationDelay:`${idx*60}ms` }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                  <p style={{ fontWeight:700, color:'var(--ai)', margin:0, fontSize:'0.95rem' }}>{task.task_text}</p>
+                  <p style={{ fontWeight:700, color:'#e0e7ff', margin:0, fontSize:'0.95rem' }}>{task.task_text}</p>
                   {badge && current && (
                     <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.2rem 0.6rem', borderRadius:999, background:badge.bg, color:badge.color }}>
                       {SCORE_LABELS[current]}
@@ -312,7 +312,7 @@ function TechniqueTab() {
   if (error) return (
     <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
       <p style={{ fontSize:'2rem', marginBottom:12 }}>⚠️</p>
-      <p style={{ fontWeight:700, color:'var(--ai)' }}>データ取得に失敗しました</p>
+      <p style={{ fontWeight:700, color:'#e0e7ff' }}>データ取得に失敗しました</p>
       <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:8 }}>{error}</p>
     </div>
   );
@@ -388,7 +388,7 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
     <div className="wa-card" style={{ padding:'0.85rem 1rem' }}>
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:8 }}>
         <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontWeight:700, color:'var(--ai)', fontSize:'0.9rem', margin:'0 0 2px' }}>{t.name}</p>
+          <p style={{ fontWeight:700, color:'#e0e7ff', fontSize:'0.9rem', margin:'0 0 2px' }}>{t.name}</p>
           <p style={{ fontSize:'0.65rem', color:'#a8a29e', margin:0 }}>
             累計 <span style={{ fontWeight:700, color:'#6366f1' }}>{t.points.toLocaleString()} pt</span>
             {rating >= 1 && saveState === 'idle' && (
