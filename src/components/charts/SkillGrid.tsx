@@ -244,12 +244,14 @@ function sanitizeTechniques(raw: Technique[]): Technique[] {
     .map(item => {
       // undefined / null / id なし → 弾く
       if (!item || !item.id) return null;
+      // GAS が snake_case で返す場合に備え unknown 経由でアクセス
+      const r = item as unknown as Record<string, unknown>;
       return {
         id:          item.id,
-        bodyPart:    item.bodyPart    ?? item.body_part    ?? '未分類',
-        actionType:  item.actionType  ?? item.action_type  ?? '',
-        subCategory: item.subCategory ?? item.sub_category ?? '',
-        name:        item.name        ?? item.technique_name ?? '不明な技',
+        bodyPart:    item.bodyPart    ?? (r['body_part']     as string) ?? '未分類',
+        actionType:  item.actionType  ?? (r['action_type']   as string) ?? '',
+        subCategory: item.subCategory ?? (r['sub_category']  as string) ?? '',
+        name:        item.name        ?? (r['technique_name'] as string) ?? '不明な技',
         points:      typeof item.points     === 'number' ? item.points     : 0,
         lastRating:  typeof item.lastRating === 'number' ? item.lastRating : 0,
       } satisfies Technique;
