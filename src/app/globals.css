@@ -490,3 +490,35 @@ textarea::placeholder {
   border-width: 0 2px 2px 0;
   border-radius: 0 0 2px 0;
 }
+
+/* =====================================================================
+   フォーム要素のダークテーマ共通設定
+   ===================================================================== */
+   input, select, textarea {
+    background-color: #0a0918; /* アプリのベース背景に合わせた暗色 */
+    color: #f8fafc; /* ハッキリ見える明るい文字色（白系） */
+    border: 1px solid rgba(99, 102, 241, 0.3); /* サイバー感のある紫/青系のボーダー */
+    border-radius: 0.5rem; /* 角丸 */
+    padding: 0.5rem;
+    font-family: inherit;
+  }
+  
+  /* プルダウンを開いた時の選択肢（option）のスタイル */
+  select option {
+    background-color: #0a0918; /* 白背景に白文字になるのを防ぐため、ここも暗くする */
+    color: #f8fafc;
+  }
+  
+  /* 入力欄をクリック（フォーカス）した時の発光エフェクト */
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: rgba(99, 102, 241, 0.8);
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+  }
+  
+  /* （おまけ）入力不可の時のスタイル */
+  input:disabled, select:disabled, textarea:disabled {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.3);
+    cursor: not-allowed;
+  }
