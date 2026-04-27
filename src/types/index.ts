@@ -134,6 +134,7 @@ export interface EvaluatePeerResponse {
   xp_granted:      number;
   evaluator_level: number;
   multiplier:      number;
+  score:           number;
 }
 
 export interface GASResponse<T> {

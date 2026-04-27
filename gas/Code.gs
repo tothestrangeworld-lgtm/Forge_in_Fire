@@ -13,7 +13,7 @@ const SHEET_LOGS            = 'logs';               // user_id, date, task_id, s
 const SHEET_STATUS          = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
 const SHEET_XP_HIST         = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
 const SHEET_USER_TASKS      = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
-const SHEET_PEER_EVALS      = 'peer_evaluations';   // evaluator_id, target_id, date, xp_granted
+const SHEET_PEER_EVALS      = 'peer_evaluations';   // evaluator_id, target_id, date, score, xp_granted
 const SHEET_USER_TECHNIQUES = 'user_techniques';    // user_id, technique_id, Points, LastRating
 
 // 全ユーザー共通マスタ（user_id なし）
@@ -703,10 +703,15 @@ function getPeerLevelMultiplier(level) {
 function evaluatePeer(body) {
   var evaluatorId = body.user_id;
   var targetId    = body.target_id;
+  var score       = parseInt(body.score);
+
   if (!evaluatorId) return createError('user_id は必須です', 400);
   if (!targetId)    return createError('target_id は必須です', 400);
   if (String(evaluatorId) === String(targetId)) {
     return createError('自分自身を評価することはできません', 400);
+  }
+  if (isNaN(score) || score < 1 || score > 5) {
+    return createError('score は 1〜5 の整数で指定してください', 400);
   }
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -731,8 +736,8 @@ function evaluatePeer(body) {
   var evalRows  = filterRowsByUserId(statSheet, evaluatorId);
   var evalLevel = evalRows.length > 0 ? (parseInt(evalRows[0][2]) || 1) : 1;
   var mult      = getPeerLevelMultiplier(evalLevel);
-  var BASE_XP   = 10;
-  var xpGranted = Math.ceil(BASE_XP * mult);
+  // XP = score × 2 × 評価者レベル倍率
+  var xpGranted = Math.ceil(score * 2 * mult);
 
   var umSheet  = ss.getSheetByName(SHEET_USER_MASTER);
   var evalName = String(evaluatorId);
@@ -768,17 +773,20 @@ function evaluatePeer(body) {
     statSheet.appendRow([targetId, newXp, newLevel, newTitle, '', today, '', '', '']);
   }
 
-  peSheet.appendRow([evaluatorId, targetId, nowJstTs(), xpGranted]);
-  writeXpHistory(ss, targetId, 'peer_eval', xpGranted, evalName + 'からの評価', newXp, newLevel, newTitle);
+  // peer_evaluations: evaluator_id, target_id, date, score, xp_granted
+  peSheet.appendRow([evaluatorId, targetId, nowJstTs(), score, xpGranted]);
+  writeXpHistory(ss, targetId, 'peer_eval', xpGranted,
+    evalName + 'からの評価（スコア: ' + score + '）', newXp, newLevel, newTitle);
 
   gasLog('INFO', 'evaluatePeer',
-    'evaluator=' + evaluatorId + '(' + evalLevel + ') -> target=' + targetId + ' +' + xpGranted + 'XP(×' + mult + ')',
-    { evalName: evalName, newLevel: newLevel });
+    'evaluator=' + evaluatorId + '(' + evalLevel + ') score=' + score + ' -> target=' + targetId + ' +' + xpGranted + 'XP(×' + mult + ')',
+    { evalName: evalName, score: score, newLevel: newLevel });
 
   return createResponse({
     xp_granted:      xpGranted,
     evaluator_level: evalLevel,
     multiplier:      mult,
+    score:           score,
   });
 }
 

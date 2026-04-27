@@ -193,9 +193,9 @@ export async function updateTasks(tasks: TaskDiff[]): Promise<{ active_count: nu
 // 他者評価
 // =====================================================================
 
-export async function evaluatePeer(targetId: string): Promise<EvaluatePeerResponse> {
-  logger.info('api', `他者評価送信: target=${targetId}`);
-  return gasPost<EvaluatePeerResponse>({ action: 'evaluatePeer', target_id: targetId });
+export async function evaluatePeer(targetId: string, score: number): Promise<EvaluatePeerResponse> {
+  logger.info('api', `他者評価送信: target=${targetId} score=${score}`);
+  return gasPost<EvaluatePeerResponse>({ action: 'evaluatePeer', target_id: targetId, score });
 }
 
 // =====================================================================
