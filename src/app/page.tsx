@@ -10,6 +10,7 @@ import {
 import { fetchDashboard, fetchTechniques, resetStatus } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import { getAuthUser } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import dynamic from 'next/dynamic';
 
 const RadarChart      = dynamic(() => import('@/components/charts/RadarChart'),      { ssr: false });
@@ -24,6 +25,9 @@ const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleChart
 //   - fetchTechniques を fetchDashboard と独立して実行
 //     （技データ取得失敗がダッシュボード表示をブロックしないよう修正）
 //   - SkillGrid 表示不具合修正: techniques が空の場合のガード強化
+// ★ Phase4 追加修正:
+//   - fetchTechniques 失敗時に getDashboard の techniqueMaster を fallback として使用
+//     （GAS 同時リクエスト失敗やネットワーク問題でも SkillGrid を必ず描画）
 // =====================================================================
 export default function DashboardPage() {
   const [data, setData]             = useState<DashboardData | null>(null);
@@ -38,15 +42,39 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
 
-    // fetchDashboard と fetchTechniques を最初から並列実行
-    // どちらか一方が失敗してもダッシュボード表示を妨げない
+    // fetchDashboard と fetchTechniques を並列実行。
+    // fetchTechniques が失敗した場合は null を返し、
+    // getDashboard レスポンスの techniqueMaster を fallback として使用する。
+    // （GAS 同時リクエスト制限・ネットワーク問題でも SkillGrid を必ず描画）
     Promise.all([
       fetchDashboard(),
-      fetchTechniques().catch(() => [] as Technique[]),
+      fetchTechniques().catch((err: unknown) => {
+        logger.warn('api', 'fetchTechniques 失敗 → techniqueMaster fallback を使用', {
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }),
     ])
       .then(([dash, techs]) => {
         setData(dash);
-        setTechniques(techs);
+
+        if (techs !== null && techs.length > 0) {
+          // fetchTechniques 成功：ポイント付きデータをそのまま使用
+          setTechniques(techs);
+        } else {
+          // fetchTechniques 失敗または空：
+          // getDashboard の techniqueMaster を fallback に使用（points / lastRating は 0 扱い）
+          const fallback: Technique[] = (dash.techniqueMaster ?? []).map(m => ({
+            id:          m.id,
+            bodyPart:    m.bodyPart,
+            actionType:  m.actionType,
+            subCategory: m.subCategory,
+            name:        m.name,
+            points:      0,
+            lastRating:  0,
+          }));
+          setTechniques(fallback);
+        }
       })
       .catch(e => {
         if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
