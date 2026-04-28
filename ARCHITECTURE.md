@@ -15,7 +15,7 @@
 | スタイリング | Tailwind CSS + インラインスタイル（サイバー和風テーマ） |
 | フォント | M PLUS Rounded 1c |
 | グラフ | Recharts（AreaChart） |
-| スキルグリッド | @xyflow/react v12（ノード・エッジ動的描画） |
+| スキルグリッド | @xyflow/react v12（六角形カスタムノード・アニメーションエッジ） ★ Phase5更新 |
 | アイコン | lucide-react |
 
 ### バックエンド・データベース
@@ -60,7 +60,7 @@ Forge_in_Fire/
 │   │       ├── RadarChart.tsx              # 稽古スコアバランス（横型プログレスバー）
 │   │       ├── XPTimelineChart.tsx         # XP累積推移（ステップライン・ネオングラデーション）
 │   │       ├── ActivityHeatmap.tsx         # 稽古カレンダー
-│   │       ├── SkillGrid.tsx               # スフィア盤（得意技ハイライト対応）
+│   │       ├── SkillGrid.tsx               # スキルグリッド（六角形ノード・アニメーションエッジ） ★ Phase5更新
 │   │       ├── PlaystyleCharts.tsx         # プレイスタイル分析
 │   │       └── TrendLineChart.tsx          # スコア推移折れ線
 │   │
@@ -132,7 +132,7 @@ Forge_in_Fire/
 |---|---|---|
 | A | user_id | ユーザーID |
 | B | technique_id | 技のID（`technique_master` の ID と紐づく） |
-| C | Points | 累積ポイント |
+| C | Points | 累積ポイント（無制限に蓄積。UIは視覚的キャップで上限表示） |
 | D | LastRating | 直近の星評価（1〜5） |
 
 #### `xp_history`（XP増減履歴）
@@ -318,7 +318,130 @@ DashboardData: {
 
 ---
 
-## 7. 環境変数
+## 7. SkillGrid のノード設計（Phase5 更新） ★ NEW
+
+### 概要
+
+`SkillGrid.tsx` は @xyflow/react を用いた技の習熟度ビジュアライザー（サイバー八卦陣）。
+Phase5 にて**全ノードを六角形カスタムノード**に刷新し、**無限ポイントに対する視覚的キャップ付きUI**を導入した。
+さらにレイアウトアルゴリズムを**放射状等間隔レイアウト（Radial Equal-Spacing Layout）**に刷新した。
+
+### ノード種別とシェイプ
+
+| ノード種別 | 形状 | clip-path |
+|---|---|---|
+| `CoreNode`（中心） | 八角形 | `polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)` |
+| `BodyPartNode`（部位） | 六角形（大） | `polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)` |
+| `TechniqueNode`（技） | 六角形（標準） | `polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)` |
+
+> **React Flow と clip-path の共存について:**
+> ハンドル（Handle）を全て中心座標（`top: 50%, left: 50%`）に透明配置することで、
+> clip-path による非矩形ノードでも接続線が正しく描画される。
+
+---
+
+### 放射状等間隔レイアウト（Radial Equal-Spacing Layout） ★ Phase5 刷新
+
+#### 採用理由
+
+旧レイアウト（ツリー形式）では、BodyPart ノードを N 等分した方向に放射し、
+その先に配下の技を扇状に並べる構造をとっていた。
+この方式では**「面」のように技が多い部位に広い領域が割り当てられ、技の少ない部位がスカスカになる**という
+視覚的偏りが生じていた。
+
+**放射状等間隔レイアウトでは、全末端ノード（技）の数を基準に外周を等分するため、
+部位ごとの技の数に関わらずグリッド全体の密度が均一になる。**
+
+#### アルゴリズム概要
+
+```
+1. BodyPart ごとに技をグループ化し、合計ポイント降順でソート
+2. 全技を1本のリストに展開（totalTechs 件）
+3. 外周半径 R_OUTER をダイナミックに計算:
+     R_OUTER = max(MIN_R_OUTER, totalTechs × MAX_TECH_DISPLAY_SIZE × SPACING_FACTOR / 2π)
+4. 各技にグローバル角度を割り当て:
+     angle[i] = (2π / totalTechs) * i - π/2   ← 真上（12時）から時計回り
+5. 各技を外周円上に配置:
+     (x, y) = (R_OUTER × cos(angle), R_OUTER × sin(angle))
+6. 各 BodyPart を中間半径（R_MID = R_OUTER × 0.5）に配置:
+     avgAngle = atan2(Σsin(子角度), Σcos(子角度))   ← 円形平均（Circular Mean）
+     (x, y) = (R_MID × cos(avgAngle), R_MID × sin(avgAngle))
+```
+
+#### 円形平均（Circular Mean）について
+
+BodyPart ノードの位置は、配下の技の角度の「平均方向」に置く。
+通常の算術平均では 350° と 10° の平均が誤って 180° になるが、
+`atan2(Σsin, Σcos)` を用いることで正しく 0° が得られる。
+
+```typescript
+const sinSum = childAngles.reduce((s, a) => s + Math.sin(a), 0);
+const cosSum = childAngles.reduce((s, a) => s + Math.cos(a), 0);
+const avgAngle = Math.atan2(sinSum, cosSum);
+```
+
+#### 衝突回避（ダイナミック・サイジング）
+
+末端ノード数に応じて外周半径を自動拡大し、隣接ノードの重なりを防ぐ。
+
+```
+周長 ≥ totalTechs × MAX_TECH_DISPLAY_SIZE × SPACING_FACTOR
+→ R_OUTER ≥ (totalTechs × 78px × 1.55) / 2π
+```
+
+| 定数 | 値 | 意味 |
+|---|---|---|
+| `MIN_R_OUTER` | `320` | 最小外周半径（px） |
+| `R_MID_RATIO` | `0.50` | BodyPart を外周の何割の位置に置くか |
+| `SPACING_FACTOR` | `1.55` | 隣接ノード間のスペース係数 |
+| `MAX_TECH_DISPLAY_SIZE` | `78` | 末端ノードの最大表示サイズ（px） |
+
+---
+
+### 視覚的キャップ（上限）設計
+
+```
+TECH_SCORE_CAP = 10   // TechniqueNode の視覚的上限スコア
+BP_SCORE_CAP   = 50   // BodyPartNode の視覚的上限スコア（配下技の合計）
+
+techNorm = Math.min(points / TECH_SCORE_CAP, 1.0)
+// → ポイントは無限に蓄積できるが、UIサイズとエフェクトは 0.0〜1.0 でクランプ
+```
+
+**設計の意図:** `points` はゲームプレイの進捗を正確に記録し続けるが、
+ノードのサイズや発光量を無制限に拡大するとレイアウトが崩壊する。
+キャップを設けることで「カンスト状態」を明示しつつ、グリッドの視認性を維持する。
+
+### エフェクトのしきい値
+
+| 状態 | 条件 | エフェクト |
+|---|---|---|
+| 未練習 | `points === 0` | 暗色・発光なし |
+| 練習中 | `0 < norm ≤ 0.2` | 深紫グラデーション・微発光 |
+| 習熟中 | `0.2 < norm ≤ 0.6` | 紫グラデーション・中発光 |
+| 高習熟 | `0.6 < norm < 1.0` | 明紫グラデーション・強発光 |
+| **カンスト** | `norm ≥ 1.0`（`points ≥ TECH_SCORE_CAP`） | 黄金グラデーション・`maxed-pulse` アニメーション・MAXバッジ |
+| **得意技** | `id === signatureTechId` | 深紅オーラ・`signature-pulse` アニメーション・★バッジ（カンストより優先） |
+
+### エッジ（接続線）設計
+
+```typescript
+edges.push({
+  animated: true,   // ReactFlow の stroke-dasharray アニメーション
+  style: {
+    stroke: edgeColor,
+    filter: 'drop-shadow(0 0 4px <color>)',  // サイバーグロー
+  },
+});
+```
+
+- `animated: true` に加え `@keyframes dashmove` で dash の流れる方向・速度を統一制御。
+- エッジ色は接続先ノードの状態に連動（深紅＝得意技 → 金＝MAX → 紫 → 半透明の4段階）。
+- シグネチャー技・カンスト技へのエッジは二重グロー（強調）。
+
+---
+
+## 8. 環境変数
 
 | 変数名 | 必須 | 内容 |
 |---|---|---|
@@ -326,7 +449,7 @@ DashboardData: {
 
 ---
 
-## 8. 実装済みの主要機能
+## 9. 実装済みの主要機能
 
 ### ✅ 稽古XP記録システム（Phase4 完全正規化済み）
 - `user_tasks` の active 項目（最大5件）を **task_id（UUID）** で logs に保存
@@ -349,6 +472,16 @@ DashboardData: {
 - 3日間猶予 → 4日目以降 `floor(20 × (d-3)^1.3)` / 日
 
 ### ✅ 技DB正規化（technique_master + user_techniques）
+
+### ✅ SkillGrid 六角形カスタムノード + 放射状等間隔レイアウト（Phase5） ★ NEW
+- 全ノードを `clip-path` ベースの六角形に変更（CoreNode は八角形で区別）
+- `TECH_SCORE_CAP = 10` による視覚的キャップを導入（ポイント自体は無制限蓄積）
+- カンスト到達時の黄金パルス発光アニメーション（`maxed-pulse`）
+- 得意技の深紅オーラ・バッジ（`signature-pulse`）
+- 全エッジを `animated: true` + サイバーグロースタイルに変更
+- レイアウトを放射状等間隔（Radial Equal-Spacing）に刷新し、部位ごとの視覚的密度の偏りを解消
+- 円形平均（Circular Mean）で BodyPart を配下技の正確な重心方向に配置
+- ダイナミック半径計算で技の数が増えても隣接ノードが重ならないよう自動調整
 
 ### ✅ 得意技ハイライト（SkillGrid・シグネチャームーブ）
 
@@ -377,7 +510,7 @@ DashboardData: {
 
 ---
 
-## 9. スプレッドシートの手動変更が必要な作業
+## 10. スプレッドシートの手動変更が必要な作業
 
 ### Phase4 移行時
 > **⚠️ GAS の再デプロイだけでなく、スプレッドシートの手動変更も必要です。**
@@ -398,7 +531,7 @@ DashboardData: {
 
 ---
 
-## 10. 今後の拡張ポイント
+## 11. 今後の拡張ポイント
 
 - [ ] ランキング画面
 - [ ] PWA対応（オフライン記録 → 同期）
@@ -408,3 +541,4 @@ DashboardData: {
 - [ ] 他者評価の累計受信数・平均スコアをダッシュボードに表示
 - [ ] 段位倍率の管理画面
 - [ ] 旧 logs データの一括マイグレーション（item_name → task_id）
+- [ ] ページ遷移時・保存完了時のマイクロインタラクション（Phase5 残）
