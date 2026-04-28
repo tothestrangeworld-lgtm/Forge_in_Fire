@@ -3,24 +3,27 @@
 // ★ Phase4 正規化: logs.C列 = task_id（UUID）に変更
 // ★ settings シート関連を全廃止
 // ★ updateTasks: スマート差分（IDを維持/新規UUID）対応
+// ★ Phase6: アチーブメント（実績バッジ）システム追加
 // =====================================================================
 
 const SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
 
 // ユーザー固有シート（A列 = user_id）
 // SHEET_SETTINGS は廃止済み
-const SHEET_LOGS            = 'logs';               // user_id, date, task_id, score, xp_earned
-const SHEET_STATUS          = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
-const SHEET_XP_HIST         = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
-const SHEET_USER_TASKS      = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
-const SHEET_PEER_EVALS      = 'peer_evaluations';   // evaluator_id, target_id, date, score, xp_granted
-const SHEET_USER_TECHNIQUES = 'user_techniques';    // user_id, technique_id, Points, LastRating
+const SHEET_LOGS              = 'logs';               // user_id, date, task_id, score, xp_earned
+const SHEET_STATUS            = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
+const SHEET_XP_HIST           = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
+const SHEET_USER_TASKS        = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
+const SHEET_PEER_EVALS        = 'peer_evaluations';   // evaluator_id, target_id, date, score, xp_granted
+const SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Points, LastRating
+const SHEET_USER_ACHIEVEMENTS = 'user_achievements';  // user_id, achievement_id, unlocked_at ★ Phase6
 
 // 全ユーザー共通マスタ（user_id なし）
-const SHEET_TECH_MASTER    = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name
-const SHEET_TITLE_MASTER   = 'title_master';
-const SHEET_EPITHET_MASTER = 'EpithetMaster';
-const SHEET_USER_MASTER    = 'UserMaster';
+const SHEET_TECH_MASTER         = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name
+const SHEET_TITLE_MASTER        = 'title_master';
+const SHEET_EPITHET_MASTER      = 'EpithetMaster';
+const SHEET_USER_MASTER         = 'UserMaster';
+const SHEET_ACHIEVEMENT_MASTER  = 'achievement_master';  // achievement_id, name, condition_type, condition_value, description, hint, icon_type ★ Phase6
 
 // システム用
 const SHEET_ERRORLOGS      = 'error_logs';
@@ -127,6 +130,7 @@ function doGet(e) {
       case 'getTechniques':    return getTechniques(e.parameter);
       case 'getEpithetMaster': return getEpithetMaster();
       case 'getUsers':         return getUsers();
+      case 'getAchievements':  return getAchievements(e.parameter);   // ★ Phase6
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -258,6 +262,7 @@ function getLogs(params) {
  * saveLog
  * ★ Phase4: items[].task_id（UUID）を受け取り、logs シートの C列に task_id として保存。
  * item_name は保存しない。
+ * ★ Phase6: 保存後にアチーブメント解除判定を実行し newAchievements をレスポンスに含める。
  */
 function saveLog(body) {
   var userId = body.user_id;
@@ -316,7 +321,17 @@ function saveLog(body) {
   }
 
   writeXpHistory(ss, userId, 'gain', totalXp, '稽古記録（' + date + '・' + items.length + '項目）', newXp, newLevel, newTitle);
-  return createResponse({ xp_earned: totalXp, total_xp: newXp, level: newLevel, title: newTitle });
+
+  // ★ Phase6: アチーブメント解除判定
+  var newAchievements = checkAndUnlockAchievements(ss, userId, date, logSheet);
+
+  return createResponse({
+    xp_earned:        totalXp,
+    total_xp:         newXp,
+    level:            newLevel,
+    title:            newTitle,
+    newAchievements:  newAchievements,
+  });
 }
 
 // =====================================================================
@@ -1067,4 +1082,256 @@ function applyDecay(ss, userId) {
   writeXpHistory(ss, userId, 'decay', -totalDecay, daysAbsent + '日間稽古なし', newXp, newLevel, newTitle);
 
   return { applied: totalDecay, days_absent: daysAbsent, today_penalty: todayPenalty };
+}
+
+// =====================================================================
+// O. アチーブメントシステム ★ Phase6
+// =====================================================================
+
+/**
+ * achievement_master シートを取得（なければ自動作成）
+ * 列: achievement_id(0), name(1), condition_type(2), condition_value(3),
+ *     description(4), hint(5), icon_type(6)
+ */
+function getAchievementMasterSheet(ss) {
+  var sheet = ss.getSheetByName(SHEET_ACHIEVEMENT_MASTER);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_ACHIEVEMENT_MASTER);
+    sheet.appendRow(['achievement_id', 'name', 'condition_type', 'condition_value', 'description', 'hint', 'icon_type']);
+    sheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.setFrozenRows(1);
+    // デフォルトデータ（streak_days / total_practices 2種類）
+    var defaults = [
+      ['ACH001', '初稽古',        'total_practices',  1,  '初めての稽古を記録した',                 '稽古記録を1回つけよう',     'first_step'],
+      ['ACH002', '三日坊主克服',  'streak_days',       3,  '3日連続で稽古を記録した',               '3日間連続で稽古しよう',     'streak'],
+      ['ACH003', '一週間の剣士',  'streak_days',       7,  '7日連続で稽古を記録した',               '7日間連続で稽古しよう',     'streak'],
+      ['ACH004', '精進十日',      'streak_days',      10,  '10日連続で稽古を記録した',              '10日間連続で稽古しよう',    'streak'],
+      ['ACH005', '一ヶ月皆勤',    'streak_days',      30,  '30日連続で稽古を記録した',              '30日間連続で稽古しよう',    'streak'],
+      ['ACH006', '十稽古',        'total_practices',  10,  '累計10回の稽古を記録した',              '累計10回稽古しよう',        'milestone'],
+      ['ACH007', '五十稽古',      'total_practices',  50,  '累計50回の稽古を記録した',              '累計50回稽古しよう',        'milestone'],
+      ['ACH008', '百錬自得',      'total_practices', 100,  '累計100回の稽古を記録した',             '累計100回稽古しよう',       'legendary'],
+    ];
+    sheet.getRange(2, 1, defaults.length, 7).setValues(defaults);
+    gasLog('INFO', 'getAchievementMasterSheet', 'achievement_master シートを自動作成しました');
+  }
+  return sheet;
+}
+
+/**
+ * achievement_master の全件をオブジェクト配列で返す
+ */
+function getAchievementMasterData(ss) {
+  var sheet = getAchievementMasterSheet(ss);
+  return sheet.getDataRange().getValues().slice(1)
+    .filter(function(r){ return r[0] !== ''; })
+    .map(function(r){
+      return {
+        id:             String(r[0]),
+        name:           String(r[1] || ''),
+        conditionType:  String(r[2] || ''),
+        conditionValue: Number(r[3]) || 0,
+        description:    String(r[4] || ''),
+        hint:           String(r[5] || ''),
+        iconType:       String(r[6] || ''),
+      };
+    });
+}
+
+/**
+ * user_achievements シートを取得（なければ自動作成）
+ * 列: user_id(0), achievement_id(1), unlocked_at(2)
+ */
+function getUserAchievementsSheet(ss) {
+  var sheet = ss.getSheetByName(SHEET_USER_ACHIEVEMENTS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_USER_ACHIEVEMENTS);
+    sheet.appendRow(['user_id', 'achievement_id', 'unlocked_at']);
+    sheet.getRange(1,1,1,3).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.setFrozenRows(1);
+    gasLog('INFO', 'getUserAchievementsSheet', 'user_achievements シートを自動作成しました');
+  }
+  return sheet;
+}
+
+/**
+ * getAchievements: ユーザーの全実績データを返す（マスタ + unlocked_at の JOIN済み）
+ * doGet action: 'getAchievements'
+ */
+function getAchievements(params) {
+  var userId = params.user_id;
+  if (!userId) return createError('user_id は必須です', 400);
+
+  var ss      = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var master  = getAchievementMasterData(ss);
+  var uaSheet = getUserAchievementsSheet(ss);
+  var uaRows  = filterRowsByUserId(uaSheet, userId);
+
+  // 解除済み: { achievement_id -> unlocked_at } マップ
+  var unlockedMap = {};
+  uaRows.forEach(function(r){
+    unlockedMap[String(r[1])] = r[2] ? String(r[2]).slice(0, 19) : '';
+  });
+
+  var result = master.map(function(m){
+    var isUnlocked = unlockedMap[m.id] !== undefined;
+    return {
+      id:          m.id,
+      name:        m.name,
+      description: m.description,
+      hint:        m.hint,
+      iconType:    m.iconType,
+      isUnlocked:  isUnlocked,
+      unlockedAt:  isUnlocked ? unlockedMap[m.id] : null,
+    };
+  });
+
+  gasLog('INFO', 'getAchievements', result.length + '件 user:' + userId);
+  return createResponse(result);
+}
+
+/**
+ * 連続稽古日数（現在のストリーク）を計算する。
+ * logSheet から userId の全稽古日を取得し、今日（saveLog で追加された当日含む）
+ * から遡って連続している日数を返す。
+ *
+ * @param {Sheet}  logSheet  - logs シートオブジェクト
+ * @param {string} userId    - ユーザーID
+ * @param {string} todayStr  - 本日の日付文字列 (YYYY-MM-DD)
+ * @returns {number} 現在の連続稽古日数
+ */
+function calcCurrentStreak(logSheet, userId, todayStr) {
+  var rows = filterRowsByUserId(logSheet, userId);
+
+  // ユニーク稽古日セットを構築（今日分は saveLog で既に追加済み）
+  var dateSet = {};
+  rows.forEach(function(r) {
+    var d = toDateStr(r[1]);
+    if (d) dateSet[d] = true;
+  });
+  // 念のため今日を含める
+  dateSet[todayStr] = true;
+
+  // 今日から1日ずつ遡ってカウント
+  var streak = 0;
+  var cursor = new Date(todayStr);
+  cursor.setHours(0, 0, 0, 0);
+
+  while (true) {
+    var ds = Utilities.formatDate(cursor, 'Asia/Tokyo', 'yyyy-MM-dd');
+    if (dateSet[ds]) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+/**
+ * 累計稽古日数（ユニーク稽古日の総数）を計算する。
+ *
+ * @param {Sheet}  logSheet  - logs シートオブジェクト
+ * @param {string} userId    - ユーザーID
+ * @param {string} todayStr  - 本日の日付文字列 (YYYY-MM-DD)
+ * @returns {number} 累計稽古日数
+ */
+function calcTotalPractices(logSheet, userId, todayStr) {
+  var rows    = filterRowsByUserId(logSheet, userId);
+  var dateSet = {};
+  rows.forEach(function(r) {
+    var d = toDateStr(r[1]);
+    if (d) dateSet[d] = true;
+  });
+  dateSet[todayStr] = true;
+  return Object.keys(dateSet).length;
+}
+
+/**
+ * アチーブメント解除判定・記録。
+ * saveLog の末尾から呼び出す。
+ *
+ * 判定対象の condition_type:
+ *   - 'streak_days'      : 現在の連続稽古日数 >= condition_value
+ *   - 'total_practices'  : 累計稽古日数 >= condition_value
+ *
+ * @param {Spreadsheet} ss       - SpreadsheetApp オブジェクト
+ * @param {string}      userId   - ユーザーID
+ * @param {string}      date     - 稽古日 (YYYY-MM-DD, body.date)
+ * @param {Sheet}       logSheet - logs シートオブジェクト（再取得コスト削減のため引数で受け取る）
+ * @returns {Array} 新規解除されたアチーブメント配列（Achievement 型に準拠）
+ */
+function checkAndUnlockAchievements(ss, userId, date, logSheet) {
+  var newlyUnlocked = [];
+
+  try {
+    var master  = getAchievementMasterData(ss);
+    if (master.length === 0) return newlyUnlocked;
+
+    var uaSheet = getUserAchievementsSheet(ss);
+    var uaRows  = filterRowsByUserId(uaSheet, userId);
+
+    // 既解除 achievement_id のセット
+    var unlockedSet = {};
+    uaRows.forEach(function(r){ unlockedSet[String(r[1])] = true; });
+
+    // 未解除のアチーブメントだけ判定
+    var candidates = master.filter(function(m){
+      return !unlockedSet[m.id] &&
+        (m.conditionType === 'streak_days' || m.conditionType === 'total_practices');
+    });
+    if (candidates.length === 0) return newlyUnlocked;
+
+    // 稽古日（今日）の文字列を正規化（body.date を優先、なければ今日）
+    var todayStr = (date && date.match(/^\d{4}-\d{2}-\d{2}$/))
+      ? date
+      : Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+
+    // 値を遅延計算（必要になった時だけ算出）
+    var streakCache       = null;
+    var totalPractCache   = null;
+
+    var unlockedAt = nowJstTs();
+
+    candidates.forEach(function(m) {
+      var achieved = false;
+
+      if (m.conditionType === 'streak_days') {
+        if (streakCache === null) {
+          streakCache = calcCurrentStreak(logSheet, userId, todayStr);
+        }
+        achieved = streakCache >= m.conditionValue;
+
+      } else if (m.conditionType === 'total_practices') {
+        if (totalPractCache === null) {
+          totalPractCache = calcTotalPractices(logSheet, userId, todayStr);
+        }
+        achieved = totalPractCache >= m.conditionValue;
+      }
+
+      if (achieved) {
+        // user_achievements に追記
+        uaSheet.appendRow([userId, m.id, unlockedAt]);
+        gasLog('INFO', 'checkAndUnlockAchievements',
+          'UNLOCKED user=' + userId + ' achievement=' + m.id + ' (' + m.name + ')',
+          { conditionType: m.conditionType, conditionValue: m.conditionValue });
+
+        newlyUnlocked.push({
+          id:          m.id,
+          name:        m.name,
+          description: m.description,
+          hint:        m.hint,
+          iconType:    m.iconType,
+          isUnlocked:  true,
+          unlockedAt:  unlockedAt,
+        });
+      }
+    });
+
+  } catch(e) {
+    // アチーブメント判定のエラーは saveLog のレスポンスをブロックしない
+    gasLog('ERROR', 'checkAndUnlockAchievements', e.message, { stack: e.stack });
+  }
+
+  return newlyUnlocked;
 }

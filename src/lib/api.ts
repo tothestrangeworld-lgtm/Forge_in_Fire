@@ -3,9 +3,11 @@
 // 百錬自得 - GAS API クライアント（マルチユーザー対応）
 // ブラウザ → /api/gas（Next.jsプロキシ）→ GAS
 // ★ Phase4: updateTasks を TaskDiff[] 対応に変更。settings 関連を削除。
+// ★ Phase6: fetchAchievements 追加。saveLog の戻り値に newAchievements を追加。
 // =====================================================================
 
 import type {
+  Achievement,
   DashboardData,
   EpithetMasterEntry,
   EvaluatePeerResponse,
@@ -130,6 +132,7 @@ export async function fetchDashboard(targetUserId?: string): Promise<DashboardDa
 /**
  * 稽古ログを保存する。
  * ★ Phase4: items[].task_id（UUID）を使用。
+ * ★ Phase6: レスポンスに newAchievements（今回新規解除された実績配列）が含まれる。
  */
 export async function saveLog(payload: Omit<SaveLogPayload, 'action'>): Promise<SaveLogResponse> {
   logger.info('api', `稽古記録送信: ${payload.date} (${payload.items.length}項目)`);
@@ -215,4 +218,24 @@ export async function fetchTechniqueMaster(): Promise<TechniqueMasterEntry[]> {
   logger.info('api', 'techniqueMaster 取得');
   const dashboard = await fetchDashboard();
   return dashboard.techniqueMaster ?? [];
+}
+
+// =====================================================================
+// アチーブメント（実績バッジ）★ Phase6
+// =====================================================================
+
+/**
+ * ユーザーの全実績データを取得する。
+ * achievement_master（全件）と user_achievements を JOIN し、
+ * isUnlocked / unlockedAt を含む Achievement[] を返す。
+ *
+ * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
+ */
+export async function fetchAchievements(targetUserId?: string): Promise<Achievement[]> {
+  logger.info('api', 'アチーブメント取得');
+  return gasGet<Achievement[]>(
+    targetUserId
+      ? { action: 'getAchievements', user_id: targetUserId }
+      : { action: 'getAchievements' },
+  );
 }

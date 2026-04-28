@@ -4,6 +4,9 @@
 //   - SaveLogPayload.items を item_name → task_id に変更
 //   - DashboardData.settings フィールドを廃止
 //   - Setting 型を廃止
+// ★ Phase6: アチーブメントシステム型追加
+//   - Achievement 型・AchievementMasterEntry 型を追加
+//   - SaveLogResponse に newAchievements フィールドを追加
 // =====================================================================
 
 export interface LogEntry {
@@ -108,11 +111,20 @@ export interface SaveLogPayload {
   items:  Array<{ task_id: string; score: number }>;
 }
 
+// =====================================================================
+// SaveLogResponse
+// ★ Phase6: newAchievements フィールドを追加
+// =====================================================================
 export interface SaveLogResponse {
-  xp_earned: number;
-  total_xp:  number;
-  level:     number;
-  title:     string;
+  xp_earned:        number;
+  total_xp:         number;
+  level:            number;
+  title:            string;
+  /**
+   * 今回の saveLog で新たに解除されたアチーブメント一覧。
+   * 解除なしの場合は空配列 [] が返る。
+   */
+  newAchievements?: Achievement[];
 }
 
 // =====================================================================
@@ -141,6 +153,54 @@ export interface GASResponse<T> {
   status:   'ok' | 'error';
   data?:    T;
   message?: string;
+}
+
+// =====================================================================
+// アチーブメント（実績バッジ）システム ★ Phase6
+// =====================================================================
+
+/**
+ * achievement_master シートの1行（全ユーザー共通マスタ）
+ * GAS列構成: achievement_id, name, condition_type, condition_value, description, hint, icon_type
+ *
+ * condition_type の種類:
+ *   - 'streak_days'     : 連続稽古日数 >= condition_value
+ *   - 'total_practices' : 累計稽古日数 >= condition_value
+ *   （将来拡張: 'total_xp', 'level_reached' など）
+ */
+export interface AchievementMasterEntry {
+  id:             string;  // 例: "ACH001"
+  name:           string;  // 例: "初稽古"
+  conditionType:  string;  // 例: "total_practices"
+  conditionValue: number;  // 例: 1
+  description:    string;  // 例: "初めての稽古を記録した"
+  hint:           string;  // 例: "稽古記録を1回つけよう"
+  iconType:       string;  // 例: "first_step"（フロントでアイコン選択に使用）
+}
+
+/**
+ * フロントエンド向けアチーブメント型。
+ * getAchievements API が返す配列の要素。
+ * achievement_master と user_achievements を JOIN した結果。
+ */
+export interface Achievement {
+  /** achievement_id（例: "ACH001"）*/
+  id:          string;
+  /** バッジ名（例: "初稽古"）*/
+  name:        string;
+  /** 解除条件の説明（例: "初めての稽古を記録した"）*/
+  description: string;
+  /** 未解除時のヒント文（例: "稽古記録を1回つけよう"）*/
+  hint:        string;
+  /**
+   * アイコン種別（例: "streak", "milestone", "legendary"）。
+   * フロントエンドでアイコン・カラーを切り替えるためのキー。
+   */
+  iconType:    string;
+  /** 解除済みなら true */
+  isUnlocked:  boolean;
+  /** 解除日時（YYYY-MM-DD HH:mm:ss）。未解除なら null */
+  unlockedAt:  string | null;
 }
 
 // =====================================================================
