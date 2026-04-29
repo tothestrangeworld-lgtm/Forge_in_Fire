@@ -53,6 +53,33 @@ const BP_NODE_SIZE   = 56;
 const CORE_NODE_SIZE = 64;
 
 // =====================================================================
+// 系統カラーテーマ（部位別イメージカラー）
+// =====================================================================
+//   面  : ローズレッド  — 攻めの気魄を象徴する赤
+//   小手: コーラルイエロー — 鋭い手先の技を象徴する黄
+//   胴  : サイアンブルー — 流れるような体捌きを象徴する青
+//   突き: ライトバイオレット — 一点集中の精神を象徴する紫
+//   ※ MAXゴールド / シグネチャー深紅 はそれぞれ上書き優先
+// =====================================================================
+interface BpTheme {
+  rgb:   string;  // "R,G,B" → rgba(${rgb}, alpha) として使用
+  dark:  string;  // グラデーションの暗い側 (hex)
+  text:  string;  // メインテキスト色
+}
+
+const BP_THEMES: Record<string, BpTheme> = {
+  '面':   { rgb: '248,113,113', dark: '#7f1d1d', text: '#fecaca' },
+  '小手':  { rgb: '253,224,71',  dark: '#713f12', text: '#fef9c3' },
+  '胴':   { rgb: '56,189,248',  dark: '#0c4a6e', text: '#bae6fd' },
+  '突き':  { rgb: '167,139,250', dark: '#4c1d95', text: '#ede9fe' },
+};
+
+/** 部位名からテーマを取得（未定義はインディゴ） */
+function getBpTheme(bodyPart: string): BpTheme {
+  return BP_THEMES[bodyPart] ?? { rgb: '99,102,241', dark: '#1e1b4b', text: '#c7d2fe' };
+}
+
+// =====================================================================
 // Props
 // =====================================================================
 interface Props {
@@ -80,7 +107,7 @@ const MinimalHandles = () => (
 // =====================================================================
 // 発光スタイル生成（box-shadow のみ・filter 不使用）
 // =====================================================================
-function techGlow(norm: number, isSignature: boolean, isMaxed: boolean): string {
+function techGlow(norm: number, isSignature: boolean, isMaxed: boolean, bodyPart: string): string {
   if (isSignature) {
     return [
       `0 0 ${6 + norm * 8}px ${2 + norm * 3}px rgba(244,63,94,0.75)`,
@@ -93,16 +120,24 @@ function techGlow(norm: number, isSignature: boolean, isMaxed: boolean): string 
       '0 0 0 1.5px rgba(251,191,36,0.45)',
     ].join(', ');
   }
-  if (norm > 0.6) return [`0 0 ${4 + norm * 6}px ${1 + norm * 2}px rgba(129,140,248,0.65)`, '0 0 0 1px rgba(99,102,241,0.4)'].join(', ');
-  if (norm > 0.2) return `0 0 ${3 + norm * 4}px 1px rgba(99,102,241,0.45)`;
-  if (norm > 0)   return '0 0 4px 1px rgba(99,102,241,0.22)';
+  const { rgb } = getBpTheme(bodyPart);
+  if (norm > 0.6) return [
+    `0 0 ${4 + norm * 7}px ${1 + norm * 3}px rgba(${rgb},0.72)`,
+    `0 0 0 1px rgba(${rgb},0.45)`,
+  ].join(', ');
+  if (norm > 0.2) return `0 0 ${3 + norm * 5}px 1px rgba(${rgb},0.52)`;
+  if (norm > 0)   return `0 0 4px 1px rgba(${rgb},0.28)`;
   return 'none';
 }
 
-function bpGlow(norm: number): string {
+function bpGlow(norm: number, bodyPart: string): string {
   if (norm >= 1.0) return '0 0 14px 5px rgba(251,191,36,0.65), 0 0 0 2px rgba(251,191,36,0.4)';
-  if (norm > 0.5)  return `0 0 ${8 + norm * 8}px ${2 + norm * 2}px rgba(129,140,248,0.55), 0 0 0 1px rgba(99,102,241,0.3)`;
-  return '0 0 6px 1px rgba(99,102,241,0.25)';
+  const { rgb } = getBpTheme(bodyPart);
+  if (norm > 0.5) return [
+    `0 0 ${8 + norm * 8}px ${2 + norm * 2}px rgba(${rgb},0.60)`,
+    `0 0 0 1px rgba(${rgb},0.35)`,
+  ].join(', ');
+  return `0 0 6px 1px rgba(${rgb},0.30)`;
 }
 
 // =====================================================================
@@ -137,20 +172,28 @@ function BodyPartNode({ data }: NodeProps) {
   const d = data as unknown as BodyPartData;
   const s = BP_NODE_SIZE;
   const isMaxed = d.norm >= 1.0;
+  const { rgb, dark, text: bpText } = getBpTheme(d.label);
 
   const bg = isMaxed
     ? 'linear-gradient(135deg, #78350f, #b45309, #d97706)'
     : d.norm > 0.5
-    ? 'linear-gradient(135deg, #1e1b4b, #3730a3)'
-    : 'linear-gradient(135deg, #0f0e2a, #1e1b4b)';
+    ? `linear-gradient(135deg, ${dark}, rgba(${rgb},0.35))`
+    : `linear-gradient(135deg, #0a0814, ${dark})`;
 
-  const borderColor = isMaxed ? 'rgba(251,191,36,0.7)' : d.norm > 0.5 ? 'rgba(129,140,248,0.55)' : 'rgba(99,102,241,0.3)';
+  const borderColor = isMaxed
+    ? 'rgba(251,191,36,0.7)'
+    : d.norm > 0.5
+    ? `rgba(${rgb},0.65)`
+    : `rgba(${rgb},0.35)`;
+
+  const textColor = isMaxed ? '#fde68a' : bpText;
+  const ptColor   = isMaxed ? '#fde68a' : `rgba(${rgb},0.75)`;
 
   return (
     <div style={{
       width: s, height: s, borderRadius: '50%',
       background: bg, border: `1.5px solid ${borderColor}`,
-      boxShadow: bpGlow(d.norm),
+      boxShadow: bpGlow(d.norm, d.label),
       animation: isMaxed ? 'bp-maxed-pulse 2.4s ease-in-out infinite' : undefined,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       color: '#e0e7ff', textAlign: 'center',
@@ -158,11 +201,11 @@ function BodyPartNode({ data }: NodeProps) {
       position: 'relative', userSelect: 'none',
     }}>
       <MinimalHandles />
-      <span style={{ fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em', color: isMaxed ? '#fde68a' : '#e0e7ff' }}>
+      <span style={{ fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em', color: textColor }}>
         {d.label}
       </span>
       {d.totalPoints > 0 && (
-        <span style={{ fontSize: 8, opacity: 0.7, marginTop: 1, color: isMaxed ? '#fde68a' : '#a5b4fc' }}>
+        <span style={{ fontSize: 8, opacity: 0.75, marginTop: 1, color: ptColor }}>
           {d.totalPoints}pt
         </span>
       )}
@@ -179,6 +222,7 @@ function TechniqueNode({ data }: NodeProps) {
   const { technique: t, norm, isSignature, isMaxed } = data as unknown as TechData;
   if (!t?.id) return null;
   const s = TECH_NODE_SIZE;
+  const { rgb, dark, text: bpText } = getBpTheme(t.bodyPart);
 
   let bg: string, borderColor: string, textColor: string;
   if (isSignature) {
@@ -188,16 +232,21 @@ function TechniqueNode({ data }: NodeProps) {
     bg = 'linear-gradient(135deg, #78350f, #b45309)';
     borderColor = 'rgba(251,191,36,0.65)'; textColor = '#fde68a';
   } else if (norm > 0.6) {
-    bg = 'linear-gradient(135deg, #1e1b4b, #4f46e5)';
-    borderColor = 'rgba(129,140,248,0.55)'; textColor = '#e0e7ff';
+    // 高習熟：系統色でしっかり発色
+    bg = `linear-gradient(135deg, ${dark}, rgba(${rgb},0.38))`;
+    borderColor = `rgba(${rgb},0.68)`; textColor = bpText;
   } else if (norm > 0.2) {
-    bg = 'linear-gradient(135deg, #0f0e2a, #312e81)';
-    borderColor = 'rgba(99,102,241,0.35)'; textColor = '#c7d2fe';
+    // 中習熟：系統色を暗く抑えめに
+    bg = `linear-gradient(135deg, #070514, ${dark})`;
+    borderColor = `rgba(${rgb},0.42)`; textColor = bpText;
   } else if (norm > 0) {
-    bg = 'linear-gradient(135deg, #0a0918, #1e1b4b)';
-    borderColor = 'rgba(99,102,241,0.22)'; textColor = '#a5b4fc';
+    // 低習熟：かすかに系統色が滲む
+    bg = `linear-gradient(135deg, #06050f, #0d0b1a)`;
+    borderColor = `rgba(${rgb},0.22)`; textColor = `rgba(${rgb},0.55)`;
   } else {
-    bg = '#06050f'; borderColor = 'rgba(99,102,241,0.12)'; textColor = 'rgba(99,102,241,0.3)';
+    // 未練習：ほぼ消灯
+    bg = '#06050f';
+    borderColor = `rgba(${rgb},0.10)`; textColor = `rgba(${rgb},0.25)`;
   }
 
   const animation = isSignature
@@ -208,7 +257,7 @@ function TechniqueNode({ data }: NodeProps) {
     <div style={{
       width: s, height: s, borderRadius: '50%',
       background: bg, border: `1.5px solid ${borderColor}`,
-      boxShadow: techGlow(norm, isSignature, isMaxed),
+      boxShadow: techGlow(norm, isSignature, isMaxed, t.bodyPart),
       animation,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       color: textColor, textAlign: 'center',
@@ -354,30 +403,39 @@ function buildGraph(
       data: { label: bp, totalPoints: totalPts, norm: bpNorm } as unknown as Record<string, unknown>,
     });
 
-    // CORE → BP
+    // CORE → BP（部位の系統色でほんのり光る）
+    const { rgb: bpRgb } = getBpTheme(bp);
+    const bpEdgeColor = bpNorm >= 1.0
+      ? '#fbbf24'
+      : `rgba(${bpRgb},${(0.5 + bpNorm * 0.4).toFixed(2)})`;
     edges.push({
       id: `e-core-${bpId}`, source: 'core', target: bpId, type: 'straight',
       style: {
-        stroke:      bpNorm >= 1.0 ? '#fbbf24' : bpNorm > 0.5 ? '#818cf8' : 'rgba(99,102,241,0.45)',
+        stroke:      bpEdgeColor,
         strokeWidth: Math.max(1, Math.round(1.5 + bpNorm * 2.5)),
         opacity:     0.4 + bpNorm * 0.45,
       },
     });
 
-    // BP → 技
+    // BP → 技（系統色 + 習熟度・シグネチャー上書き）
     techs.forEach(tech => {
       const techId      = `tech-${tech.id}`;
       const norm        = Math.min((tech.points ?? 0) / TECH_SCORE_CAP, 1.0);
       const isSignature = !!signatureTechId && tech.id === signatureTechId;
       const isMaxed     = (tech.points ?? 0) >= TECH_SCORE_CAP;
-      const edgeColor   = isSignature ? '#f43f5e' : isMaxed ? '#d97706' : norm > 0.6 ? '#818cf8' : norm > 0.2 ? '#6366f1' : 'rgba(99,102,241,0.25)';
+      const { rgb }     = getBpTheme(tech.bodyPart);
+      const edgeColor   = isSignature
+        ? '#f43f5e'
+        : isMaxed
+        ? '#d97706'
+        : `rgba(${rgb},${(0.35 + norm * 0.55).toFixed(2)})`;
 
       edges.push({
         id: `e-${bpId}-${techId}`, source: bpId, target: techId, type: 'straight',
         style: {
-          stroke: edgeColor,
+          stroke:      edgeColor,
           strokeWidth: Math.max(1, Math.round(1 + norm * 2)),
-          opacity: isSignature ? 0.85 : 0.25 + norm * 0.55,
+          opacity:     isSignature ? 0.85 : 0.28 + norm * 0.55,
         },
       });
     });
@@ -542,16 +600,29 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
       </div>
 
       {/* 凡例 */}
-      <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap', padding: '0 2px' }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap', padding: '0 2px' }}>
+        {/* 系統カラー */}
+        {[
+          { color: 'rgba(248,113,113,0.85)', label: '面' },
+          { color: 'rgba(253,224,71,0.85)',  label: '小手' },
+          { color: 'rgba(56,189,248,0.85)',  label: '胴' },
+          { color: 'rgba(167,139,250,0.85)', label: '突き' },
+        ].map(({ color, label }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 5px 1px ${color}` }} />
+            <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.55)', fontWeight: 600 }}>{label}</span>
+          </div>
+        ))}
+        {/* セパレーター */}
+        <div style={{ width: 1, background: 'rgba(99,102,241,0.2)', margin: '0 2px' }} />
+        {/* 状態カラー */}
         {[
           { color: '#f43f5e', label: '得意技' },
-          { color: '#fbbf24', label: 'MAX到達' },
-          { color: '#818cf8', label: '習熟中' },
-          { color: 'rgba(99,102,241,0.35)', label: '練習中' },
+          { color: '#fbbf24', label: 'MAX' },
         ].map(({ color, label }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 4px 1px ${color}` }} />
-            <span style={{ fontSize: '0.62rem', color: 'rgba(129,140,248,0.45)', fontWeight: 600 }}>{label}</span>
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 5px 1px ${color}` }} />
+            <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.55)', fontWeight: 600 }}>{label}</span>
           </div>
         ))}
       </div>
