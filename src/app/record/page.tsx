@@ -1,9 +1,33 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+// =====================================================================
+// 百錬自得 - 記録画面（src/app/record/page.tsx）
+// ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
+// ★ Phase6 Step3: saveLog レスポンスの newAchievements をトースト通知で表示
+// =====================================================================
+
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle, Loader2, PlusCircle } from 'lucide-react';
-import type { DashboardData, Technique, UserTask } from '@/types';
+import {
+  CheckCircle,
+  Loader2,
+  PlusCircle,
+  Flame,
+  Trophy,
+  Target,
+  Swords,
+  Shield,
+  Star,
+  Zap,
+  Crown,
+  Medal,
+  Award,
+  Footprints,
+  Milestone,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
+import type { Achievement, DashboardData, Technique, UserTask } from '@/types';
 import { fetchDashboard, saveLog, fetchTechniques, updateTechniqueRating } from '@/lib/api';
 
 // =====================================================================
@@ -26,6 +50,312 @@ const BADGE_STYLES: Record<number, { bg: string; color: string }> = {
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// =====================================================================
+// アチーブメントトースト用 iconType マッピング
+// =====================================================================
+const ICON_MAP: Record<string, LucideIcon> = {
+  flame:      Flame,
+  trophy:     Trophy,
+  target:     Target,
+  swords:     Swords,
+  shield:     Shield,
+  star:       Star,
+  zap:        Zap,
+  crown:      Crown,
+  medal:      Medal,
+  award:      Award,
+  footprints: Footprints,
+  milestone:  Milestone,
+  first_step: Footprints,
+  streak:     Flame,
+  legendary:  Crown,
+  sparkles:   Sparkles,
+};
+
+const GLOW_COLORS: Record<string, { glow: string; fg: string; bg: string; grad: string }> = {
+  flame:      { glow:'#ff6b35', fg:'#ff9a6b', bg:'rgba(255,107,53,0.12)', grad:'linear-gradient(135deg,#ff6b3520,#ff9a6b10)' },
+  streak:     { glow:'#ff6b35', fg:'#ff9a6b', bg:'rgba(255,107,53,0.12)', grad:'linear-gradient(135deg,#ff6b3520,#ff9a6b10)' },
+  first_step: { glow:'#00d4ff', fg:'#55e5ff', bg:'rgba(0,212,255,0.10)', grad:'linear-gradient(135deg,#00d4ff18,#55e5ff0c)' },
+  milestone:  { glow:'#b088f9', fg:'#caaafe', bg:'rgba(176,136,249,0.12)', grad:'linear-gradient(135deg,#b088f920,#caaafe10)' },
+  legendary:  { glow:'#ffd700', fg:'#ffe566', bg:'rgba(255,215,0,0.12)', grad:'linear-gradient(135deg,#ffd70020,#ffe56610)' },
+  trophy:     { glow:'#ffd700', fg:'#ffe566', bg:'rgba(255,215,0,0.12)', grad:'linear-gradient(135deg,#ffd70020,#ffe56610)' },
+  crown:      { glow:'#ffd700', fg:'#ffe566', bg:'rgba(255,215,0,0.12)', grad:'linear-gradient(135deg,#ffd70020,#ffe56610)' },
+  default:    { glow:'#00ff88', fg:'#55ffaa', bg:'rgba(0,255,136,0.10)', grad:'linear-gradient(135deg,#00ff8818,#55ffaa0c)' },
+};
+
+function getGlow(iconType: string) {
+  return GLOW_COLORS[iconType.toLowerCase()] ?? GLOW_COLORS.default;
+}
+function getIcon(iconType: string): LucideIcon {
+  return ICON_MAP[iconType.toLowerCase()] ?? Award;
+}
+
+// =====================================================================
+// AchievementToast コンポーネント
+// ★ Phase6 Step3
+//
+// 【設計】
+//   - 複数実績は順番にキューイングして 1つずつ表示（間隔 600ms）
+//   - 各トーストは 4秒後に自動 dismiss（フェードアウト込み）
+//   - 画面右下（モバイルは画面下中央）に固定表示
+// =====================================================================
+
+interface ToastItem {
+  id:          string;   // 一意ID（複数枚管理用）
+  achievement: Achievement;
+  phase:       'enter' | 'show' | 'exit';
+}
+
+interface AchievementToastProps {
+  achievements: Achievement[];
+  onAllDone:    () => void;
+}
+
+function AchievementToast({ achievements, onAllDone }: AchievementToastProps) {
+  const [items, setItems]    = useState<ToastItem[]>([]);
+  const queueRef             = useRef<Achievement[]>([]);
+  const timerRef             = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onAllDoneRef         = useRef(onAllDone);
+  onAllDoneRef.current       = onAllDone;
+
+  // 次をキューから取り出して表示
+  const showNext = useCallback(() => {
+    const next = queueRef.current.shift();
+    if (!next) {
+      onAllDoneRef.current();
+      return;
+    }
+    const itemId = `${next.id}_${Date.now()}`;
+
+    // enter フェーズ → show フェーズ → exit フェーズ の順に遷移
+    setItems(prev => [...prev, { id: itemId, achievement: next, phase: 'enter' }]);
+
+    // 60ms後に show（enterアニメーション完了待ち）
+    setTimeout(() => {
+      setItems(prev => prev.map(it => it.id === itemId ? { ...it, phase: 'show' } : it));
+    }, 60);
+
+    // 4秒後に exit
+    timerRef.current = setTimeout(() => {
+      setItems(prev => prev.map(it => it.id === itemId ? { ...it, phase: 'exit' } : it));
+      // exitアニメーション(500ms)完了後に削除 → 次へ
+      setTimeout(() => {
+        setItems(prev => prev.filter(it => it.id !== itemId));
+        // 次のトーストを 200ms 後に表示（連続感を出しつつ少しズラす）
+        setTimeout(showNext, 200);
+      }, 500);
+    }, 4000);
+  }, []);
+
+  // achievementsが来たらキューに積んで先頭を表示開始
+  useEffect(() => {
+    if (achievements.length === 0) return;
+    queueRef.current = [...achievements];
+    showNext();
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [achievements]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <>
+      <style>{`
+        @keyframes achToastIn {
+          0%   { opacity:0; transform:translateY(28px) scale(0.93); }
+          60%  { opacity:1; transform:translateY(-4px) scale(1.02); }
+          100% { opacity:1; transform:translateY(0)   scale(1); }
+        }
+        @keyframes achToastOut {
+          0%   { opacity:1; transform:translateY(0)  scale(1); }
+          100% { opacity:0; transform:translateY(16px) scale(0.95); }
+        }
+        @keyframes achIconSpin {
+          0%   { transform: rotate(-15deg) scale(0.7); opacity:0; }
+          60%  { transform: rotate(8deg)  scale(1.15); opacity:1; }
+          100% { transform: rotate(0deg)  scale(1); opacity:1; }
+        }
+        @keyframes achShimmer {
+          0%   { background-position: -200% 0; }
+          100% { background-position:  200% 0; }
+        }
+        @keyframes achPulse {
+          0%,100% { box-shadow: var(--ach-shadow-a); }
+          50%     { box-shadow: var(--ach-shadow-b); }
+        }
+        @keyframes achParticle {
+          0%   { transform:translateY(0) scale(1); opacity:1; }
+          100% { transform:translateY(-22px) scale(0.3); opacity:0; }
+        }
+      `}</style>
+
+      {/* トースト群のコンテナ（画面右下・モバイルは下中央） */}
+      <div style={{
+        position:   'fixed',
+        bottom:     80,   // ボトムナビ分を避ける
+        right:      16,
+        zIndex:     9998,
+        display:    'flex',
+        flexDirection: 'column',
+        gap:        10,
+        alignItems: 'flex-end',
+        pointerEvents: 'none',
+      }}>
+        {items.map(item => (
+          <SingleToast key={item.id} item={item} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ── 個別トーストカード ──
+function SingleToast({ item }: { item: ToastItem }) {
+  const { achievement, phase } = item;
+  const IconComp = getIcon(achievement.iconType);
+  const colors   = getGlow(achievement.iconType);
+
+  const animStyle: React.CSSProperties =
+    phase === 'enter' ? { opacity: 0, transform: 'translateY(28px) scale(0.93)' } :
+    phase === 'show'  ? {
+      animation: 'achToastIn 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards',
+      '--ach-shadow-a': `0 0 16px ${colors.glow}55, 0 4px 24px rgba(0,0,0,0.5)`,
+      '--ach-shadow-b': `0 0 28px ${colors.glow}99, 0 4px 24px rgba(0,0,0,0.5)`,
+      animationName: 'achToastIn, achPulse',
+      animationDuration: '0.5s, 2s',
+      animationDelay: '0s, 0.6s',
+      animationTimingFunction: 'cubic-bezier(0.34,1.56,0.64,1), ease-in-out',
+      animationFillMode: 'forwards, none',
+      animationIterationCount: '1, infinite',
+    } as React.CSSProperties :
+    { animation: 'achToastOut 0.5s ease forwards' };
+
+  return (
+    <div
+      style={{
+        position:        'relative',
+        width:           'min(320px, calc(100vw - 32px))',
+        background:      `linear-gradient(135deg, rgba(8,6,20,0.97), rgba(14,8,30,0.97))`,
+        border:          `1px solid ${colors.glow}66`,
+        borderRadius:    '16px',
+        padding:         '14px 16px 14px 14px',
+        display:         'flex',
+        alignItems:      'center',
+        gap:             '14px',
+        pointerEvents:   'auto',
+        overflow:        'hidden',
+        ...animStyle,
+      }}
+    >
+      {/* シマーライン（背景を横切る光沢） */}
+      <div style={{
+        position:   'absolute',
+        inset:      0,
+        background: `linear-gradient(105deg, transparent 30%, ${colors.glow}18 50%, transparent 70%)`,
+        backgroundSize: '200% 100%',
+        animation:  'achShimmer 2.2s linear infinite',
+        borderRadius: '16px',
+        pointerEvents: 'none',
+      }} />
+
+      {/* 上辺グロウライン */}
+      <div style={{
+        position:   'absolute',
+        top:        0,
+        left:       '10%',
+        right:      '10%',
+        height:     '2px',
+        background: `linear-gradient(90deg, transparent, ${colors.glow}dd, transparent)`,
+        borderRadius: '0 0 4px 4px',
+      }} />
+
+      {/* アイコン */}
+      <div style={{
+        flexShrink:  0,
+        width:       48,
+        height:      48,
+        borderRadius:'50%',
+        background:  `radial-gradient(circle at 35% 35%, ${colors.fg}2a, ${colors.bg})`,
+        border:      `1.5px solid ${colors.glow}aa`,
+        display:     'flex',
+        alignItems:  'center',
+        justifyContent:'center',
+        boxShadow:   `0 0 16px ${colors.glow}66`,
+        animation:   phase === 'show' ? 'achIconSpin 0.6s cubic-bezier(0.34,1.56,0.64,1) forwards' : 'none',
+        zIndex:      1,
+      }}>
+        <IconComp size={22} color={colors.fg} strokeWidth={1.6} />
+      </div>
+
+      {/* テキスト */}
+      <div style={{ flex:1, minWidth:0, zIndex:1 }}>
+        {/* ラベル */}
+        <div style={{
+          display:        'flex',
+          alignItems:     'center',
+          gap:            5,
+          marginBottom:   3,
+        }}>
+          <Sparkles size={9} color={colors.fg} strokeWidth={2} />
+          <span style={{
+            fontSize:       '9px',
+            letterSpacing:  '0.18em',
+            fontWeight:     700,
+            color:          colors.fg,
+            textTransform:  'uppercase',
+          }}>
+            実績解除
+          </span>
+        </div>
+
+        {/* バッジ名 */}
+        <p style={{
+          fontSize:      '15px',
+          fontWeight:    800,
+          color:         '#ffffff',
+          margin:        '0 0 3px',
+          letterSpacing: '0.05em',
+          textShadow:    `0 0 10px ${colors.glow}cc`,
+          whiteSpace:    'nowrap',
+          overflow:      'hidden',
+          textOverflow:  'ellipsis',
+        }}>
+          {achievement.name}
+        </p>
+
+        {/* 説明 */}
+        <p style={{
+          fontSize:      '11px',
+          color:         'rgba(200,195,220,0.8)',
+          margin:        0,
+          lineHeight:    1.45,
+          overflow:      'hidden',
+          display:       '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient:'vertical',
+        }}>
+          {achievement.description}
+        </p>
+      </div>
+
+      {/* パーティクル（右上） */}
+      {phase === 'show' && (
+        <div style={{ position:'absolute', top:8, right:12, display:'flex', gap:4, pointerEvents:'none' }}>
+          {[0,1,2].map(i => (
+            <div key={i} style={{
+              width:  4, height: 4,
+              borderRadius: '50%',
+              background: colors.glow,
+              animation: `achParticle 1.2s ease ${i * 0.18}s infinite`,
+              boxShadow: `0 0 4px ${colors.glow}`,
+            }} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // =====================================================================
@@ -84,16 +414,19 @@ export default function RecordPage() {
 // =====================================================================
 // タブ①：稽古を記録（XP獲得フォーム）
 // ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
+// ★ Phase6 Step3: saveLog レスポンスの newAchievements をトーストで通知
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
-  const [dashboard, setDashboard]  = useState<DashboardData | null>(null);
-  const [scores, setScores]        = useState<ScoreMap>({});
-  const [date, setDate]            = useState(todayStr());
-  const [loading, setLoading]      = useState(true);
-  const [submitting, setSubmitting]= useState(false);
-  const [result, setResult]        = useState<{xp:number; title:string}|null>(null);
-  const [error, setError]          = useState<string|null>(null);
+  const [dashboard, setDashboard]          = useState<DashboardData | null>(null);
+  const [scores, setScores]                = useState<ScoreMap>({});
+  const [date, setDate]                    = useState(todayStr());
+  const [loading, setLoading]              = useState(true);
+  const [submitting, setSubmitting]        = useState(false);
+  const [result, setResult]                = useState<{xp:number; title:string}|null>(null);
+  const [error, setError]                  = useState<string|null>(null);
+  // ★ Phase6 Step3: トースト表示用
+  const [toastAchievements, setToastAchievements] = useState<Achievement[]>([]);
 
   useEffect(() => {
     fetchDashboard()
@@ -118,6 +451,11 @@ function PracticeTab() {
         items: activeTasks.map(t => ({ task_id: t.id, score: scores[t.id] })),
       });
       setResult({ xp: res.xp_earned, title: res.title });
+
+      // ★ Phase6 Step3: 新規解除実績があればトーストキューに積む
+      if (res.newAchievements && res.newAchievements.length > 0) {
+        setToastAchievements(res.newAchievements);
+      }
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
       setError(e instanceof Error ? e.message : '送信に失敗しました');
@@ -127,126 +465,146 @@ function PracticeTab() {
   /* 完了画面 */
   if (result) {
     return (
-      <div className="animate-fade-up" style={{ paddingTop:'2rem', textAlign:'center' }}>
-        <div className="animate-pulse-glow" style={{
-          width:72, height:72, borderRadius:'50%', background:'var(--ai)',
-          display:'flex', alignItems:'center', justifyContent:'center',
-          margin:'0 auto 1.5rem',
-        }}>
-          <CheckCircle style={{ width:36, height:36, color:'#fff' }} />
+      <>
+        <div className="animate-fade-up" style={{ paddingTop:'2rem', textAlign:'center' }}>
+          <div className="animate-pulse-glow" style={{
+            width:72, height:72, borderRadius:'50%', background:'var(--ai)',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            margin:'0 auto 1.5rem',
+          }}>
+            <CheckCircle style={{ width:36, height:36, color:'#fff' }} />
+          </div>
+          <h2 style={{ fontSize:'1.5rem', fontWeight:800, color:'#e0e7ff', marginBottom:8 }}>稽古お疲れ様！</h2>
+          <p style={{ color:'#a8a29e', marginBottom:'2rem', fontSize:'0.9rem' }}>本日の記録を保存しました</p>
+          <div className="wa-card" style={{ display:'inline-block', padding:'1.5rem 3rem', marginBottom:'2rem' }}>
+            <p style={{ fontSize:'0.7rem', color:'#a5b4fc', marginBottom:4 }}>獲得XP</p>
+            <p style={{ fontSize:'3rem', fontWeight:800, color:'#e0e7ff', lineHeight:1 }}>+{result.xp}</p>
+            <p style={{ fontSize:'0.8rem', color:'#a8a29e', marginTop:4 }}>XP</p>
+            {result.title && (
+              <div style={{ marginTop:16, background:'#fffbeb', borderRadius:12, padding:'8px 16px' }}>
+                <p style={{ fontSize:'0.65rem', color:'#92400e' }}>現在の称号</p>
+                <p style={{ fontWeight:700, color:'#78350f' }}>{result.title}</p>
+              </div>
+            )}
+          </div>
+          <div style={{ display:'flex', gap:12, justifyContent:'center' }}>
+            <button className="btn-outline" style={{ width:'auto' }} onClick={() => router.push('/')}>ダッシュボード</button>
+            <button className="btn-ai" style={{ width:'auto', padding:'0.8rem 1.5rem' }}
+              onClick={() => { setResult(null); setScores({}); setToastAchievements([]); }}>
+              続けて記録
+            </button>
+          </div>
         </div>
-        <h2 style={{ fontSize:'1.5rem', fontWeight:800, color:'#e0e7ff', marginBottom:8 }}>稽古お疲れ様！</h2>
-        <p style={{ color:'#a8a29e', marginBottom:'2rem', fontSize:'0.9rem' }}>本日の記録を保存しました</p>
-        <div className="wa-card" style={{ display:'inline-block', padding:'1.5rem 3rem', marginBottom:'2rem' }}>
-          <p style={{ fontSize:'0.7rem', color:'#a5b4fc', marginBottom:4 }}>獲得XP</p>
-          <p style={{ fontSize:'3rem', fontWeight:800, color:'#e0e7ff', lineHeight:1 }}>+{result.xp}</p>
-          <p style={{ fontSize:'0.8rem', color:'#a8a29e', marginTop:4 }}>XP</p>
-          {result.title && (
-            <div style={{ marginTop:16, background:'#fffbeb', borderRadius:12, padding:'8px 16px' }}>
-              <p style={{ fontSize:'0.65rem', color:'#92400e' }}>現在の称号</p>
-              <p style={{ fontWeight:700, color:'#78350f' }}>{result.title}</p>
-            </div>
-          )}
-        </div>
-        <div style={{ display:'flex', gap:12, justifyContent:'center' }}>
-          <button className="btn-outline" style={{ width:'auto' }} onClick={() => router.push('/')}>ダッシュボード</button>
-          <button className="btn-ai" style={{ width:'auto', padding:'0.8rem 1.5rem' }}
-            onClick={() => { setResult(null); setScores({}); }}>
-            続けて記録
-          </button>
-        </div>
-      </div>
+
+        {/* ★ Phase6 Step3: 完了画面でもトースト表示 */}
+        {toastAchievements.length > 0 && (
+          <AchievementToast
+            achievements={toastAchievements}
+            onAllDone={() => setToastAchievements([])}
+          />
+        )}
+      </>
     );
   }
 
   /* 入力フォーム */
   return (
-    <div>
-      {/* 日付 */}
-      <div className="wa-card" style={{ marginBottom:'1rem' }}>
-        <span className="section-title">稽古日</span>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+    <>
+      <div>
+        {/* 日付 */}
+        <div className="wa-card" style={{ marginBottom:'1rem' }}>
+          <span className="section-title">稽古日</span>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+
+        {/* 評価カード */}
+        {loading ? (
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {[1,2,3].map(i => <div key={i} style={{ height:100, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
+            <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+          </div>
+        ) : activeTasks.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
+            <p style={{ fontSize:'2rem', marginBottom:8 }}>📋</p>
+            <p style={{ color:'#78716c', fontWeight:600 }}>評価項目がありません</p>
+            <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:6 }}>
+              <a href="/settings/tasks" style={{ color:'#6366f1', fontWeight:700 }}>設定 → 評価項目</a> から課題を登録してください
+            </p>
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {activeTasks.map((task, idx) => {
+              const current = scores[task.id];
+              const badge   = current ? BADGE_STYLES[current] : null;
+              return (
+                <div key={task.id} className="wa-card animate-slide-in" style={{ animationDelay:`${idx*60}ms` }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                    <p style={{ fontWeight:700, color:'#e0e7ff', margin:0, fontSize:'0.95rem' }}>{task.task_text}</p>
+                    {badge && current && (
+                      <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.2rem 0.6rem', borderRadius:999, background:badge.bg, color:badge.color }}>
+                        {SCORE_LABELS[current]}
+                      </span>
+                    )}
+                  </div>
+                  {/* 星評価ボタン */}
+                  <div style={{ display:'flex', gap:6 }}>
+                    {[1,2,3,4,5].map(star => (
+                      <button
+                        key={star}
+                        onClick={() => setScores(prev => ({ ...prev, [task.id]: star }))}
+                        style={{
+                          flex:1, height:40, borderRadius:10,
+                          border:`2px solid ${(current ?? 0) >= star ? '#4f46e5' : '#e0e7ff'}`,
+                          background: (current ?? 0) >= star ? '#4f46e5' : '#fff',
+                          color:      (current ?? 0) >= star ? '#fff' : '#c7d2fe',
+                          fontSize:'0.9rem', fontWeight:700, fontFamily:'inherit',
+                          cursor:'pointer', transition:'all .12s',
+                        }}
+                      >
+                        {star}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* エラー */}
+            {error && (
+              <div style={{ padding:12, background:'#fee2e2', border:'1px solid #fca5a5', borderRadius:12, fontSize:'0.85rem', color:'#b91c1c' }}>
+                {error}
+              </div>
+            )}
+
+            {/* 送信ボタン */}
+            <button
+              className="btn-ai"
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              style={{ marginTop:4, opacity: canSubmit ? 1 : 0.45 }}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 style={{ width:18, height:18, animation:'spin .8s linear infinite' }} />
+                  記録中...
+                  <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                </>
+              ) : (
+                `稽古を記録する（${activeTasks.filter(t => scores[t.id]).length}/${activeTasks.length}）`
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* 評価カード */}
-      {loading ? (
-        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          {[1,2,3].map(i => <div key={i} style={{ height:100, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
-          <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
-        </div>
-      ) : activeTasks.length === 0 ? (
-        <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
-          <p style={{ fontSize:'2rem', marginBottom:8 }}>📋</p>
-          <p style={{ color:'#78716c', fontWeight:600 }}>評価項目がありません</p>
-          <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:6 }}>
-            <a href="/settings/tasks" style={{ color:'#6366f1', fontWeight:700 }}>設定 → 評価項目</a> から課題を登録してください
-          </p>
-        </div>
-      ) : (
-        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          {activeTasks.map((task, idx) => {
-            const current = scores[task.id];
-            const badge   = current ? BADGE_STYLES[current] : null;
-            return (
-              <div key={task.id} className="wa-card animate-slide-in" style={{ animationDelay:`${idx*60}ms` }}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                  <p style={{ fontWeight:700, color:'#e0e7ff', margin:0, fontSize:'0.95rem' }}>{task.task_text}</p>
-                  {badge && current && (
-                    <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.2rem 0.6rem', borderRadius:999, background:badge.bg, color:badge.color }}>
-                      {SCORE_LABELS[current]}
-                    </span>
-                  )}
-                </div>
-                {/* 星評価ボタン */}
-                <div style={{ display:'flex', gap:6 }}>
-                  {[1,2,3,4,5].map(star => (
-                    <button
-                      key={star}
-                      onClick={() => setScores(prev => ({ ...prev, [task.id]: star }))}
-                      style={{
-                        flex:1, height:40, borderRadius:10,
-                        border:`2px solid ${(current ?? 0) >= star ? '#4f46e5' : '#e0e7ff'}`,
-                        background: (current ?? 0) >= star ? '#4f46e5' : '#fff',
-                        color:      (current ?? 0) >= star ? '#fff' : '#c7d2fe',
-                        fontSize:'0.9rem', fontWeight:700, fontFamily:'inherit',
-                        cursor:'pointer', transition:'all .12s',
-                      }}
-                    >
-                      {star}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* エラー */}
-          {error && (
-            <div style={{ padding:12, background:'#fee2e2', border:'1px solid #fca5a5', borderRadius:12, fontSize:'0.85rem', color:'#b91c1c' }}>
-              {error}
-            </div>
-          )}
-
-          {/* 送信ボタン */}
-          <button
-            className="btn-ai"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            style={{ marginTop:4, opacity: canSubmit ? 1 : 0.45 }}
-          >
-            {submitting ? (
-              <>
-                <Loader2 style={{ width:18, height:18, animation:'spin .8s linear infinite' }} />
-                記録中...
-                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-              </>
-            ) : (
-              `稽古を記録する（${activeTasks.filter(t => scores[t.id]).length}/${activeTasks.length}）`
-            )}
-          </button>
-        </div>
+      {/* ★ Phase6 Step3: アチーブメントトースト（入力フォーム表示中は通常ここには来ないが念のため） */}
+      {toastAchievements.length > 0 && (
+        <AchievementToast
+          achievements={toastAchievements}
+          onAllDone={() => setToastAchievements([])}
+        />
       )}
-    </div>
+    </>
   );
 }
 
