@@ -4,20 +4,19 @@
 import { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Swords, Star, TrendingUp, Trophy, Calendar, CheckCircle } from 'lucide-react';
-import { fetchDashboard, fetchTechniques, fetchUsers, evaluatePeer } from '@/lib/api';
+import { ArrowLeft, Swords, Star, TrendingUp, Trophy, CheckCircle } from 'lucide-react';
+import { fetchDashboard, fetchTechniques, fetchUsers, evaluatePeer, fetchTodayEvaluations } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import { getCurrentUserId } from '@/lib/auth';
-import type { DashboardData, Technique, UserTask } from '@/types';
+import type { DashboardData, PeerEvalItem, Technique, UserTask } from '@/types';
 
 export const runtime = 'edge';
 
 // Recharts は SSR 非対応のため dynamic import
-const RadarChart       = dynamic(() => import('@/components/charts/RadarChart'),       { ssr: false });
-const XPTimelineChart  = dynamic(() => import('@/components/charts/XPTimelineChart'),  { ssr: false });
-const ActivityHeatmap  = dynamic(() => import('@/components/charts/ActivityHeatmap'),  { ssr: false });
-const PlaystyleCharts  = dynamic(() => import('@/components/charts/PlaystyleCharts'),  { ssr: false });
-const SkillGrid        = dynamic(() => import('@/components/charts/SkillGrid'),        { ssr: false });
+const RadarChart      = dynamic(() => import('@/components/charts/RadarChart'),      { ssr: false });
+const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false });
+const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleCharts'), { ssr: false });
+const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),       { ssr: false });
 
 // =====================================================================
 // XP → 次レベルまでの進捗（型定義から xpForLevel を利用）
@@ -25,6 +24,9 @@ const SkillGrid        = dynamic(() => import('@/components/charts/SkillGrid'), 
 function xpForLevel(n: number): number {
   return n <= 1 ? 0 : Math.floor(100 * Math.pow(n - 1, 1.8));
 }
+
+// スコアラベル
+const SCORE_LABELS = ['', '少し取り組んでいる', '取り組んでいる', '概ね取り組んでいる', 'よく取り組んでいる', '非常によく取り組んでいる'] as const;
 
 // =====================================================================
 // コンポーネント
@@ -37,19 +39,21 @@ export default function RivalDashboardPage({
   const { id: targetId } = use(params);
   const router = useRouter();
 
-  const [dashboard,   setDashboard]   = useState<DashboardData | null>(null);
-  const [techniques,  setTechniques]  = useState<Technique[]>([]);
-  const [targetName,  setTargetName]  = useState('');
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState('');
-  const [mounted,     setMounted]     = useState(false);
+  const [dashboard,  setDashboard]  = useState<DashboardData | null>(null);
+  const [techniques, setTechniques] = useState<Technique[]>([]);
+  const [targetName, setTargetName] = useState('');
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState('');
+  const [mounted,    setMounted]    = useState(false);
 
   // ---- 他者評価ステート ----
+  // task_id → 選択スコア（null = 未選択）
+  const [taskScores,      setTaskScores]      = useState<Record<string, number | null>>({});
+  // 今日すでに評価済みの task_id セット（ページロード時 + 送信成功後に更新）
+  const [evaluatedTaskIds, setEvaluatedTaskIds] = useState<Set<string>>(new Set());
   const [evalLoading,  setEvalLoading]  = useState(false);
-  const [evalResult,   setEvalResult]   = useState<{ xp: number; mult: number; score: number } | null>(null);
+  const [evalResult,   setEvalResult]   = useState<{ xp: number; mult: number; count: number } | null>(null);
   const [evalError,    setEvalError]    = useState('');
-  const [evalDone,     setEvalDone]     = useState(false);
-  const [evalScore,    setEvalScore]    = useState<number | null>(null);   // 1〜5 選択中スコア
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -58,6 +62,9 @@ export default function RivalDashboardPage({
 
     const load = async () => {
       try {
+        const myUserId = getCurrentUserId();
+        const isSelf   = myUserId === targetId;
+
         const [dash, techs, users] = await Promise.all([
           fetchDashboard(targetId),
           fetchTechniques(targetId),
@@ -67,6 +74,16 @@ export default function RivalDashboardPage({
         setTechniques(techs);
         const found = users.find(u => u.user_id === targetId);
         setTargetName(found?.name ?? targetId);
+
+        // 今日の評価済み task_id を取得（自分自身のページでは不要）
+        if (!isSelf) {
+          try {
+            const res = await fetchTodayEvaluations(targetId);
+            setEvaluatedTaskIds(new Set(res.evaluated_task_ids));
+          } catch {
+            // 取得失敗は無視（評価済みチェックなしで動作継続）
+          }
+        }
       } catch (err: unknown) {
         if (err instanceof Error && err.message === 'AUTH_REQUIRED') return;
         setError('データの読み込みに失敗しました');
@@ -81,23 +98,47 @@ export default function RivalDashboardPage({
   // =====================================================================
   // 他者評価ハンドラ
   // =====================================================================
-  const handleEvaluate = async (score: number) => {
-    if (evalLoading || evalDone) return;
+  const handleEvaluate = async () => {
+    if (evalLoading) return;
+
+    // 評価済みでない & スコア選択済みの課題のみ送信
+    const items: PeerEvalItem[] = activeTasks
+      .filter(t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null)
+      .map(t => ({ taskId: t.id, score: taskScores[t.id]! }));
+
+    if (items.length === 0) return;
+
     setEvalLoading(true);
     setEvalError('');
     setEvalResult(null);
+
     try {
-      const res = await evaluatePeer(targetId, score);
-      setEvalResult({ xp: res.xp_granted, mult: res.multiplier, score: res.score });
-      setEvalDone(true);
+      const res = await evaluatePeer(targetId, items);
+
+      // 新たに評価成功した task_id をセットに追加
+      setEvaluatedTaskIds(prev => {
+        const next = new Set(prev);
+        res.evaluated_tasks.forEach(id => next.add(id));
+        // GAS 側でスキップされたものも評価済みとして扱う
+        res.skipped_tasks.forEach(id => next.add(id));
+        return next;
+      });
+
+      // 送信済みのスコア選択をクリア
+      setTaskScores(prev => {
+        const next = { ...prev };
+        items.forEach(item => { next[item.taskId] = null; });
+        return next;
+      });
+
+      setEvalResult({
+        xp:    res.xp_granted,
+        mult:  res.multiplier,
+        count: res.evaluated_tasks.length,
+      });
     } catch (err: unknown) {
       if (err instanceof Error) {
-        if (err.message.includes('すでに評価済み') || err.message.includes('already')) {
-          setEvalError('本日はすでにこのユーザーを評価しました');
-          setEvalDone(true);
-        } else {
-          setEvalError('評価の送信に失敗しました。もう一度お試しください。');
-        }
+        setEvalError(err.message || '評価の送信に失敗しました。もう一度お試しください。');
       } else {
         setEvalError('評価の送信に失敗しました。もう一度お試しください。');
       }
@@ -141,24 +182,21 @@ export default function RivalDashboardPage({
     );
   }
 
-  // ★ Phase4: settings を削除。tasks（UserTask[]）を使用。
   const { status, logs, xpHistory, epithetMaster } = dashboard;
-  const activeTask: UserTask | null = (dashboard.tasks ?? []).find(t => t.status === 'active') ?? null;
+  const activeTasks: UserTask[] = (dashboard.tasks ?? []).filter(t => t.status === 'active');
   const myUserId = getCurrentUserId();
+  const isSelf   = myUserId === targetId;
 
   // 稽古評価レーダー用
-  // ★ Phase4: settings.filter(is_active) → tasks.filter(status === 'active') に変更
-  const activeItems = (dashboard.tasks ?? [])
-    .filter(t => t.status === 'active')
-    .map(t => t.task_text);
+  const activeItems = activeTasks.map(t => t.task_text);
   const totals: Record<string, { sum: number; count: number }> = {};
   activeItems.forEach(i => { totals[i] = { sum: 0, count: 0 }; });
   logs.slice(-50).forEach(l => {
     if (totals[l.item_name]) { totals[l.item_name].sum += l.score; totals[l.item_name].count++; }
   });
   const radarData = activeItems.map(item => ({
-    subject: item,
-    score:   totals[item].count > 0 ? +(totals[item].sum / totals[item].count).toFixed(1) : 0,
+    subject:  item,
+    score:    totals[item].count > 0 ? +(totals[item].sum / totals[item].count).toFixed(1) : 0,
     fullMark: 5,
   }));
   const hasRadarData = radarData.some(r => r.score > 0);
@@ -175,8 +213,14 @@ export default function RivalDashboardPage({
   const rangeXp        = nextLevelXp - currentLevelXp;
   const progressPct    = rangeXp > 0 ? Math.min(100, Math.round((progressXp / rangeXp) * 100)) : 100;
 
-  // 自分自身のページでは評価ボタンを非表示
-  const isSelf = myUserId === targetId;
+  // 送信可能な課題（評価済みでなく、スコア選択済み）が1つ以上あるか
+  const hasSelectableItems = activeTasks.some(
+    t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null,
+  );
+  // まだ評価できる課題（評価済みでない）が残っているか
+  const hasUnevaluatedTasks = activeTasks.some(t => !evaluatedTaskIds.has(t.id));
+  // 全課題が評価済みか
+  const allTasksEvaluated = activeTasks.length > 0 && !hasUnevaluatedTasks;
 
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 90 }}>
@@ -272,11 +316,7 @@ export default function RivalDashboardPage({
                 </span>
               </div>
               {/* プログレスバー */}
-              <div style={{
-                height: 6, borderRadius: 6,
-                background: 'rgba(109,40,217,0.2)',
-                overflow: 'hidden',
-              }}>
+              <div style={{ height: 6, borderRadius: 6, background: 'rgba(109,40,217,0.2)', overflow: 'hidden' }}>
                 <div style={{
                   height: '100%', borderRadius: 6,
                   width: `${progressPct}%`,
@@ -301,7 +341,6 @@ export default function RivalDashboardPage({
               background: 'rgba(109,40,217,0.1)',
               borderRadius: 8,
             }}>
-              <Calendar style={{ width: 13, height: 13, color: '#7c6fad' }} />
               <span style={{ fontSize: 11, color: '#7c6fad' }}>
                 最終稽古：{status.last_practice_date}
               </span>
@@ -310,7 +349,8 @@ export default function RivalDashboardPage({
         </div>
 
         {/* =====================================================================
-            現在の課題 + 他者評価ボタン
+            現在の課題 + 他者評価（課題単位）
+            ★ Phase7: 全アクティブ課題をリスト表示し、個別に星評価
         ===================================================================== */}
         <div className="wa-card" style={{
           background: 'linear-gradient(135deg, rgba(13,11,42,0.92), rgba(30,27,75,0.82))',
@@ -320,56 +360,151 @@ export default function RivalDashboardPage({
           marginBottom: 14,
         }}>
           {/* ヘッダー行 */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-            <div>
-              <span style={{ fontSize: 12, fontWeight: 800, color: '#c4b5fd', letterSpacing: '0.06em' }}>
-                現在の課題
-              </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#c4b5fd', letterSpacing: '0.06em' }}>
+              現在の課題
               {isSelf && (
-                <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.35)', marginTop: 2 }}>
+                <span style={{ fontSize: 10, color: 'rgba(199,210,254,0.35)', marginLeft: 8 }}>
                   READ ONLY
-                </div>
+                </span>
               )}
-            </div>
+            </span>
             <span style={{
               fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
-              background: activeTask ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.12)',
-              border: activeTask ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(148,163,184,0.25)',
-              color: activeTask ? '#86efac' : 'rgba(226,232,240,0.65)',
+              background: activeTasks.length > 0 ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.12)',
+              border: activeTasks.length > 0 ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(148,163,184,0.25)',
+              color: activeTasks.length > 0 ? '#86efac' : 'rgba(226,232,240,0.65)',
               borderRadius: 999,
               padding: '3px 8px',
               flexShrink: 0,
             }}>
-              {activeTask ? 'ACTIVE' : 'NONE'}
+              {activeTasks.length > 0 ? `${activeTasks.length} ACTIVE` : 'NONE'}
             </span>
           </div>
 
-          {/* 課題テキスト */}
-          {activeTask ? (
-            <>
-              <p style={{
-                margin: 0,
-                fontSize: 14,
-                fontWeight: 900,
-                color: '#ede9fe',
-                lineHeight: 1.35,
-                wordBreak: 'break-word',
-              }}>
-                {activeTask.task_text}
-              </p>
-              <p style={{ margin: '6px 0 0', fontSize: 10, color: 'rgba(199,210,254,0.35)' }}>
-                更新: {activeTask.updated_at || activeTask.created_at}
-              </p>
-            </>
-          ) : (
+          {/* 課題なし */}
+          {activeTasks.length === 0 && (
             <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'rgba(199,210,254,0.55)' }}>
               課題はまだ設定されていません
             </p>
           )}
 
-          {/* ── 他者評価ボタン（自分自身のページでは非表示） ── */}
-          {!isSelf && (
+          {/* ── 課題リスト（全 active タスクをループ） ── */}
+          {activeTasks.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {activeTasks.map((task, idx) => {
+                const isEvaluated  = evaluatedTaskIds.has(task.id);
+                const selectedScore = taskScores[task.id] ?? null;
+
+                return (
+                  <div
+                    key={task.id}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: isEvaluated
+                        ? 'rgba(34,197,94,0.07)'
+                        : 'rgba(49,46,129,0.35)',
+                      border: isEvaluated
+                        ? '1px solid rgba(34,197,94,0.25)'
+                        : '1px solid rgba(139,92,246,0.2)',
+                      opacity: isEvaluated ? 0.75 : 1,
+                    }}
+                  >
+                    {/* 課題番号 + テキスト */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: isSelf ? 0 : 8 }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, flexShrink: 0,
+                        color: isEvaluated ? '#86efac' : '#a78bfa',
+                        background: isEvaluated ? 'rgba(34,197,94,0.12)' : 'rgba(109,40,217,0.2)',
+                        border: isEvaluated ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(109,40,217,0.35)',
+                        borderRadius: 5,
+                        padding: '2px 6px',
+                        marginTop: 2,
+                      }}>
+                        {isEvaluated ? '評価済' : `課題 ${idx + 1}`}
+                      </span>
+                      <p style={{
+                        margin: 0, fontSize: 13, fontWeight: 800,
+                        color: isEvaluated ? 'rgba(199,210,254,0.55)' : '#ede9fe',
+                        lineHeight: 1.35, wordBreak: 'break-word', flex: 1,
+                      }}>
+                        {task.task_text}
+                      </p>
+                    </div>
+
+                    {/* 星評価（自分自身のページ・評価済みの場合は非表示） */}
+                    {!isSelf && !isEvaluated && (
+                      <>
+                        {/* 星ボタン行 */}
+                        <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
+                          {[1, 2, 3, 4, 5].map(s => {
+                            const filled = selectedScore !== null && s <= selectedScore;
+                            return (
+                              <button
+                                key={s}
+                                onClick={() => setTaskScores(prev => ({
+                                  ...prev,
+                                  [task.id]: prev[task.id] === s ? null : s,
+                                }))}
+                                disabled={evalLoading}
+                                style={{
+                                  width: 40, height: 40,
+                                  borderRadius: 10,
+                                  border: filled
+                                    ? '1px solid rgba(251,191,36,0.6)'
+                                    : '1px solid rgba(139,92,246,0.3)',
+                                  background: filled
+                                    ? 'linear-gradient(135deg, rgba(180,130,0,0.25), rgba(251,191,36,0.18))'
+                                    : 'rgba(30,27,75,0.5)',
+                                  display: 'flex', flexDirection: 'column',
+                                  alignItems: 'center', justifyContent: 'center', gap: 1,
+                                  cursor: evalLoading ? 'not-allowed' : 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  transform: filled ? 'scale(1.08)' : 'scale(1)',
+                                  padding: 0,
+                                }}
+                              >
+                                <Star
+                                  style={{
+                                    width: 18, height: 18,
+                                    color: filled ? '#fbbf24' : 'rgba(139,92,246,0.5)',
+                                    fill:  filled ? '#fbbf24' : 'transparent',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                />
+                                <span style={{
+                                  fontSize: 8, fontWeight: 700,
+                                  color: filled ? '#fde68a' : 'rgba(139,92,246,0.5)',
+                                }}>
+                                  {s}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* スコアラベル */}
+                        {selectedScore !== null && (
+                          <p style={{
+                            margin: '6px 0 0', fontSize: 10, textAlign: 'center', fontWeight: 700,
+                            color: '#fde68a', letterSpacing: '0.04em',
+                          }}>
+                            {SCORE_LABELS[selectedScore]}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── 他者評価フッター（自分自身のページでは非表示） ── */}
+          {!isSelf && activeTasks.length > 0 && (
             <div style={{ marginTop: 14 }}>
+
               {/* 成功フィードバック */}
               {evalResult && (
                 <div style={{
@@ -383,17 +518,17 @@ export default function RivalDashboardPage({
                   <CheckCircle style={{ width: 16, height: 16, color: '#86efac', flexShrink: 0 }} />
                   <div>
                     <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#86efac' }}>
-                      評価を送りました！
+                      {evalResult.count}件の課題を評価しました！
                     </p>
                     <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(134,239,172,0.7)' }}>
-                      {'★'.repeat(evalResult.score)}{'☆'.repeat(5 - evalResult.score)}　{targetName} に +{evalResult.xp} XP（×{evalResult.mult} 倍率）
+                      {targetName} に +{evalResult.xp} XP（×{evalResult.mult} 倍率）
                     </p>
                   </div>
                 </div>
               )}
 
               {/* エラーフィードバック */}
-              {evalError && !evalResult && (
+              {evalError && (
                 <div style={{
                   padding: '8px 12px',
                   background: 'rgba(239,68,68,0.1)',
@@ -405,86 +540,45 @@ export default function RivalDashboardPage({
                 </div>
               )}
 
-              {/* ── 5段階星評価 UI ── */}
-              {!evalDone && activeTask && (
+              {/* 全課題評価済みバナー */}
+              {allTasksEvaluated && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  padding: '12px 16px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(34,197,94,0.3)',
+                  background: 'rgba(34,197,94,0.08)',
+                  color: '#86efac',
+                  fontSize: 13, fontWeight: 800,
+                }}>
+                  <CheckCircle style={{ width: 15, height: 15 }} />
+                  本日の全課題を評価済み
+                </div>
+              )}
+
+              {/* 送信ボタン（まだ評価できる課題が残っている場合に表示） */}
+              {!allTasksEvaluated && (
                 <>
-                  <p style={{ margin: '0 0 8px', fontSize: 11, color: 'rgba(199,210,254,0.55)', letterSpacing: '0.04em' }}>
-                    稽古の取り組みを評価してください
+                  <p style={{ margin: '0 0 10px', fontSize: 11, color: 'rgba(199,210,254,0.55)', letterSpacing: '0.04em' }}>
+                    各課題の取り組みを評価してください（複数選択可）
                   </p>
-
-                  {/* 星ボタン行 */}
-                  <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 10 }}>
-                    {[1, 2, 3, 4, 5].map(s => {
-                      const filled  = evalScore !== null && s <= evalScore;
-                      const hovered = false;
-                      return (
-                        <button
-                          key={s}
-                          onClick={() => setEvalScore(evalScore === s ? null : s)}
-                          disabled={evalLoading}
-                          style={{
-                            width: 48, height: 48,
-                            borderRadius: 12,
-                            border: filled
-                              ? '1px solid rgba(251,191,36,0.6)'
-                              : '1px solid rgba(139,92,246,0.3)',
-                            background: filled
-                              ? 'linear-gradient(135deg, rgba(180,130,0,0.25), rgba(251,191,36,0.18))'
-                              : 'rgba(30,27,75,0.5)',
-                            display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center', gap: 1,
-                            cursor: evalLoading ? 'not-allowed' : 'pointer',
-                            transition: 'all 0.15s ease',
-                            transform: filled ? 'scale(1.08)' : 'scale(1)',
-                          }}
-                        >
-                          <Star
-                            style={{
-                              width: 20, height: 20,
-                              color: filled ? '#fbbf24' : 'rgba(139,92,246,0.5)',
-                              fill:  filled ? '#fbbf24' : 'transparent',
-                              transition: 'all 0.15s ease',
-                            }}
-                          />
-                          <span style={{
-                            fontSize: 9, fontWeight: 700,
-                            color: filled ? '#fde68a' : 'rgba(139,92,246,0.5)',
-                          }}>
-                            {s}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* スコアラベル */}
-                  {evalScore !== null && (
-                    <p style={{
-                      margin: '0 0 10px', fontSize: 11, textAlign: 'center', fontWeight: 700,
-                      color: '#fde68a', letterSpacing: '0.05em',
-                    }}>
-                      {['', '少し取り組んでいる', '取り組んでいる', '概ね取り組んでいる', 'よく取り組んでいる', '非常によく取り組んでいる'][evalScore]}
-                    </p>
-                  )}
-
-                  {/* 送信ボタン */}
                   <button
-                    onClick={() => evalScore !== null && handleEvaluate(evalScore)}
-                    disabled={evalLoading || evalScore === null}
+                    onClick={handleEvaluate}
+                    disabled={evalLoading || !hasSelectableItems}
                     style={{
                       width: '100%',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                       padding: '12px 16px',
                       borderRadius: 12,
-                      border: evalScore !== null
+                      border: hasSelectableItems
                         ? '1px solid rgba(251,191,36,0.5)'
                         : '1px solid rgba(100,100,120,0.3)',
-                      background: evalScore !== null
+                      background: hasSelectableItems
                         ? 'linear-gradient(135deg, rgba(120,80,0,0.35), rgba(251,191,36,0.2))'
                         : 'rgba(30,27,75,0.4)',
-                      color: evalScore !== null ? '#fde68a' : 'rgba(199,210,254,0.3)',
+                      color: hasSelectableItems ? '#fde68a' : 'rgba(199,210,254,0.3)',
                       fontSize: 13, fontWeight: 800, letterSpacing: '0.05em',
-                      cursor: (evalLoading || evalScore === null) ? 'not-allowed' : 'pointer',
+                      cursor: (evalLoading || !hasSelectableItems) ? 'not-allowed' : 'pointer',
                       transition: 'all 0.2s ease',
                       opacity: evalLoading ? 0.7 : 1,
                     }}
@@ -499,51 +593,35 @@ export default function RivalDashboardPage({
                         }} />
                         送信中…
                       </>
-                    ) : evalScore !== null ? (
+                    ) : hasSelectableItems ? (
                       <>
                         <Star style={{ width: 15, height: 15, fill: '#fbbf24', color: '#fbbf24' }} />
-                        {evalScore}点で評価を送る
+                        {activeTasks.filter(t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null).length}件の課題を評価する
                       </>
                     ) : (
                       <>
                         <Star style={{ width: 15, height: 15 }} />
-                        スコアを選んでください
+                        評価したい課題のスコアを選んでください
                       </>
                     )}
                   </button>
                 </>
               )}
+            </div>
+          )}
 
-              {/* 評価完了後 */}
-              {evalDone && !evalResult && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(34,197,94,0.3)',
-                  background: 'rgba(34,197,94,0.08)',
-                  color: '#86efac',
-                  fontSize: 13, fontWeight: 800,
-                }}>
-                  <CheckCircle style={{ width: 15, height: 15 }} />
-                  本日の評価送信済み
-                </div>
-              )}
-
-              {/* 課題がない場合 */}
-              {!activeTask && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  padding: '12px 16px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(100,100,120,0.25)',
-                  background: 'rgba(30,27,75,0.4)',
-                  color: 'rgba(199,210,254,0.3)',
-                  fontSize: 12, fontWeight: 700,
-                }}>
-                  課題が設定されていません（評価不可）
-                </div>
-              )}
+          {/* 課題がない場合（非 self）*/}
+          {!isSelf && activeTasks.length === 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '12px 16px', marginTop: 10,
+              borderRadius: 12,
+              border: '1px solid rgba(100,100,120,0.25)',
+              background: 'rgba(30,27,75,0.4)',
+              color: 'rgba(199,210,254,0.3)',
+              fontSize: 12, fontWeight: 700,
+            }}>
+              課題が設定されていません（評価不可）
             </div>
           )}
         </div>
@@ -561,21 +639,7 @@ export default function RivalDashboardPage({
           </div>
         )}
 
-        {/* ======================= 稽古カレンダー ======================= */}
-        {mounted && logs && logs.length > 0 && (
-          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14, overflowX: 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <Calendar style={{ width: 15, height: 15, color: '#a78bfa' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>
-                稽古カレンダー
-              </span>
-            </div>
-            <ActivityHeatmap logs={logs} />
-          </div>
-        )}
-
         {/* ======================= スコアバランス ======================= */}
-        {/* ★ Phase4: hasRadarData ガードを追加（activeItems が空の場合に空チャートを出さない）*/}
         {mounted && hasRadarData && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
@@ -606,7 +670,6 @@ export default function RivalDashboardPage({
                 VIEW ONLY
               </span>
             </div>
-            {/* ポインターイベントを無効にして操作不可にする */}
             <div style={{ pointerEvents: 'none', userSelect: 'none' }}>
               <SkillGrid
                 techniques={techniques}

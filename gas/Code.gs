@@ -4,6 +4,9 @@
 // ★ settings シート関連を全廃止
 // ★ updateTasks: スマート差分（IDを維持/新規UUID）対応
 // ★ Phase6: アチーブメント（実績バッジ）システム追加
+// ★ Phase7: evaluatePeer を課題単位配列評価に変更
+//   - peer_evaluations スキーマに task_id 列を追加
+//   - getTodayEvaluations アクション追加
 // =====================================================================
 
 const SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -14,7 +17,7 @@ const SHEET_LOGS              = 'logs';               // user_id, date, task_id,
 const SHEET_STATUS            = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
 const SHEET_XP_HIST           = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
 const SHEET_USER_TASKS        = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
-const SHEET_PEER_EVALS        = 'peer_evaluations';   // evaluator_id, target_id, date, score, xp_granted
+const SHEET_PEER_EVALS        = 'peer_evaluations';   // evaluator_id, target_id, task_id, date, score, xp_granted ★ Phase7: task_id 追加
 const SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Points, LastRating
 const SHEET_USER_ACHIEVEMENTS = 'user_achievements';  // user_id, achievement_id, unlocked_at ★ Phase6
 
@@ -124,13 +127,14 @@ function doGet(e) {
   try {
     gasLog('INFO', action, 'doGet', { user_id: e.parameter.user_id || '' });
     switch (action) {
-      case 'getDashboard':     return getDashboard(e.parameter);
-      case 'getLogs':          return getLogs(e.parameter);
-      case 'getUserStatus':    return getUserStatus(e.parameter);
-      case 'getTechniques':    return getTechniques(e.parameter);
-      case 'getEpithetMaster': return getEpithetMaster();
-      case 'getUsers':         return getUsers();
-      case 'getAchievements':  return getAchievements(e.parameter);   // ★ Phase6
+      case 'getDashboard':         return getDashboard(e.parameter);
+      case 'getLogs':              return getLogs(e.parameter);
+      case 'getUserStatus':        return getUserStatus(e.parameter);
+      case 'getTechniques':        return getTechniques(e.parameter);
+      case 'getEpithetMaster':     return getEpithetMaster();
+      case 'getUsers':             return getUsers();
+      case 'getAchievements':      return getAchievements(e.parameter);      // ★ Phase6
+      case 'getTodayEvaluations':  return getTodayEvaluations(e.parameter);  // ★ Phase7
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -458,20 +462,15 @@ function getUserTasksSheet(ss) {
 
 function getTasksData(ss, userId) {
   var sheet = getUserTasksSheet(ss);
-  var rows  = sheet.getDataRange().getValues();
-  // 列: id(0), user_id(1), task_text(2), status(3), created_at(4), updated_at(5)
-  return rows.slice(1)
-    .filter(function(r){ return String(r[1]) === String(userId); })
-    .map(function(r){
-      return {
-        id:         String(r[0]),
-        task_text:  String(r[2]),
-        status:     String(r[3]),
-        created_at: r[4] ? String(r[4]).slice(0,10) : '',
-        updated_at: r[5] ? String(r[5]).slice(0,10) : '',
-      };
-    })
-    .filter(function(t) { return t.id && t.task_text; });
+  return filterRowsByUserId(sheet, userId).map(function(r){
+    return {
+      id:         String(r[0]),
+      task_text:  String(r[2]),
+      status:     String(r[3]),
+      created_at: r[4] ? String(r[4]).slice(0,10) : '',
+      updated_at: r[5] ? String(r[5]).slice(0,10) : '',
+    };
+  }).filter(function(t) { return t.id && t.task_text; });
 }
 
 /**
@@ -704,6 +703,15 @@ function updateTechniqueRating(body) {
 
 // =====================================================================
 // I3. 他者評価（peer_evaluations）
+// ★ Phase7: 課題単位配列評価対応
+//
+// peer_evaluations スキーマ（6列）:
+//   A: evaluator_id
+//   B: target_id
+//   C: task_id      ★ Phase7追加
+//   D: date
+//   E: score
+//   F: xp_granted
 // =====================================================================
 
 function getPeerLevelMultiplier(level) {
@@ -715,45 +723,69 @@ function getPeerLevelMultiplier(level) {
   return 1.0;
 }
 
+/**
+ * evaluatePeer
+ * ★ Phase7: items 配列（{ taskId, score }[]）を受け取り、課題単位で記録する。
+ *
+ * - (evaluator_id, target_id, task_id, 今日) の組み合わせが既存の場合はスキップ。
+ * - 新規評価分のスコア合計 × 2 × 評価者レベル倍率 を対象者に XP として付与。
+ * - レスポンス: { xp_granted, evaluator_level, multiplier, evaluated_tasks, skipped_tasks }
+ */
 function evaluatePeer(body) {
   var evaluatorId = body.user_id;
   var targetId    = body.target_id;
-  var score       = parseInt(body.score);
+  var items       = body.items; // Array<{ taskId: string, score: number }>
 
   if (!evaluatorId) return createError('user_id は必須です', 400);
   if (!targetId)    return createError('target_id は必須です', 400);
   if (String(evaluatorId) === String(targetId)) {
     return createError('自分自身を評価することはできません', 400);
   }
-  if (isNaN(score) || score < 1 || score > 5) {
-    return createError('score は 1〜5 の整数で指定してください', 400);
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return createError('items は空でない配列で指定してください', 400);
+  }
+
+  // 各アイテムのバリデーション
+  for (var v = 0; v < items.length; v++) {
+    var sc = parseInt(items[v].score);
+    if (!items[v].taskId)           return createError('items[' + v + '].taskId は必須です', 400);
+    if (isNaN(sc) || sc < 1 || sc > 5) return createError('items[' + v + '].score は 1〜5 の整数で指定してください', 400);
   }
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
+  // peer_evaluations シートを取得（なければ自動作成）
   var peSheet = ss.getSheetByName(SHEET_PEER_EVALS);
-  if (!peSheet) return createError('peer_evaluations シートが存在しません。管理者に連絡してください。', 500);
+  if (!peSheet) {
+    peSheet = ss.insertSheet(SHEET_PEER_EVALS);
+    peSheet.appendRow(['evaluator_id', 'target_id', 'task_id', 'date', 'score', 'xp_granted']);
+    peSheet.getRange(1,1,1,6).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    peSheet.setFrozenRows(1);
+    gasLog('INFO', 'evaluatePeer', 'peer_evaluations シートを自動作成しました');
+  }
 
+  // 今日の既評価 (evaluator_id, target_id, task_id) セットを構築
   var peRows = peSheet.getDataRange().getValues();
+  var alreadyEvaluatedSet = {};
   for (var i = 1; i < peRows.length; i++) {
     var pe = peRows[i];
     if (String(pe[0]) === String(evaluatorId) &&
         String(pe[1]) === String(targetId) &&
-        toDateStr(pe[2]) === today) {
-      return createError('本日はすでにこのユーザーを評価済みです', 429);
+        toDateStr(pe[3]) === today) {
+      alreadyEvaluatedSet[String(pe[2])] = true;
     }
   }
 
+  // 評価者情報
   var statSheet = ss.getSheetByName(SHEET_STATUS);
   if (!statSheet) return createError('user_status シートが存在しません', 500);
 
   var evalRows  = filterRowsByUserId(statSheet, evaluatorId);
   var evalLevel = evalRows.length > 0 ? (parseInt(evalRows[0][2]) || 1) : 1;
   var mult      = getPeerLevelMultiplier(evalLevel);
-  // XP = score × 2 × 評価者レベル倍率
-  var xpGranted = Math.ceil(score * 2 * mult);
 
+  // 評価者の表示名
   var umSheet  = ss.getSheetByName(SHEET_USER_MASTER);
   var evalName = String(evaluatorId);
   if (umSheet) {
@@ -766,43 +798,130 @@ function evaluatePeer(body) {
     }
   }
 
-  var targetRows = filterRowsByUserId(statSheet, targetId);
-  var hasTarget  = targetRows.length > 0;
-  var currentXp  = hasTarget ? (parseInt(targetRows[0][1]) || 0) : 0;
-  var newXp      = currentXp + xpGranted;
-  var titleMD    = getTitleMasterData(ss);
-  var newLevel   = calcLevel(newXp);
-  var newTitle   = calcTitleFromMaster(newLevel, titleMD);
+  // 各課題を処理
+  var evaluatedTasks = [];  // 今回新たに評価した task_id
+  var skippedTasks   = [];  // 既評価のためスキップした task_id
+  var totalScoreSum  = 0;
+  var ts             = nowJstTs();
 
-  if (hasTarget) {
-    var allStatRows = statSheet.getDataRange().getValues();
-    for (var r = allStatRows.length; r >= 2; r--) {
-      if (String(allStatRows[r-1][0]) === String(targetId)) {
-        statSheet.getRange(r, 2).setValue(newXp);
-        statSheet.getRange(r, 3).setValue(newLevel);
-        statSheet.getRange(r, 4).setValue(newTitle);
-        break;
+  items.forEach(function(item) {
+    var taskId = String(item.taskId);
+    var score  = parseInt(item.score);
+
+    if (alreadyEvaluatedSet[taskId]) {
+      skippedTasks.push(taskId);
+      return; // スキップ
+    }
+
+    // peer_evaluations に記録（xp_granted は後で計算して一括付与するためここでは 0 を仮置き）
+    peSheet.appendRow([evaluatorId, targetId, taskId, ts, score, 0]);
+    evaluatedTasks.push(taskId);
+    totalScoreSum += score;
+  });
+
+  // XP付与（新規評価がない場合は 0）
+  // 計算式: (評価された各課題のスコアの合計) × 2 × 評価者レベル倍率
+  var xpGranted = evaluatedTasks.length > 0 ? Math.ceil(totalScoreSum * 2 * mult) : 0;
+
+  if (xpGranted > 0) {
+    // peer_evaluations の xp_granted 列を更新（追加した行に対して）
+    // パフォーマンスのため末尾から評価済み行数分を更新する
+    var perItemXp = Math.ceil(xpGranted / evaluatedTasks.length);
+    var peLastRow = peSheet.getLastRow();
+    var updatedCount = 0;
+    for (var r = peLastRow; r >= 2 && updatedCount < evaluatedTasks.length; r--) {
+      var row = peSheet.getRange(r, 1, 1, 6).getValues()[0];
+      if (String(row[0]) === String(evaluatorId) &&
+          String(row[1]) === String(targetId) &&
+          String(row[5]) === '0') {
+        peSheet.getRange(r, 6).setValue(perItemXp);
+        updatedCount++;
       }
     }
-  } else {
-    statSheet.appendRow([targetId, newXp, newLevel, newTitle, '', today, '', '', '']);
+
+    // 対象者の XP を更新
+    var targetRows = filterRowsByUserId(statSheet, targetId);
+    var hasTarget  = targetRows.length > 0;
+    var currentXp  = hasTarget ? (parseInt(targetRows[0][1]) || 0) : 0;
+    var newXp      = currentXp + xpGranted;
+    var titleMD    = getTitleMasterData(ss);
+    var newLevel   = calcLevel(newXp);
+    var newTitle   = calcTitleFromMaster(newLevel, titleMD);
+
+    if (hasTarget) {
+      var allStatRows = statSheet.getDataRange().getValues();
+      for (var sr = allStatRows.length; sr >= 2; sr--) {
+        if (String(allStatRows[sr-1][0]) === String(targetId)) {
+          statSheet.getRange(sr, 2).setValue(newXp);
+          statSheet.getRange(sr, 3).setValue(newLevel);
+          statSheet.getRange(sr, 4).setValue(newTitle);
+          break;
+        }
+      }
+    } else {
+      statSheet.appendRow([targetId, newXp, newLevel, newTitle, '', today, '', '', '']);
+    }
+
+    writeXpHistory(ss, targetId, 'peer_eval', xpGranted,
+      evalName + 'からの評価（' + evaluatedTasks.length + '課題・合計スコア: ' + totalScoreSum + '）',
+      newXp, newLevel, newTitle);
   }
 
-  // peer_evaluations: evaluator_id, target_id, date, score, xp_granted
-  peSheet.appendRow([evaluatorId, targetId, nowJstTs(), score, xpGranted]);
-  writeXpHistory(ss, targetId, 'peer_eval', xpGranted,
-    evalName + 'からの評価（スコア: ' + score + '）', newXp, newLevel, newTitle);
-
   gasLog('INFO', 'evaluatePeer',
-    'evaluator=' + evaluatorId + '(' + evalLevel + ') score=' + score + ' -> target=' + targetId + ' +' + xpGranted + 'XP(×' + mult + ')',
-    { evalName: evalName, score: score, newLevel: newLevel });
+    'evaluator=' + evaluatorId + '(' + evalLevel + ') evaluated=' + evaluatedTasks.length +
+    ' skipped=' + skippedTasks.length + ' scoreSum=' + totalScoreSum + ' +' + xpGranted + 'XP(×' + mult + ')',
+    { evalName: evalName, evaluatedTasks: evaluatedTasks, skippedTasks: skippedTasks });
 
   return createResponse({
     xp_granted:      xpGranted,
     evaluator_level: evalLevel,
     multiplier:      mult,
-    score:           score,
+    evaluated_tasks: evaluatedTasks,
+    skipped_tasks:   skippedTasks,
   });
+}
+
+/**
+ * getTodayEvaluations
+ * ★ Phase7: 今日、自分（user_id）が指定ユーザー（target_id）を評価済みの
+ * task_id 一覧を返す。ライバル画面のロード時に呼び出し、評価済み課題を disabled にするために使用。
+ *
+ * doGet action: 'getTodayEvaluations'
+ * params: user_id（evaluatorId）, target_id
+ * returns: { evaluated_task_ids: string[] }
+ */
+function getTodayEvaluations(params) {
+  var evaluatorId = params.user_id;
+  var targetId    = params.target_id;
+
+  if (!evaluatorId) return createError('user_id は必須です', 400);
+  if (!targetId)    return createError('target_id は必須です', 400);
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+
+  var peSheet = ss.getSheetByName(SHEET_PEER_EVALS);
+  if (!peSheet) {
+    return createResponse({ evaluated_task_ids: [] });
+  }
+
+  var peRows = peSheet.getDataRange().getValues();
+  var evaluatedTaskIds = [];
+
+  for (var i = 1; i < peRows.length; i++) {
+    var pe = peRows[i];
+    // 列: evaluator_id(0), target_id(1), task_id(2), date(3), score(4), xp_granted(5)
+    if (String(pe[0]) === String(evaluatorId) &&
+        String(pe[1]) === String(targetId) &&
+        toDateStr(pe[3]) === today) {
+      var tid = String(pe[2] || '');
+      if (tid) evaluatedTaskIds.push(tid);
+    }
+  }
+
+  gasLog('INFO', 'getTodayEvaluations',
+    'evaluator=' + evaluatorId + ' target=' + targetId + ' evaluated=' + evaluatedTaskIds.length);
+  return createResponse({ evaluated_task_ids: evaluatedTaskIds });
 }
 
 // =====================================================================
@@ -1001,97 +1120,74 @@ function dailyPenalty(d) {
 function toDateStr(val) {
   if (!val) return '';
   try {
-    var d = (val instanceof Date) ? val : new Date(val);
-    if (isNaN(d.getTime())) return '';
-    return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
-  } catch(e) { return ''; }
+    if (val instanceof Date) return Utilities.formatDate(val, 'Asia/Tokyo', 'yyyy-MM-dd');
+    var s = String(val);
+    if (s.match(/^\d{4}-\d{2}-\d{2}/)) return s.slice(0,10);
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  } catch(e) {}
+  return '';
 }
 
 function applyDecay(ss, userId) {
-  var sheet = ss.getSheetByName(SHEET_STATUS);
-  if (!sheet) return { applied:0, days_absent:0, today_penalty:0 };
+  var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  var result = { applied: 0, days_absent: 0, today_penalty: 0 };
 
-  var allRows = sheet.getDataRange().getValues();
-  var rowIdx  = -1;
-  for (var i = 1; i < allRows.length; i++) {
-    if (String(allRows[i][0]) === String(userId)) { rowIdx = i; break; }
-  }
-  if (rowIdx === -1) return { applied:0, days_absent:0, today_penalty:0 };
+  try {
+    var statSheet = ss.getSheetByName(SHEET_STATUS);
+    if (!statSheet) return result;
 
-  var row        = allRows[rowIdx];
-  var totalXp    = parseInt(row[1]) || 0;
-  var lastPractS = toDateStr(row[4]);
-  var lastDecayS = toDateStr(row[5]);
-  var today      = new Date(); today.setHours(0,0,0,0);
-  var todayStr   = Utilities.formatDate(today, 'Asia/Tokyo', 'yyyy-MM-dd');
-  var sheetRow   = rowIdx + 1;
-
-  if (lastDecayS === todayStr) {
-    var da = lastPractS ? Math.floor((today - new Date(lastPractS)) / 86400000) : 0;
-    return { applied:0, days_absent:da, today_penalty: dailyPenalty(da) };
-  }
-
-  // last_practice_date が空なら logs シートから自動補完
-  var resolvedLP = lastPractS;
-  if (!resolvedLP) {
-    var logSheet = ss.getSheetByName(SHEET_LOGS);
-    if (logSheet) {
-      var logDates = filterRowsByUserId(logSheet, userId)
-        .map(function(r){ return toDateStr(r[1]); })
-        .filter(function(d){ return d.match(/^\d{4}-\d{2}-\d{2}$/); })
-        .sort();
-      if (logDates.length > 0) {
-        resolvedLP = logDates[logDates.length - 1];
-        sheet.getRange(sheetRow, 5).setValue(resolvedLP);
-        gasLog('INFO', 'applyDecay', 'last_practice_date 自動補完 user:' + userId, { resolvedLP: resolvedLP });
-      }
+    var rows   = statSheet.getDataRange().getValues();
+    var rowIdx = -1;
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) === String(userId)) { rowIdx = i; break; }
     }
+    if (rowIdx === -1) return result;
+
+    var row           = rows[rowIdx];
+    var currentXp     = parseInt(row[1]) || 0;
+    var lastPractice  = toDateStr(row[4]);
+    var lastDecayDate = toDateStr(row[5]);
+
+    if (!lastPractice) return result;
+
+    var practiceDate = new Date(lastPractice);
+    var todayDate    = new Date(today);
+    practiceDate.setHours(0,0,0,0);
+    todayDate.setHours(0,0,0,0);
+    var daysAbsent = Math.floor((todayDate - practiceDate) / 86400000);
+
+    if (daysAbsent <= 3) return result;
+    if (lastDecayDate === today) return result;
+
+    var penalty  = dailyPenalty(daysAbsent);
+    var newXp    = Math.max(0, currentXp - penalty);
+    var titleMD  = getTitleMasterData(ss);
+    var newLevel = calcLevel(newXp);
+    var newTitle = calcTitleFromMaster(newLevel, titleMD);
+
+    statSheet.getRange(rowIdx + 1, 2).setValue(newXp);
+    statSheet.getRange(rowIdx + 1, 3).setValue(newLevel);
+    statSheet.getRange(rowIdx + 1, 4).setValue(newTitle);
+    statSheet.getRange(rowIdx + 1, 6).setValue(today);
+
+    writeXpHistory(ss, userId, 'decay', -penalty,
+      daysAbsent + '日間稽古なし（減衰）', newXp, newLevel, newTitle);
+
+    result = { applied: penalty, days_absent: daysAbsent, today_penalty: penalty };
+  } catch(e) {
+    gasLog('WARN', 'applyDecay', e.message);
   }
-  if (!resolvedLP) {
-    sheet.getRange(sheetRow, 6).setValue(todayStr);
-    return { applied:0, days_absent:0, today_penalty:0 };
-  }
-
-  var lastPract = new Date(resolvedLP); lastPract.setHours(0,0,0,0);
-  var lastDecay = lastDecayS ? new Date(lastDecayS) : new Date(lastPract);
-  lastDecay.setHours(0,0,0,0);
-
-  var totalDecay = 0;
-  var cursor     = new Date(lastDecay);
-  cursor.setDate(cursor.getDate() + 1);
-  while (cursor <= today) {
-    totalDecay += dailyPenalty(Math.floor((cursor - lastPract) / 86400000));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  var daysAbsent   = Math.floor((today - lastPract) / 86400000);
-  var todayPenalty = dailyPenalty(daysAbsent);
-
-  if (totalDecay <= 0) {
-    sheet.getRange(sheetRow, 6).setValue(todayStr);
-    return { applied:0, days_absent: daysAbsent, today_penalty: todayPenalty };
-  }
-
-  var newXp    = Math.max(0, totalXp - totalDecay);
-  var newLevel = calcLevel(newXp);
-  var titleMD  = getTitleMasterData(ss);
-  var newTitle = calcTitleFromMaster(newLevel, titleMD);
-
-  sheet.getRange(sheetRow, 1, 1, 6).setValues([[userId, newXp, newLevel, newTitle, resolvedLP, todayStr]]);
-  gasLog('INFO', 'applyDecay', 'user=' + userId + ' -' + totalDecay + 'XP (' + daysAbsent + '日)', { newXp: newXp });
-  writeXpHistory(ss, userId, 'decay', -totalDecay, daysAbsent + '日間稽古なし', newXp, newLevel, newTitle);
-
-  return { applied: totalDecay, days_absent: daysAbsent, today_penalty: todayPenalty };
+  return result;
 }
 
 // =====================================================================
-// O. アチーブメントシステム ★ Phase6
+// O. アチーブメント（実績バッジ）システム ★ Phase6
 // =====================================================================
 
 /**
- * achievement_master シートを取得（なければ自動作成）
- * 列: achievement_id(0), name(1), condition_type(2), condition_value(3),
- *     description(4), hint(5), icon_type(6)
+ * achievement_master シートを取得（なければ自動作成＋デフォルト8件投入）
+ * 列: achievement_id(0), name(1), condition_type(2), condition_value(3), description(4), hint(5), icon_type(6)
  */
 function getAchievementMasterSheet(ss) {
   var sheet = ss.getSheetByName(SHEET_ACHIEVEMENT_MASTER);
@@ -1100,16 +1196,15 @@ function getAchievementMasterSheet(ss) {
     sheet.appendRow(['achievement_id', 'name', 'condition_type', 'condition_value', 'description', 'hint', 'icon_type']);
     sheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
     sheet.setFrozenRows(1);
-    // デフォルトデータ（streak_days / total_practices 2種類）
     var defaults = [
-      ['ACH001', '初稽古',        'total_practices',  1,  '初めての稽古を記録した',                 '稽古記録を1回つけよう',     'first_step'],
-      ['ACH002', '三日坊主克服',  'streak_days',       3,  '3日連続で稽古を記録した',               '3日間連続で稽古しよう',     'streak'],
-      ['ACH003', '一週間の剣士',  'streak_days',       7,  '7日連続で稽古を記録した',               '7日間連続で稽古しよう',     'streak'],
-      ['ACH004', '精進十日',      'streak_days',      10,  '10日連続で稽古を記録した',              '10日間連続で稽古しよう',    'streak'],
-      ['ACH005', '一ヶ月皆勤',    'streak_days',      30,  '30日連続で稽古を記録した',              '30日間連続で稽古しよう',    'streak'],
-      ['ACH006', '十稽古',        'total_practices',  10,  '累計10回の稽古を記録した',              '累計10回稽古しよう',        'milestone'],
-      ['ACH007', '五十稽古',      'total_practices',  50,  '累計50回の稽古を記録した',              '累計50回稽古しよう',        'milestone'],
-      ['ACH008', '百錬自得',      'total_practices', 100,  '累計100回の稽古を記録した',             '累計100回稽古しよう',       'legendary'],
+      ['ACH001', '初稽古',       'total_practices',  1,   '初めての稽古を記録した',             '稽古記録を1回つけよう',     'first_step'],
+      ['ACH002', '三日坊主克服', 'streak_days',       3,   '3日連続で稽古を記録した',             '3日連続で稽古しよう',       'streak_3'],
+      ['ACH003', '一週間の剣士', 'streak_days',       7,   '7日連続で稽古を記録した',             '7日連続で稽古しよう',       'streak_7'],
+      ['ACH004', '精進十日',     'streak_days',       10,  '10日連続で稽古を記録した',            '10日連続で稽古しよう',      'streak_10'],
+      ['ACH005', '一ヶ月皆勤',   'streak_days',       30,  '30日連続で稽古を記録した',            '30日連続で稽古しよう',      'streak_30'],
+      ['ACH006', '十稽古',       'total_practices',  10,  '累計10回の稽古を記録した',            '累計10回稽古しよう',        'milestone_10'],
+      ['ACH007', '五十稽古',     'total_practices',  50,  '累計50回の稽古を記録した',            '累計50回稽古しよう',        'milestone_50'],
+      ['ACH008', '百錬自得',     'total_practices', 100,  '累計100回の稽古を記録した',           '累計100回稽古しよう',       'legendary'],
     ];
     sheet.getRange(2, 1, defaults.length, 7).setValues(defaults);
     gasLog('INFO', 'getAchievementMasterSheet', 'achievement_master シートを自動作成しました');
@@ -1191,27 +1286,17 @@ function getAchievements(params) {
 
 /**
  * 連続稽古日数（現在のストリーク）を計算する。
- * logSheet から userId の全稽古日を取得し、今日（saveLog で追加された当日含む）
- * から遡って連続している日数を返す。
- *
- * @param {Sheet}  logSheet  - logs シートオブジェクト
- * @param {string} userId    - ユーザーID
- * @param {string} todayStr  - 本日の日付文字列 (YYYY-MM-DD)
- * @returns {number} 現在の連続稽古日数
  */
 function calcCurrentStreak(logSheet, userId, todayStr) {
   var rows = filterRowsByUserId(logSheet, userId);
 
-  // ユニーク稽古日セットを構築（今日分は saveLog で既に追加済み）
   var dateSet = {};
   rows.forEach(function(r) {
     var d = toDateStr(r[1]);
     if (d) dateSet[d] = true;
   });
-  // 念のため今日を含める
   dateSet[todayStr] = true;
 
-  // 今日から1日ずつ遡ってカウント
   var streak = 0;
   var cursor = new Date(todayStr);
   cursor.setHours(0, 0, 0, 0);
@@ -1230,11 +1315,6 @@ function calcCurrentStreak(logSheet, userId, todayStr) {
 
 /**
  * 累計稽古日数（ユニーク稽古日の総数）を計算する。
- *
- * @param {Sheet}  logSheet  - logs シートオブジェクト
- * @param {string} userId    - ユーザーID
- * @param {string} todayStr  - 本日の日付文字列 (YYYY-MM-DD)
- * @returns {number} 累計稽古日数
  */
 function calcTotalPractices(logSheet, userId, todayStr) {
   var rows    = filterRowsByUserId(logSheet, userId);
@@ -1250,16 +1330,6 @@ function calcTotalPractices(logSheet, userId, todayStr) {
 /**
  * アチーブメント解除判定・記録。
  * saveLog の末尾から呼び出す。
- *
- * 判定対象の condition_type:
- *   - 'streak_days'      : 現在の連続稽古日数 >= condition_value
- *   - 'total_practices'  : 累計稽古日数 >= condition_value
- *
- * @param {Spreadsheet} ss       - SpreadsheetApp オブジェクト
- * @param {string}      userId   - ユーザーID
- * @param {string}      date     - 稽古日 (YYYY-MM-DD, body.date)
- * @param {Sheet}       logSheet - logs シートオブジェクト（再取得コスト削減のため引数で受け取る）
- * @returns {Array} 新規解除されたアチーブメント配列（Achievement 型に準拠）
  */
 function checkAndUnlockAchievements(ss, userId, date, logSheet) {
   var newlyUnlocked = [];
@@ -1271,46 +1341,35 @@ function checkAndUnlockAchievements(ss, userId, date, logSheet) {
     var uaSheet = getUserAchievementsSheet(ss);
     var uaRows  = filterRowsByUserId(uaSheet, userId);
 
-    // 既解除 achievement_id のセット
     var unlockedSet = {};
     uaRows.forEach(function(r){ unlockedSet[String(r[1])] = true; });
 
-    // 未解除のアチーブメントだけ判定
     var candidates = master.filter(function(m){
       return !unlockedSet[m.id] &&
         (m.conditionType === 'streak_days' || m.conditionType === 'total_practices');
     });
     if (candidates.length === 0) return newlyUnlocked;
 
-    // 稽古日（今日）の文字列を正規化（body.date を優先、なければ今日）
     var todayStr = (date && date.match(/^\d{4}-\d{2}-\d{2}$/))
       ? date
       : Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
-    // 値を遅延計算（必要になった時だけ算出）
-    var streakCache       = null;
-    var totalPractCache   = null;
-
-    var unlockedAt = nowJstTs();
+    var streakCache     = null;
+    var totalPractCache = null;
+    var unlockedAt      = nowJstTs();
 
     candidates.forEach(function(m) {
       var achieved = false;
 
       if (m.conditionType === 'streak_days') {
-        if (streakCache === null) {
-          streakCache = calcCurrentStreak(logSheet, userId, todayStr);
-        }
+        if (streakCache === null) streakCache = calcCurrentStreak(logSheet, userId, todayStr);
         achieved = streakCache >= m.conditionValue;
-
       } else if (m.conditionType === 'total_practices') {
-        if (totalPractCache === null) {
-          totalPractCache = calcTotalPractices(logSheet, userId, todayStr);
-        }
+        if (totalPractCache === null) totalPractCache = calcTotalPractices(logSheet, userId, todayStr);
         achieved = totalPractCache >= m.conditionValue;
       }
 
       if (achieved) {
-        // user_achievements に追記
         uaSheet.appendRow([userId, m.id, unlockedAt]);
         gasLog('INFO', 'checkAndUnlockAchievements',
           'UNLOCKED user=' + userId + ' achievement=' + m.id + ' (' + m.name + ')',
@@ -1329,7 +1388,6 @@ function checkAndUnlockAchievements(ss, userId, date, logSheet) {
     });
 
   } catch(e) {
-    // アチーブメント判定のエラーは saveLog のレスポンスをブロックしない
     gasLog('ERROR', 'checkAndUnlockAchievements', e.message, { stack: e.stack });
   }
 

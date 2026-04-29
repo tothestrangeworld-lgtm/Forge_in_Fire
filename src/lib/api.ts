@@ -4,6 +4,7 @@
 // ブラウザ → /api/gas（Next.jsプロキシ）→ GAS
 // ★ Phase4: updateTasks を TaskDiff[] 対応に変更。settings 関連を削除。
 // ★ Phase6: fetchAchievements 追加。saveLog の戻り値に newAchievements を追加。
+// ★ Phase7: evaluatePeer を PeerEvalItem[] 対応に変更。fetchTodayEvaluations 追加。
 // =====================================================================
 
 import type {
@@ -12,6 +13,7 @@ import type {
   EpithetMasterEntry,
   EvaluatePeerResponse,
   GASResponse,
+  PeerEvalItem,
   SaveLogPayload,
   SaveLogResponse,
   TaskDiff,
@@ -193,12 +195,45 @@ export async function updateTasks(tasks: TaskDiff[]): Promise<{ active_count: nu
 }
 
 // =====================================================================
-// 他者評価
+// 他者評価 ★ Phase7: 個別課題単位の評価対応
 // =====================================================================
 
-export async function evaluatePeer(targetId: string, score: number): Promise<EvaluatePeerResponse> {
-  logger.info('api', `他者評価送信: target=${targetId} score=${score}`);
-  return gasPost<EvaluatePeerResponse>({ action: 'evaluatePeer', target_id: targetId, score });
+/**
+ * 他者評価を送信する。
+ * ★ Phase7: 課題単位の評価に変更。items には評価したい課題のみを含める。
+ *   - 本日すでに評価済みの task_id は GAS 側でスキップされ skipped_tasks に含まれる。
+ *   - xp は新規評価分のスコア合計 × 2 × 評価者レベル倍率で算出。
+ *
+ * @param targetId 評価対象のユーザーID
+ * @param items    評価する課題の配列（{ taskId, score }[]）
+ */
+export async function evaluatePeer(
+  targetId: string,
+  items: PeerEvalItem[],
+): Promise<EvaluatePeerResponse> {
+  logger.info('api', `他者評価送信: target=${targetId} items=${items.length}件`);
+  return gasPost<EvaluatePeerResponse>({
+    action:    'evaluatePeer',
+    target_id: targetId,
+    items,
+  } as Record<string, unknown>);
+}
+
+/**
+ * 今日、自分が指定ユーザーを評価済みの task_id 一覧を取得する。
+ * ライバル画面のロード時に呼び出し、評価済み課題の UI を disabled にするために使用する。
+ *
+ * @param targetId 評価対象のユーザーID
+ * @returns { evaluated_task_ids: string[] }
+ */
+export async function fetchTodayEvaluations(
+  targetId: string,
+): Promise<{ evaluated_task_ids: string[] }> {
+  logger.info('api', `今日の評価済み課題取得: target=${targetId}`);
+  return gasGet<{ evaluated_task_ids: string[] }>({
+    action:    'getTodayEvaluations',
+    target_id: targetId,
+  });
 }
 
 // =====================================================================

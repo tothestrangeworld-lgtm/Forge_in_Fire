@@ -7,6 +7,9 @@
 // ★ Phase6: アチーブメントシステム型追加
 //   - Achievement 型・AchievementMasterEntry 型を追加
 //   - SaveLogResponse に newAchievements フィールドを追加
+// ★ Phase7: 個別課題単位の他者評価対応
+//   - PeerEvalItem 型を追加
+//   - EvaluatePeerResponse を配列評価レスポンス対応に更新
 // =====================================================================
 
 export interface LogEntry {
@@ -139,14 +142,30 @@ export interface TaskDiff {
 }
 
 // =====================================================================
-// 他者評価
+// 他者評価 ★ Phase7: 個別課題単位の評価対応
 // =====================================================================
 
+/**
+ * evaluatePeer リクエストの課題単位評価アイテム
+ * task_id に対して 1〜5 のスコアを設定する
+ */
+export interface PeerEvalItem {
+  taskId: string;  // user_tasks の id（UUID）
+  score:  number;  // 1〜5
+}
+
+/**
+ * evaluatePeer レスポンス
+ * ★ Phase7: 配列評価に対応。evaluated_tasks / skipped_tasks を追加。
+ */
 export interface EvaluatePeerResponse {
-  xp_granted:      number;
-  evaluator_level: number;
-  multiplier:      number;
-  score:           number;
+  xp_granted:      number;    // 今回付与した合計XP（0 の場合は全スキップ）
+  evaluator_level: number;    // 評価者のアプリ内レベル
+  multiplier:      number;    // 評価者レベル倍率
+  /** 今回新たに評価に成功した task_id 一覧 */
+  evaluated_tasks: string[];
+  /** 本日すでに評価済みでスキップした task_id 一覧 */
+  skipped_tasks:   string[];
 }
 
 export interface GASResponse<T> {
