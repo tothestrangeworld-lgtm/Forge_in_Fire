@@ -5,8 +5,10 @@
 // ★ Phase4: updateTasks を TaskDiff[] 対応に変更。settings 関連を削除。
 // ★ Phase6: fetchAchievements 追加。saveLog の戻り値に newAchievements を追加。
 // ★ Phase7: evaluatePeer を PeerEvalItem[] 対応に変更。fetchTodayEvaluations 追加。
+// ★ SWR:   useDashboardSWR を追加（ホーム画面の体感速度向上）。
 // =====================================================================
 
+import useSWR from 'swr';
 import type {
   Achievement,
   DashboardData,
@@ -124,6 +126,74 @@ export async function fetchDashboard(targetUserId?: string): Promise<DashboardDa
     targetUserId
       ? { action: 'getDashboard', user_id: targetUserId }
       : { action: 'getDashboard' },
+  );
+}
+
+// =====================================================================
+// SWR カスタムフック
+// =====================================================================
+
+/** useDashboardSWR が返すデータ型 */
+export interface DashboardSWRData {
+  dashboard:  DashboardData;
+  techniques: Technique[];
+}
+
+/**
+ * ホーム画面用 SWR カスタムフック。
+ *
+ * - fetchDashboard と fetchTechniques を並列取得する。
+ * - fetchTechniques が失敗した場合は techniqueMaster を fallback として使用する。
+ * - ログイン前（userId が null）はフェッチしない（key を null にする）。
+ * - revalidateOnFocus: false でタブ切替のたびに再フェッチしない。
+ * - dedupingInterval: 60_000 で 60 秒以内の重複リクエストを抑止する。
+ *
+ * 使い方:
+ *   const { data, error, isLoading, mutate } = useDashboardSWR();
+ *   const dashboard  = data?.dashboard;
+ *   const techniques = data?.techniques ?? [];
+ */
+export function useDashboardSWR() {
+  const userId = getCurrentUserId();
+
+  return useSWR<DashboardSWRData>(
+    // userId が null の場合はフェッチしない（SWR の仕様: key が null → 停止）
+    userId ? (['dashboard', userId] as const) : null,
+    async ([, _uid]: readonly [string, string]) => {
+      const [dash, techs] = await Promise.all([
+        fetchDashboard(),
+        fetchTechniques().catch((err: unknown) => {
+          logger.warn('api', 'fetchTechniques 失敗 → techniqueMaster fallback を使用', {
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          return null;
+        }),
+      ]);
+
+      let techniques: Technique[];
+      if (techs !== null && techs.length > 0) {
+        // fetchTechniques 成功：ポイント付きデータをそのまま使用
+        techniques = techs;
+      } else {
+        // fetchTechniques 失敗または空：
+        // getDashboard の techniqueMaster を fallback に使用（points / lastRating は 0 扱い）
+        techniques = (dash.techniqueMaster ?? []).map(m => ({
+          id:          m.id,
+          bodyPart:    m.bodyPart,
+          actionType:  m.actionType,
+          subCategory: m.subCategory,
+          name:        m.name,
+          points:      0,
+          lastRating:  0,
+        }));
+      }
+
+      return { dashboard: dash, techniques };
+    },
+    {
+      revalidateOnFocus: false,   // タブ切替での再フェッチを抑止
+      dedupingInterval:  60_000,  // 60 秒以内の重複リクエストを抑止
+    },
   );
 }
 

@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { TrendingUp, Flame, RotateCcw, Loader2, TrendingDown, UserRoundPen } from 'lucide-react';
-import type { DashboardData, EpithetMasterEntry, Technique, UserTask } from '@/types';
+import type { EpithetMasterEntry, UserTask } from '@/types';
 import {
   calcLevelFromXp, calcProgressPercent, calcNextLevel,
   titleForLevel, nextTitleLevel, levelColor, resolveTechniqueName,
 } from '@/types';
-import { fetchDashboard, fetchTechniques, resetStatus } from '@/lib/api';
+import { useDashboardSWR, resetStatus } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import { getAuthUser } from '@/lib/auth';
 import { logger } from '@/lib/logger';
@@ -28,66 +28,30 @@ const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleChart
 // ★ Phase4 追加修正:
 //   - fetchTechniques 失敗時に getDashboard の techniqueMaster を fallback として使用
 //     （GAS 同時リクエスト失敗やネットワーク問題でも SkillGrid を必ず描画）
+// ★ SWR:
+//   - useEffect + useState による手動フェッチを useDashboardSWR に置き換え
+//   - revalidateOnFocus: false / dedupingInterval: 60s で体感速度向上
+//   - リセット後は mutate() で再取得
 // =====================================================================
 export default function DashboardPage() {
-  const [data, setData]             = useState<DashboardData | null>(null);
-  const [techniques, setTechniques] = useState<Technique[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState<string | null>(null);
-  const [resetting, setReset]       = useState(false);
-  const [showReset, setShowReset]   = useState(false);
+  const [resetting, setReset]     = useState(false);
+  const [showReset, setShowReset] = useState(false);
   const user = getAuthUser();
 
-  const load = () => {
-    setLoading(true);
-    setError(null);
+  // ── SWR でダッシュボード + 技データを取得 ──────────────────────────
+  const { data: swrData, error: swrError, isLoading, mutate } = useDashboardSWR();
 
-    // fetchDashboard と fetchTechniques を並列実行。
-    // fetchTechniques が失敗した場合は null を返し、
-    // getDashboard レスポンスの techniqueMaster を fallback として使用する。
-    // （GAS 同時リクエスト制限・ネットワーク問題でも SkillGrid を必ず描画）
-    Promise.all([
-      fetchDashboard(),
-      fetchTechniques().catch((err: unknown) => {
-        logger.warn('api', 'fetchTechniques 失敗 → techniqueMaster fallback を使用', {
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        return null;
-      }),
-    ])
-      .then(([dash, techs]) => {
-        setData(dash);
+  const data       = swrData?.dashboard ?? null;
+  const techniques = swrData?.techniques ?? [];
 
-        if (techs !== null && techs.length > 0) {
-          // fetchTechniques 成功：ポイント付きデータをそのまま使用
-          setTechniques(techs);
-        } else {
-          // fetchTechniques 失敗または空：
-          // getDashboard の techniqueMaster を fallback に使用（points / lastRating は 0 扱い）
-          const fallback: Technique[] = (dash.techniqueMaster ?? []).map(m => ({
-            id:          m.id,
-            bodyPart:    m.bodyPart,
-            actionType:  m.actionType,
-            subCategory: m.subCategory,
-            name:        m.name,
-            points:      0,
-            lastRating:  0,
-          }));
-          setTechniques(fallback);
-        }
-      })
-      .catch(e => {
-        if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
-        setError(e instanceof Error ? e.message : 'データ取得に失敗しました');
-      })
-      .finally(() => setLoading(false));
-  };
-  
-  useEffect(() => { load(); }, []);
+  // AUTH_REQUIRED はリダイレクト任せにし、それ以外をエラー表示
+  const error = swrError instanceof Error && swrError.message !== 'AUTH_REQUIRED'
+    ? swrError.message
+    : null;
 
-  if (loading) return <DashboardSkeleton />;
-  if (error)   return <ErrorState message={error} />;
-  if (!data)   return null;
+  if (isLoading) return <DashboardSkeleton />;
+  if (error)     return <ErrorState message={error} />;
+  if (!data)     return null;
 
   // ── データ展開 ──
   const { status, logs, decay, xpHistory, tasks } = data;
@@ -147,8 +111,14 @@ export default function DashboardPage() {
   async function handleReset() {
     if (!confirm('レベルとXPをリセットします。稽古ログは残ります。よろしいですか？')) return;
     setReset(true);
-    try { await resetStatus(); load(); }
-    finally { setReset(false); setShowReset(false); }
+    try {
+      await resetStatus();
+      // SWR キャッシュを破棄して最新データを再取得
+      await mutate();
+    } finally {
+      setReset(false);
+      setShowReset(false);
+    }
   }
 
   return (
