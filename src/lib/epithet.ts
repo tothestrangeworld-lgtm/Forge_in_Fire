@@ -14,6 +14,18 @@ export interface EpithetResult {
 const DEFAULT_SUFFIX = '剣士';
 
 /**
+ * category 文字列を正規化する。
+ *  - 大文字・小文字を統一（小文字化）
+ *  - エイリアス解決: 'special' ↔ 'status' を同一視
+ */
+function normalizeCategory(category: string): string {
+  const lower = category.toLowerCase();
+  // 'special' と 'status' を同一扱いにする
+  if (lower === 'special' || lower === 'status') return 'status';
+  return lower;
+}
+
+/**
  * Technique[] と EpithetMaster[] から二つ名を判定して返す
  *
  * 優先順位:
@@ -27,10 +39,17 @@ export function calcEpithet(
   epithetMaster: EpithetMasterEntry[],
 ): EpithetResult {
 
-  /** マスタから category + triggerValue で1件検索するヘルパー */
+  /**
+   * マスタから category + triggerValue で1件検索するヘルパー。
+   * - category の比較は大文字・小文字を無視（case-insensitive）
+   * - 'status' と 'Special'（マスタ登録値）はエイリアスとして同一視
+   */
   function find(category: string, triggerValue: string): EpithetMasterEntry | undefined {
+    const normalizedQuery = normalizeCategory(category);
     return epithetMaster.find(
-      e => e.category === category && e.triggerValue === triggerValue,
+      e =>
+        normalizeCategory(e.category) === normalizedQuery &&
+        e.triggerValue === triggerValue,
     );
   }
 
