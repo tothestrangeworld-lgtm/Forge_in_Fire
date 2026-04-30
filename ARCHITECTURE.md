@@ -51,12 +51,12 @@ Forge_in_Fire/
 │   │   │   ├── tasks/page.tsx              # カスタム評価項目設定 ★ Phase4更新
 │   │   │   └── profile/page.tsx            # プロフィール設定（段位・座右の銘・得意技ID選択）
 │   │   ├── achievements/
-│   │   │   └── page.tsx                    # 実績バッジ一覧画面 ★ Phase6（フロント実装は次ステップ）
+│   │   │   └── page.tsx                    # 実績バッジ一覧画面（ボトムナビから導線追加）★ Phase6更新
 │   │   ├── debug/page.tsx                  # ログビューア
 │   │   └── api/gas/route.ts                # GASプロキシ
 │   │
 │   ├── components/
-│   │   ├── Navigation.tsx                  # ボトムナビ
+│   │   ├── Navigation.tsx                  # ボトムナビ（5ボタン: ホーム・稽古記録・実績・門下生・ログアウト）★ Phase6更新
 │   │   ├── AuthGuard.tsx                   # 未ログイン時リダイレクト
 │   │   └── charts/
 │   │       ├── RadarChart.tsx              # 稽古スコアバランス（横型プログレスバー）
@@ -347,7 +347,53 @@ GAS saveLog()
 
 ---
 
-## 6. 主要なデータモデル（TypeScript型定義）
+## 5.5 ナビゲーション構成（Phase6 更新）★ NEW
+
+### ボトムナビゲーション — 5ボタン構成
+
+```
+┌──────────────────────────────────────────────┐
+│  ホーム   稽古記録   実績   門下生  ユーザー名 │
+│   🏠       ⚔️      🏆     👥     🚪      │  ← BottomNav（60px）
+└──────────────────────────────────────────────┘
+   /         /record  /achievements  /rivals  logout
+```
+
+| # | ラベル | アイコン（lucide-react） | リンク先 | ハイライト条件 |
+|---|---|---|---|---|
+| 1 | ホーム | `Home` | `/` | `pathname === '/'` |
+| 2 | 稽古記録 | `Swords` | `/record` | `pathname.startsWith('/record')` |
+| 3 | 実績 | `Trophy` | `/achievements` | `pathname.startsWith('/achievements')` ★ Phase6追加 |
+| 4 | 門下生 | `Users` | `/rivals` | `pathname.startsWith('/rivals')` |
+| 5 | ユーザー名 | `LogOut` | — | ボタン（logout処理） |
+
+### ページ遷移図
+
+```
+                    ┌──────────┐
+            ┌──────▶│  /login  │
+            │       └──────────┘
+            │ 未認証        │ ログイン成功
+            │    ┌──────────▼──────────┐
+            │    │    / (ホーム)        │
+            │    │  HUD KPI・SkillGrid  │
+            │    └──────────┬──────────┘
+            │               │ BottomNav
+            │    ┌──────────┼──────────┬────────────────┐
+            │    ▼          ▼          ▼                ▼
+            │ /record   /achievements  /rivals     /settings/*
+            │ 稽古記録  実績バッジ一覧  門下生一覧   設定
+            │ ★Phase4   ★Phase6追加    │
+            │                          ├── /rivals/[id]
+            │                          │   他ユーザー閲覧
+            │                          │   + 他者評価 ★Phase5
+            │                     /settings/tasks
+            │                     /settings/profile
+            │
+            └─────────── AuthGuard（未ログイン時リダイレクト）
+```
+
+---
 
 ### ★ Phase4 廃止
 
@@ -627,7 +673,7 @@ edges.push({
 - `peer_evaluations` シートに `score` カラムを追加（D列）
 - `xp_history` の reason に「○○からの評価（スコア: X）」とスコアを明記
 
-### ✅ アチーブメント（実績バッジ）システム バックエンド・API層（Phase6） ★ NEW
+### ✅ アチーブメント（実績バッジ）システム バックエンド・API層 + ナビゲーション導線（Phase6） ★ NEW
 - `achievement_master` シート（全ユーザー共通マスタ）と `user_achievements` シートを新設
 - `achievement_master` が存在しない場合、GAS が初回アクセス時にデフォルト8件を自動挿入
 - `saveLog` の末尾に `checkAndUnlockAchievements()` フックを追加
@@ -639,6 +685,7 @@ edges.push({
 - `Achievement` 型・`AchievementMasterEntry` 型を `types/index.ts` に追加
 - `SaveLogResponse.newAchievements?: Achievement[]` フィールドを追加
 - エラー安全設計: 判定失敗は `saveLog` のレスポンスをブロックしない（`newAchievements: []` で返る）
+- `Navigation.tsx` に **「実績」ボタン（Trophyアイコン・`/achievements`）** を追加し、5ボタン構成に変更 ★ Phase6更新
 
 ---
 
@@ -675,6 +722,7 @@ edges.push({
 ## 11. 今後の拡張ポイント
 
 - [ ] アチーブメント一覧・解除通知 UI（フロントエンド）★ Phase6 Step2
+- [x] ボトムナビゲーションに「実績庫」ボタン追加（5ボタン構成）★ Phase6 完了
 - [ ] アチーブメント `condition_type` の拡張（`total_xp`, `level_reached`, `technique_mastery` 等）
 - [ ] ランキング画面
 - [ ] PWA対応（オフライン記録 → 同期）

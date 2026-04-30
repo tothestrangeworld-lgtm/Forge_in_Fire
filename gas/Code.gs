@@ -462,15 +462,21 @@ function getUserTasksSheet(ss) {
 
 function getTasksData(ss, userId) {
   var sheet = getUserTasksSheet(ss);
-  return filterRowsByUserId(sheet, userId).map(function(r){
-    return {
-      id:         String(r[0]),
-      task_text:  String(r[2]),
-      status:     String(r[3]),
-      created_at: r[4] ? String(r[4]).slice(0,10) : '',
-      updated_at: r[5] ? String(r[5]).slice(0,10) : '',
-    };
-  }).filter(function(t) { return t.id && t.task_text; });
+  var rows  = sheet.getDataRange().getValues();
+  // ★ user_tasks は A列=id(UUID)、B列=user_id のため r[1] でフィルタする
+  //   （filterRowsByUserId は A列フィルタなので使用不可）
+  return rows.slice(1)
+    .filter(function(r){ return String(r[1]) === String(userId); })
+    .map(function(r){
+      return {
+        id:         String(r[0]),
+        task_text:  String(r[2]),
+        status:     String(r[3]),
+        created_at: r[4] ? String(r[4]).slice(0, 10) : '',
+        updated_at: r[5] ? String(r[5]).slice(0, 10) : '',
+      };
+    })
+    .filter(function(t) { return t.id && t.task_text; });
 }
 
 /**

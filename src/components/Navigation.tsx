@@ -1,91 +1,70 @@
-// src/components/Navigation.tsx
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Swords, Users, LogOut } from 'lucide-react';
-import { clearAuthUser, getAuthUser } from '@/lib/auth';
+import { usePathname } from 'next/navigation';
+import { Home, Swords, Trophy, Users, LogOut } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
-const NAV_LINKS = [
-  { href: '/',       label: 'ホーム',   Icon: LayoutDashboard },
-  { href: '/record', label: '稽古記録', Icon: Swords },
-  { href: '/rivals', label: '門下生',   Icon: Users },
-];
+type NavUser = {
+  name: string;
+  user_id: string;
+} | null;
 
 export default function Navigation() {
-  const pathname = usePathname();
-  const router   = useRouter();
-  const user     = getAuthUser();
+  const pathname  = usePathname();
+  const [user, setUser] = useState<NavUser>(null);
 
-  // ログインページではナビゲーション非表示
-  if (pathname === '/login') return null;
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
-  function handleLogout() {
-    if (!confirm(`${user?.name ?? 'ユーザー'} をログアウトしますか？`)) return;
-    clearAuthUser();
-    router.replace('/login');
-  }
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  };
+
+  const isActive = (href: string) =>
+    href === '/' ? pathname === '/' : pathname.startsWith(href);
+
+  /* ── nav items (static 4 + dynamic user item) ────────────────── */
+  const navItems = [
+    { href: '/',             label: 'ホーム',   icon: Home },
+    { href: '/record',       label: '稽古記録', icon: Swords },
+    { href: '/achievements', label: '実績',     icon: Trophy },
+    { href: '/rivals',       label: '門下生',   icon: Users },
+  ] as const;
 
   return (
-    <nav style={{
-      position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)',
-      width:'100%', maxWidth:430,
-      background:'rgba(255,255,255,0.92)',
-      backdropFilter:'blur(16px)',
-      borderTop:'1px solid #ede9fe',
-      zIndex:50,
-    }}>
-      <div style={{ display:'flex' }}>
-        {NAV_LINKS.map(({ href, label, Icon }) => {
-          // /rivals/[id] など配下のパスでも「門下生」タブをアクティブにする
-          const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
-          return (
-            <Link key={href} href={href} style={{
-              flex:1, display:'flex', flexDirection:'column',
-              alignItems:'center', gap:3, padding:'10px 0 14px',
-              color: active ? '#1e1b4b' : '#a8a29e',
-              textDecoration:'none', transition:'color .15s',
-              position:'relative',
-            }}>
-              {active && (
-                <span style={{
-                  position:'absolute', top:0, left:'50%',
-                  transform:'translateX(-50%)',
-                  width:32, height:2.5,
-                  background:'#1e1b4b',
-                  borderRadius:'0 0 3px 3px',
-                }} />
-              )}
-              <Icon style={{
-                width:22, height:22,
-                strokeWidth: active ? 2.5 : 1.8,
-                transform: active ? 'scale(1.1)' : 'scale(1)',
-                transition:'transform .15s',
-              }} />
-              <span style={{ fontSize:11, fontWeight: active ? 700 : 500, letterSpacing:'0.04em' }}>
-                {label}
-              </span>
-            </Link>
-          );
-        })}
-
-        {/* ログアウトボタン */}
-        <button
-          onClick={handleLogout}
-          style={{
-            flex:1, display:'flex', flexDirection:'column',
-            alignItems:'center', gap:3, padding:'10px 0 14px',
-            background:'none', border:'none', cursor:'pointer',
-            color:'#a8a29e', fontFamily:'inherit',
-          }}
+    <nav className="bottom-nav" role="navigation" aria-label="メインナビゲーション">
+      {navItems.map(({ href, label, icon: Icon }) => (
+        <Link
+          key={href}
+          href={href}
+          className={`nav-item ${isActive(href) ? 'nav-item--active' : ''}`}
+          aria-current={isActive(href) ? 'page' : undefined}
         >
-          <LogOut style={{ width:22, height:22, strokeWidth:1.8 }} />
-          <span style={{ fontSize:10, fontWeight:500, letterSpacing:'0.04em' }}>
-            {user?.name ? user.name.slice(0,4) : 'ログアウト'}
-          </span>
-        </button>
+          <Icon className="nav-icon" aria-hidden="true" />
+          <span className="nav-label">{label}</span>
+        </Link>
+      ))}
 
-      </div>
+      {/* ── ユーザー名 / ログアウト ─────────────────────────────── */}
+      <button
+        type="button"
+        onClick={handleLogout}
+        className="nav-item nav-item--logout"
+        aria-label="ログアウト"
+      >
+        <LogOut className="nav-icon" aria-hidden="true" />
+        <span className="nav-label nav-label--user">
+          {user?.name ?? 'ログアウト'}
+        </span>
+      </button>
     </nav>
   );
 }

@@ -412,12 +412,90 @@ textarea::placeholder {
   color: rgba(129,140,248,0.3);
 }
 
-/* ===== ナビゲーション（ボトムバー）ダーク対応 ===== */
+/* ===== ナビゲーション（ボトムバー）5ボタン対応 ★ Phase6更新 ===== */
 .bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 430px;
+  height: 60px;
+  display: flex;
+  align-items: stretch;
   background: rgba(10,9,24,0.95);
   border-top: 1px solid rgba(99,102,241,0.15);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 -4px 24px rgba(139,92,246,0.15);
+  z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 2px 4px;
+  color: rgba(167,139,250,0.5);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color .2s ease, filter .2s ease;
+  min-width: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ユーザー名は長くなりがちなので少し小さく */
+.nav-label--user {
+  font-size: 8px;
+}
+
+/* アクティブ（現在ページ） */
+.nav-item--active {
+  color: #a78bfa;
+  filter: drop-shadow(0 0 6px rgba(139,92,246,0.8));
+}
+
+.nav-item--active .nav-icon {
+  filter: drop-shadow(0 0 4px rgba(167,139,250,0.9));
+}
+
+/* ログアウトボタン */
+.nav-item--logout {
+  color: rgba(251,113,133,0.5);
+}
+
+.nav-item--logout:hover,
+.nav-item--logout:focus-visible {
+  color: rgba(251,113,133,0.9);
+  filter: drop-shadow(0 0 5px rgba(251,113,133,0.7));
+}
+
+/* 非アクティブホバー */
+.nav-item:not(.nav-item--active):not(.nav-item--logout):hover,
+.nav-item:not(.nav-item--active):not(.nav-item--logout):focus-visible {
+  color: rgba(167,139,250,0.85);
 }
 
 /* ===== ステータスバッジ ===== */
