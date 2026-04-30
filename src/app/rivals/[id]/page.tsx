@@ -1,14 +1,14 @@
 // src/app/rivals/[id]/page.tsx
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, Swords, Star, TrendingUp, Trophy, CheckCircle } from 'lucide-react';
-import { fetchDashboard, fetchTechniques, fetchUsers, evaluatePeer, fetchTodayEvaluations } from '@/lib/api';
+import { useRivalDashboardSWR, evaluatePeer } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import { getCurrentUserId } from '@/lib/auth';
-import type { DashboardData, PeerEvalItem, Technique, UserTask } from '@/types';
+import type { PeerEvalItem, UserTask } from '@/types';
 
 export const runtime = 'edge';
 
@@ -39,67 +39,51 @@ export default function RivalDashboardPage({
   const { id: targetId } = use(params);
   const router = useRouter();
 
-  const [dashboard,  setDashboard]  = useState<DashboardData | null>(null);
-  const [techniques, setTechniques] = useState<Technique[]>([]);
-  const [targetName, setTargetName] = useState('');
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState('');
-  const [mounted,    setMounted]    = useState(false);
+  // ---- SWR でダッシュボード・技・ユーザー名・評価済みIDを並列取得 ----
+  const {
+    data:      swrData,
+    error:     swrError,
+    isLoading: loading,
+  } = useRivalDashboardSWR(targetId);
+
+  const dashboard  = swrData?.dashboard  ?? null;
+  const techniques = swrData?.techniques ?? [];
+  const targetName = swrData?.targetName ?? '';
+
+  // AUTH_REQUIRED はミドルウェアに委ねるため表示しない
+  const error = swrError && swrError.message !== 'AUTH_REQUIRED'
+    ? 'データの読み込みに失敗しました'
+    : '';
+
+  // ---- マウント検知（Recharts の SSR 回避） ----
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   // ---- 他者評価ステート ----
   // task_id → 選択スコア（null = 未選択）
-  const [taskScores,      setTaskScores]      = useState<Record<string, number | null>>({});
-  // 今日すでに評価済みの task_id セット（ページロード時 + 送信成功後に更新）
+  const [taskScores,       setTaskScores]       = useState<Record<string, number | null>>({});
+  // 今日すでに評価済みの task_id セット（SWR 初期値 + 送信成功後に追加）
   const [evaluatedTaskIds, setEvaluatedTaskIds] = useState<Set<string>>(new Set());
-  const [evalLoading,  setEvalLoading]  = useState(false);
-  const [evalResult,   setEvalResult]   = useState<{ xp: number; mult: number; count: number } | null>(null);
-  const [evalError,    setEvalError]    = useState('');
+  const [evalLoading,      setEvalLoading]      = useState(false);
+  const [evalResult,       setEvalResult]       = useState<{ xp: number; mult: number; count: number } | null>(null);
+  const [evalError,        setEvalError]        = useState('');
 
-  useEffect(() => { setMounted(true); }, []);
-
+  // SWR データが届いたら evaluatedTaskIds を初期化（一回だけ）
+  const initializedRef = useRef(false);
   useEffect(() => {
-    if (!targetId) return;
-
-    const load = async () => {
-      try {
-        const myUserId = getCurrentUserId();
-        const isSelf   = myUserId === targetId;
-
-        const [dash, techs, users] = await Promise.all([
-          fetchDashboard(targetId),
-          fetchTechniques(targetId),
-          fetchUsers(),
-        ]);
-        setDashboard(dash);
-        setTechniques(techs);
-        const found = users.find(u => u.user_id === targetId);
-        setTargetName(found?.name ?? targetId);
-
-        // 今日の評価済み task_id を取得（自分自身のページでは不要）
-        if (!isSelf) {
-          try {
-            const res = await fetchTodayEvaluations(targetId);
-            setEvaluatedTaskIds(new Set(res.evaluated_task_ids));
-          } catch {
-            // 取得失敗は無視（評価済みチェックなしで動作継続）
-          }
-        }
-      } catch (err: unknown) {
-        if (err instanceof Error && err.message === 'AUTH_REQUIRED') return;
-        setError('データの読み込みに失敗しました');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-  }, [targetId]);
+    if (swrData && !initializedRef.current) {
+      initializedRef.current = true;
+      setEvaluatedTaskIds(new Set(swrData.initialEvaluatedTaskIds));
+    }
+  }, [swrData]);
 
   // =====================================================================
   // 他者評価ハンドラ
   // =====================================================================
   const handleEvaluate = async () => {
-    if (evalLoading) return;
+    if (evalLoading || !dashboard) return;
+
+    const activeTasks: UserTask[] = (dashboard.tasks ?? []).filter(t => t.status === 'active');
 
     // 評価済みでない & スコア選択済みの課題のみ送信
     const items: PeerEvalItem[] = activeTasks
@@ -288,9 +272,6 @@ export default function RivalDashboardPage({
               border: '1px solid rgba(109,40,217,0.3)',
               borderRadius: 10,
             }}>
-{/*              <p style={{ fontSize: 11, color: '#7c6fad', margin: '0 0 2px', letterSpacing: '0.06em' }}>*/}
-{/*                {epithet.name} */}
-{/*              </p> */}
               <p style={{ fontSize: 16, fontWeight: 800, color: '#c4b5fd', margin: 0, letterSpacing: '0.1em' }}>
                 {epithet.fullTitle}
               </p>
@@ -393,7 +374,7 @@ export default function RivalDashboardPage({
           {activeTasks.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {activeTasks.map((task, idx) => {
-                const isEvaluated  = evaluatedTaskIds.has(task.id);
+                const isEvaluated   = evaluatedTaskIds.has(task.id);
                 const selectedScore = taskScores[task.id] ?? null;
 
                 return (

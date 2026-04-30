@@ -1,31 +1,18 @@
 // src/app/rivals/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Users, ChevronRight, Swords, Shield } from 'lucide-react';
-import { fetchUsers } from '@/lib/api';
-import { getCurrentUserId } from '@/lib/auth';
-
-type UserEntry = { user_id: string; name: string; role: string };
+import { useRivalsSWR } from '@/lib/api';
 
 export default function RivalsPage() {
   const router = useRouter();
-  const [users, setUsers]   = useState<UserEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState('');
+  const { data: rivals = [], error: swrError, isLoading: loading } = useRivalsSWR();
 
-  useEffect(() => {
-    fetchUsers()
-      .then(all => {
-        const myId = getCurrentUserId();
-        setUsers(all.filter(u => u.user_id !== myId));
-      })
-      .catch(err => {
-        if (err.message !== 'AUTH_REQUIRED') setError('読み込みに失敗しました');
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  // AUTH_REQUIRED は認証ミドルウェアに委ねるため表示しない
+  const error = swrError && swrError.message !== 'AUTH_REQUIRED'
+    ? '読み込みに失敗しました'
+    : '';
 
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 80 }}>
@@ -73,16 +60,16 @@ export default function RivalsPage() {
           </div>
         )}
 
-        {!loading && !error && users.length === 0 && (
+        {!loading && !error && rivals.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 0', color: '#7c6fad' }}>
             <Swords style={{ width: 40, height: 40, margin: '0 auto 12px', opacity: 0.4 }} />
             <p style={{ fontSize: 14 }}>まだ仲間がいません</p>
           </div>
         )}
 
-        {!loading && users.length > 0 && (
+        {!loading && rivals.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {users.map((u, i) => (
+            {rivals.map((u, i) => (
               <button
                 key={u.user_id}
                 onClick={() => router.push(`/rivals/${u.user_id}`)}

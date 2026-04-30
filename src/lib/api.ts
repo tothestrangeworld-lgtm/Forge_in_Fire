@@ -6,6 +6,7 @@
 // ★ Phase6: fetchAchievements 追加。saveLog の戻り値に newAchievements を追加。
 // ★ Phase7: evaluatePeer を PeerEvalItem[] 対応に変更。fetchTodayEvaluations 追加。
 // ★ SWR:   useDashboardSWR を追加（ホーム画面の体感速度向上）。
+// ★ SWR2:  useRivalsSWR / useRivalDashboardSWR を追加（門下生画面の体感速度向上）。
 // =====================================================================
 
 import useSWR from 'swr';
@@ -30,6 +31,13 @@ const PROXY = '/api/gas';
 
 // user_id が不要なアクション一覧
 const NO_USER_ID_ACTIONS = ['getEpithetMaster', 'getUsers', 'ping'] as const;
+
+// =====================================================================
+// 共有型
+// =====================================================================
+
+/** ユーザー一覧エントリ（門下生一覧・詳細ページで共用） */
+export type UserEntry = { user_id: string; name: string; role: string };
 
 // ===== レスポンスパーサー =====
 async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
@@ -108,8 +116,8 @@ export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   return gasPost<LoginResponse>({ action: 'login', ...payload });
 }
 
-export async function fetchUsers(): Promise<{ user_id: string; name: string; role: string }[]> {
-  return gasGet<{ user_id: string; name: string; role: string }[]>({ action: 'getUsers' });
+export async function fetchUsers(): Promise<UserEntry[]> {
+  return gasGet<UserEntry[]>({ action: 'getUsers' });
 }
 
 // =====================================================================
@@ -193,6 +201,90 @@ export function useDashboardSWR() {
     {
       revalidateOnFocus: false,   // タブ切替での再フェッチを抑止
       dedupingInterval:  60_000,  // 60 秒以内の重複リクエストを抑止
+    },
+  );
+}
+
+/**
+ * 門下生一覧用 SWR カスタムフック。
+ *
+ * - fetchUsers を取得し、自分自身を除いたリストを返す。
+ * - ログイン前（userId が null）はフェッチしない。
+ * - revalidateOnFocus: false でタブ切替のたびに再フェッチしない。
+ * - dedupingInterval: 60_000 で 60 秒以内の重複リクエストを抑止する。
+ *
+ * 使い方:
+ *   const { data: rivals = [], error, isLoading } = useRivalsSWR();
+ */
+export function useRivalsSWR() {
+  const userId = getCurrentUserId();
+
+  return useSWR<UserEntry[]>(
+    userId ? (['users', userId] as const) : null,
+    async ([, myId]: readonly [string, string]) => {
+      const all = await fetchUsers();
+      return all.filter(u => u.user_id !== myId);
+    },
+    {
+      revalidateOnFocus: false,
+      dedupingInterval:  60_000,
+    },
+  );
+}
+
+/** useRivalDashboardSWR が返すデータ型 */
+export interface RivalDashboardSWRData {
+  dashboard:               DashboardData;
+  techniques:              Technique[];
+  targetName:              string;
+  /** ページロード時点での評価済み task_id 一覧。自分自身のページでは空配列。 */
+  initialEvaluatedTaskIds: string[];
+}
+
+/**
+ * 門下生詳細画面用 SWR カスタムフック。
+ *
+ * - fetchDashboard / fetchTechniques / fetchUsers / fetchTodayEvaluations を並列取得する。
+ * - fetchTodayEvaluations は自分自身のページでは呼ばない。
+ * - targetId が空 or ログイン前はフェッチしない。
+ * - revalidateOnFocus: false でタブ切替のたびに再フェッチしない。
+ * - dedupingInterval: 60_000 で 60 秒以内の重複リクエストを抑止する。
+ *
+ * 使い方:
+ *   const { data, error, isLoading } = useRivalDashboardSWR(targetId);
+ *   const dashboard  = data?.dashboard ?? null;
+ *   const techniques = data?.techniques ?? [];
+ */
+export function useRivalDashboardSWR(targetId: string) {
+  const userId = getCurrentUserId();
+
+  return useSWR<RivalDashboardSWRData>(
+    userId && targetId ? (['rivalDashboard', targetId] as const) : null,
+    async ([, tid]: readonly [string, string]) => {
+      const myUserId = getCurrentUserId();
+      const isSelf   = myUserId === tid;
+
+      const [dash, techs, users, evalRes] = await Promise.all([
+        fetchDashboard(tid),
+        fetchTechniques(tid),
+        fetchUsers(),
+        isSelf
+          ? Promise.resolve({ evaluated_task_ids: [] as string[] })
+          : fetchTodayEvaluations(tid).catch(() => ({ evaluated_task_ids: [] as string[] })),
+      ]);
+
+      const found = users.find(u => u.user_id === tid);
+
+      return {
+        dashboard:               dash,
+        techniques:              techs,
+        targetName:              found?.name ?? tid,
+        initialEvaluatedTaskIds: evalRes.evaluated_task_ids,
+      };
+    },
+    {
+      revalidateOnFocus: false,
+      dedupingInterval:  60_000,
     },
   );
 }
