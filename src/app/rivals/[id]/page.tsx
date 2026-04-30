@@ -288,9 +288,9 @@ export default function RivalDashboardPage({
               border: '1px solid rgba(109,40,217,0.3)',
               borderRadius: 10,
             }}>
-              <p style={{ fontSize: 11, color: '#7c6fad', margin: '0 0 2px', letterSpacing: '0.06em' }}>
-                {epithet.name}
-              </p>
+{/*              <p style={{ fontSize: 11, color: '#7c6fad', margin: '0 0 2px', letterSpacing: '0.06em' }}>*/}
+{/*                {epithet.name} */}
+{/*              </p> */}
               <p style={{ fontSize: 16, fontWeight: 800, color: '#c4b5fd', margin: 0, letterSpacing: '0.1em' }}>
                 {epithet.fullTitle}
               </p>
