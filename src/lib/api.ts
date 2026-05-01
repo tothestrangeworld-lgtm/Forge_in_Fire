@@ -7,6 +7,7 @@
 // ★ Phase7: evaluatePeer を PeerEvalItem[] 対応に変更。fetchTodayEvaluations 追加。
 // ★ SWR:  useDashboardSWR / useTechniquesSWR / useRivalsSWR / useRivalDashboardSWR を追加。
 //         useDashboardSWR は { dashboard, techniques } を返すよう修正。
+//
 // =====================================================================
 
 import useSWR from 'swr';
