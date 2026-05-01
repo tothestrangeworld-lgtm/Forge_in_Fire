@@ -17,6 +17,8 @@
 | グラフ | Recharts（AreaChart） |
 | スキルグリッド | @xyflow/react v12（六角形カスタムノード・アニメーションエッジ） ★ Phase5更新 |
 | アイコン | lucide-react |
+| データフェッチ/キャッシュ | SWR（ホーム・門下生一覧/詳細・記録画面の GET キャッシュ化）★ Phase6追加 |
+| PWA | @ducanh2912/next-pwa（サービスワーカー自動生成・オフラインキャッシュ）★ Phase7追加 |
 
 ### バックエンド・データベース
 
@@ -37,7 +39,8 @@ Forge_in_Fire/
 │
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx                      # ルートレイアウト（AuthGuard・ナビゲーション）
+│   │   ├── layout.tsx                      # ルートレイアウト（AuthGuard・ナビゲーション・PWAメタデータ）★ Phase7更新
+│   │   ├── manifest.ts                     # PWAマニフェスト（アプリ名・アイコン・テーマカラー等）★ Phase7追加
 │   │   ├── globals.css                     # デザイントークン・共通CSS（サイバー和風テーマ）
 │   │   ├── page.tsx                        # ホーム画面（HUD KPI・スキルグリッド・分析・プロフィール）
 │   │   ├── record/
@@ -75,6 +78,13 @@ Forge_in_Fire/
 │   │
 │   └── types/
 │       └── index.ts                        # 全型定義・XP/レベル計算関数 ★ Phase6更新
+│
+├── next.config.ts                          # Next.js設定（PWA設定を @ducanh2912/next-pwa でラップ）★ Phase7更新
+└── public/
+    ├── sw.js                               # サービスワーカー（ビルド時に自動生成）★ Phase7追加
+    ├── workbox-*.js                        # Workboxランタイム（ビルド時に自動生成）★ Phase7追加
+    ├── icon-192x192.png                    # PWAアイコン（要手動配置）
+    └── icon-512x512.png                    # PWAアイコン（要手動配置）
 ```
 
 ---
@@ -395,6 +405,8 @@ GAS saveLog()
 
 ---
 
+## 6. 型定義（主要インターフェース）
+
 ### ★ Phase4 廃止
 
 ```typescript
@@ -687,6 +699,22 @@ edges.push({
 - エラー安全設計: 判定失敗は `saveLog` のレスポンスをブロックしない（`newAchievements: []` で返る）
 - `Navigation.tsx` に **「実績」ボタン（Trophyアイコン・`/achievements`）** を追加し、5ボタン構成に変更 ★ Phase6更新
 
+### ✅ 体感速度最適化とPWA化（スマホアプリ化）（Phase6/7） ★ NEW
+
+#### SWRによるデータキャッシュ化（Phase6）
+- `swr` を導入し、ホーム画面・門下生一覧・門下生詳細・記録画面の GET リクエストをキャッシュ化
+- 初回ロード後はキャッシュから即時返却するため、**2回目以降の画面表示を0秒（ロードなし）** で描画
+- バックグラウンドで最新データを再取得（stale-while-revalidate）し、常に最新情報を保持
+- `api.ts` の各フェッチ関数を SWR の `fetcher` として接続
+
+#### PWA対応（Phase7）
+- `@ducanh2912/next-pwa` を導入し、`next.config.ts` でビルド時にサービスワーカーを自動生成
+- `src/app/manifest.ts`（Next.js `MetadataRoute.Manifest` 型）でアプリ名・アイコン・テーマカラー・表示モードを定義
+- `src/app/layout.tsx` の `metadata` に `appleWebApp`・`manifest`・`icons` を追加し、iOS/Android 双方でホーム画面追加に対応
+- `display: 'standalone'` でフルスクリーン起動（ブラウザUIなし）のネイティブアプリライクな体験を実現
+- Workbox によるオフラインキャッシュにより、圏外環境でも既閲覧ページを表示可能
+- 開発環境（`NODE_ENV === "development"`）ではサービスワーカーを無効化し、デバッグ体験を保護
+
 ---
 
 ## 10. スプレッドシートの手動変更が必要な作業
@@ -717,15 +745,21 @@ edges.push({
 
 > スプレッドシート上で `achievement_master` に行を追加・編集することで、GAS の再デプロイなしに実績の種類を増やせます。現時点でサポートされる `condition_type` は `streak_days` と `total_practices` の2種類です。
 
+### Phase7 移行時（PWA化）★ NEW
+
+| 作業 | 内容 |
+|---|---|
+| パッケージインストール | `npm install @ducanh2912/next-pwa swr` を実行 |
+| アイコン配置 | `public/icon-192x192.png` と `public/512x512.png` を手動で配置（推奨: 剣道・百錬自得をイメージしたデザイン） |
+| ビルド確認 | `npm run build` 後に `public/sw.js` と `public/workbox-*.js` が生成されることを確認 |
+
 ---
 
 ## 11. 今後の拡張ポイント
 
-- [ ] アチーブメント一覧・解除通知 UI（フロントエンド）★ Phase6 Step2
-- [x] ボトムナビゲーションに「実績庫」ボタン追加（5ボタン構成）★ Phase6 完了
 - [ ] アチーブメント `condition_type` の拡張（`total_xp`, `level_reached`, `technique_mastery` 等）
 - [ ] ランキング画面
-- [ ] PWA対応（オフライン記録 → 同期）
+- [x] PWA対応（オフライン記録 → 同期）★ Phase7 完了
 - [ ] パスワードのハッシュ化
 - [x] アチーブメント（記念バッジ）システム バックエンド・API層（Phase6 Step1 完了）
 - [x] 他者評価の5段階スコア化（Phase5 完了）
@@ -733,3 +767,5 @@ edges.push({
 - [ ] 段位倍率の管理画面
 - [ ] 旧 logs データの一括マイグレーション（item_name → task_id）
 - [ ] ページ遷移時・保存完了時のマイクロインタラクション（Phase5 残）
+- [ ] アチーブメント解除通知 UI（トースト・バッジアニメーション）
+- [ ] PWAアイコンのデザイン制作（192px・512px）

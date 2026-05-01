@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { M_PLUS_Rounded_1c } from 'next/font/google';
 import './globals.css';
 import Navigation from '@/components/Navigation';
@@ -14,10 +14,34 @@ const mplus = M_PLUS_Rounded_1c({
 export const metadata: Metadata = {
   title:       '百錬自得 | 剣道稽古記録',
   description: '剣道の稽古を記録し、成長を可視化する稽古管理アプリ',
+  manifest:    '/manifest.webmanifest',
+  appleWebApp: {
+    capable:           true,
+    statusBarStyle:    'black-translucent',
+    title:             '百錬自得',
+    startupImage:      '/icon-512x512.png',
+  },
+  icons: {
+    icon: [
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+    ],
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
 };
 
-export const viewport = {
-  themeColor: '#1e1b4b',
+export const viewport: Viewport = {
+  themeColor:           '#1e1b4b',
+  width:                'device-width',
+  initialScale:         1,
+  maximumScale:         1,
+  userScalable:         false,
+  viewportFit:          'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
