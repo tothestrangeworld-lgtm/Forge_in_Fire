@@ -4,6 +4,7 @@
 // 百錬自得 - 記録画面（src/app/record/page.tsx）
 // ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
 // ★ Phase6 Step3: saveLog レスポンスの newAchievements をトースト通知で表示
+// ★ SWR: PracticeTab → useDashboardSWR / TechniqueTab → useTechniquesSWR に移行
 // =====================================================================
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
@@ -27,8 +28,13 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import type { Achievement, DashboardData, Technique, UserTask } from '@/types';
-import { fetchDashboard, saveLog, fetchTechniques, updateTechniqueRating } from '@/lib/api';
+import type { Achievement, Technique, UserTask } from '@/types';
+import {
+  saveLog,
+  updateTechniqueRating,
+  useDashboardSWR,
+  useTechniquesSWR,
+} from '@/lib/api';
 
 // =====================================================================
 // 共通型・定数
@@ -415,27 +421,25 @@ export default function RecordPage() {
 // タブ①：稽古を記録（XP獲得フォーム）
 // ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
 // ★ Phase6 Step3: saveLog レスポンスの newAchievements をトーストで通知
+// ★ SWR: fetchDashboard の手動フェッチを useDashboardSWR に置き換え
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
-  const [dashboard, setDashboard]          = useState<DashboardData | null>(null);
+
+  // ── SWR でダッシュボードを取得 ────────────────────────────────────
+  const { data: dashboard, isLoading, error: fetchError } = useDashboardSWR();
+
+  // ── ローカル UI ステート ──────────────────────────────────────────
   const [scores, setScores]                = useState<ScoreMap>({});
   const [date, setDate]                    = useState(todayStr());
-  const [loading, setLoading]              = useState(true);
   const [submitting, setSubmitting]        = useState(false);
   const [result, setResult]                = useState<{xp:number; title:string}|null>(null);
-  const [error, setError]                  = useState<string|null>(null);
+  const [submitError, setSubmitError]      = useState<string|null>(null);
   // ★ Phase6 Step3: トースト表示用
   const [toastAchievements, setToastAchievements] = useState<Achievement[]>([]);
 
-  useEffect(() => {
-    fetchDashboard()
-      .then(d => { setDashboard(d); setLoading(false); })
-      .catch(e => {
-        if (e.message === 'AUTH_REQUIRED') return;
-        setError(e.message); setLoading(false);
-      });
-  }, []);
+  // AUTH_REQUIRED は静かに無視（SWR が shouldRetryOnError で止めてくれる）
+  const error = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
 
   const activeTasks: UserTask[] = (dashboard?.tasks ?? []).filter(t => t.status === 'active');
   const allScored   = activeTasks.length > 0 && activeTasks.every(t => scores[t.id]);
@@ -443,7 +447,7 @@ function PracticeTab() {
 
   async function handleSubmit() {
     if (!canSubmit) return;
-    setSubmitting(true); setError(null);
+    setSubmitting(true); setSubmitError(null);
     try {
       const res = await saveLog({
         date,
@@ -458,7 +462,7 @@ function PracticeTab() {
       }
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
-      setError(e instanceof Error ? e.message : '送信に失敗しました');
+      setSubmitError(e instanceof Error ? e.message : '送信に失敗しました');
     } finally { setSubmitting(false); }
   }
 
@@ -518,7 +522,7 @@ function PracticeTab() {
         </div>
 
         {/* 評価カード */}
-        {loading ? (
+        {isLoading ? (
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
             {[1,2,3].map(i => <div key={i} style={{ height:100, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
             <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
@@ -569,10 +573,17 @@ function PracticeTab() {
               );
             })}
 
-            {/* エラー */}
+            {/* フェッチエラー表示 */}
             {error && (
               <div style={{ padding:12, background:'#fee2e2', border:'1px solid #fca5a5', borderRadius:12, fontSize:'0.85rem', color:'#b91c1c' }}>
-                {error}
+                {error.message}
+              </div>
+            )}
+
+            {/* 送信エラー表示 */}
+            {submitError && (
+              <div style={{ padding:12, background:'#fee2e2', border:'1px solid #fca5a5', borderRadius:12, fontSize:'0.85rem', color:'#b91c1c' }}>
+                {submitError}
               </div>
             )}
 
@@ -610,27 +621,25 @@ function PracticeTab() {
 
 // =====================================================================
 // タブ②：技を記録（習熟度評価）
+// ★ SWR: fetchTechniques の手動フェッチを useTechniquesSWR に置き換え
+//        評価保存後のローカル更新は SWR の mutate で対応
 // =====================================================================
 function TechniqueTab() {
-  const [techniques, setTechniques] = useState<Technique[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState<string|null>(null);
+  // ── SWR で技一覧を取得 ────────────────────────────────────────────
+  const { data: techniques, isLoading, error: fetchError, mutate } = useTechniquesSWR();
+
+  // ── ローカル UI ステート ──────────────────────────────────────────
   const [ratings, setRatings]       = useState<ScoreMap>({});
   const [saveStates, setSaveStates] = useState<SavedMap>({});
 
-  useEffect(() => {
-    fetchTechniques()
-      .then(data => { setTechniques(data); })
-      .catch(e => {
-        if (e.message === 'AUTH_REQUIRED') return;
-        setError(e.message);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  // AUTH_REQUIRED は静かに無視
+  const error = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
+
+  const techList = techniques ?? [];
 
   const grouped = useMemo(() => {
     const map: Record<string, Record<string, Technique[]>> = {};
-    techniques.forEach(t => {
+    techList.forEach(t => {
       const bp = t.bodyPart   || '未分類';
       const at = t.actionType || '未分類';
       if (!map[bp])     map[bp]     = {};
@@ -638,7 +647,7 @@ function TechniqueTab() {
       map[bp][at].push(t);
     });
     return map;
-  }, [techniques]);
+  }, [techList]);
 
   async function handleSave(t: Technique) {
     const rating = ratings[t.id];
@@ -646,9 +655,13 @@ function TechniqueTab() {
     setSaveStates(prev => ({ ...prev, [t.id]: 'saving' }));
     try {
       const res = await updateTechniqueRating(t.id, rating);
-      setTechniques(prev => prev.map(tech =>
-        tech.id === t.id ? { ...tech, points: res.points, lastRating: res.lastRating } : tech
-      ));
+      // SWR キャッシュをローカル更新（再フェッチなし）
+      mutate(
+        prev => prev?.map(tech =>
+          tech.id === t.id ? { ...tech, points: res.points, lastRating: res.lastRating } : tech
+        ),
+        { revalidate: false },
+      );
       setSaveStates(prev => ({ ...prev, [t.id]: 'saved' }));
       setTimeout(() => {
         setRatings(prev => ({ ...prev, [t.id]: 0 }));
@@ -660,7 +673,7 @@ function TechniqueTab() {
     }
   }
 
-  if (loading) return (
+  if (isLoading) return (
     <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
       {[1,2,3].map(i => <div key={i} style={{ height:90, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
@@ -671,11 +684,11 @@ function TechniqueTab() {
     <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
       <p style={{ fontSize:'2rem', marginBottom:12 }}>⚠️</p>
       <p style={{ fontWeight:700, color:'#e0e7ff' }}>データ取得に失敗しました</p>
-      <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:8 }}>{error}</p>
+      <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:8 }}>{error.message}</p>
     </div>
   );
 
-  if (techniques.length === 0) return (
+  if (techList.length === 0) return (
     <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
       <p style={{ fontSize:'2.5rem', marginBottom:12 }}>🗡️</p>
       <p style={{ color:'#78716c', fontWeight:600 }}>技データがありません</p>

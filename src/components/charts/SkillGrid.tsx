@@ -37,9 +37,9 @@ import type { Technique } from '@/types';
 // =====================================================================
 
 /** 技スコアの視覚的上限 */
-const TECH_SCORE_CAP = 10;
+const TECH_SCORE_CAP = 10000;
 /** 部位スコア合計の視覚的上限 */
-const BP_SCORE_CAP = 50;
+const BP_SCORE_CAP = 50000;
 /** 外周スロット数（固定） */
 const OUTER_SLOTS = 24;
 /** 外周半径（px）*/

@@ -5,8 +5,7 @@
 // ★ Phase4: updateTasks を TaskDiff[] 対応に変更。settings 関連を削除。
 // ★ Phase6: fetchAchievements 追加。saveLog の戻り値に newAchievements を追加。
 // ★ Phase7: evaluatePeer を PeerEvalItem[] 対応に変更。fetchTodayEvaluations 追加。
-// ★ SWR:   useDashboardSWR を追加（ホーム画面の体感速度向上）。
-// ★ SWR2:  useRivalsSWR / useRivalDashboardSWR を追加（門下生画面の体感速度向上）。
+// ★ SWR:  useDashboardSWR / useTechniquesSWR を追加。
 // =====================================================================
 
 import useSWR from 'swr';
@@ -31,13 +30,6 @@ const PROXY = '/api/gas';
 
 // user_id が不要なアクション一覧
 const NO_USER_ID_ACTIONS = ['getEpithetMaster', 'getUsers', 'ping'] as const;
-
-// =====================================================================
-// 共有型
-// =====================================================================
-
-/** ユーザー一覧エントリ（門下生一覧・詳細ページで共用） */
-export type UserEntry = { user_id: string; name: string; role: string };
 
 // ===== レスポンスパーサー =====
 async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
@@ -116,8 +108,8 @@ export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   return gasPost<LoginResponse>({ action: 'login', ...payload });
 }
 
-export async function fetchUsers(): Promise<UserEntry[]> {
-  return gasGet<UserEntry[]>({ action: 'getUsers' });
+export async function fetchUsers(): Promise<{ user_id: string; name: string; role: string }[]> {
+  return gasGet<{ user_id: string; name: string; role: string }[]>({ action: 'getUsers' });
 }
 
 // =====================================================================
@@ -137,154 +129,23 @@ export async function fetchDashboard(targetUserId?: string): Promise<DashboardDa
   );
 }
 
-// =====================================================================
-// SWR カスタムフック
-// =====================================================================
-
-/** useDashboardSWR が返すデータ型 */
-export interface DashboardSWRData {
-  dashboard:  DashboardData;
-  techniques: Technique[];
-}
-
 /**
- * ホーム画面用 SWR カスタムフック。
+ * ダッシュボードデータを SWR でキャッシュ付きフェッチする。
+ * - キャッシュキー: ['dashboard'] または ['dashboard', targetUserId]
+ * - AUTH_REQUIRED エラー時は SWR の再試行を止め、静かに無視する。
  *
- * - fetchDashboard と fetchTechniques を並列取得する。
- * - fetchTechniques が失敗した場合は techniqueMaster を fallback として使用する。
- * - ログイン前（userId が null）はフェッチしない（key を null にする）。
- * - revalidateOnFocus: false でタブ切替のたびに再フェッチしない。
- * - dedupingInterval: 60_000 で 60 秒以内の重複リクエストを抑止する。
- *
- * 使い方:
- *   const { data, error, isLoading, mutate } = useDashboardSWR();
- *   const dashboard  = data?.dashboard;
- *   const techniques = data?.techniques ?? [];
+ * @param targetUserId 省略時は自分自身
  */
-export function useDashboardSWR() {
-  const userId = getCurrentUserId();
+export function useDashboardSWR(targetUserId?: string) {
+  const key = targetUserId ? ['dashboard', targetUserId] : ['dashboard'];
 
-  return useSWR<DashboardSWRData>(
-    // userId が null の場合はフェッチしない（SWR の仕様: key が null → 停止）
-    userId ? (['dashboard', userId] as const) : null,
-    async ([, _uid]: readonly [string, string]) => {
-      const [dash, techs] = await Promise.all([
-        fetchDashboard(),
-        fetchTechniques().catch((err: unknown) => {
-          logger.warn('api', 'fetchTechniques 失敗 → techniqueMaster fallback を使用', {
-            detail: err instanceof Error ? err.message : String(err),
-          });
-          return null;
-        }),
-      ]);
-
-      let techniques: Technique[];
-      if (techs !== null && techs.length > 0) {
-        // fetchTechniques 成功：ポイント付きデータをそのまま使用
-        techniques = techs;
-      } else {
-        // fetchTechniques 失敗または空：
-        // getDashboard の techniqueMaster を fallback に使用（points / lastRating は 0 扱い）
-        techniques = (dash.techniqueMaster ?? []).map(m => ({
-          id:          m.id,
-          bodyPart:    m.bodyPart,
-          actionType:  m.actionType,
-          subCategory: m.subCategory,
-          name:        m.name,
-          points:      0,
-          lastRating:  0,
-        }));
-      }
-
-      return { dashboard: dash, techniques };
-    },
+  return useSWR<DashboardData, Error>(
+    key,
+    () => fetchDashboard(targetUserId),
     {
-      revalidateOnFocus: false,   // タブ切替での再フェッチを抑止
-      dedupingInterval:  60_000,  // 60 秒以内の重複リクエストを抑止
-    },
-  );
-}
-
-/**
- * 門下生一覧用 SWR カスタムフック。
- *
- * - fetchUsers を取得し、自分自身を除いたリストを返す。
- * - ログイン前（userId が null）はフェッチしない。
- * - revalidateOnFocus: false でタブ切替のたびに再フェッチしない。
- * - dedupingInterval: 60_000 で 60 秒以内の重複リクエストを抑止する。
- *
- * 使い方:
- *   const { data: rivals = [], error, isLoading } = useRivalsSWR();
- */
-export function useRivalsSWR() {
-  const userId = getCurrentUserId();
-
-  return useSWR<UserEntry[]>(
-    userId ? (['users', userId] as const) : null,
-    async ([, myId]: readonly [string, string]) => {
-      const all = await fetchUsers();
-      return all.filter(u => u.user_id !== myId);
-    },
-    {
-      revalidateOnFocus: false,
-      dedupingInterval:  60_000,
-    },
-  );
-}
-
-/** useRivalDashboardSWR が返すデータ型 */
-export interface RivalDashboardSWRData {
-  dashboard:               DashboardData;
-  techniques:              Technique[];
-  targetName:              string;
-  /** ページロード時点での評価済み task_id 一覧。自分自身のページでは空配列。 */
-  initialEvaluatedTaskIds: string[];
-}
-
-/**
- * 門下生詳細画面用 SWR カスタムフック。
- *
- * - fetchDashboard / fetchTechniques / fetchUsers / fetchTodayEvaluations を並列取得する。
- * - fetchTodayEvaluations は自分自身のページでは呼ばない。
- * - targetId が空 or ログイン前はフェッチしない。
- * - revalidateOnFocus: false でタブ切替のたびに再フェッチしない。
- * - dedupingInterval: 60_000 で 60 秒以内の重複リクエストを抑止する。
- *
- * 使い方:
- *   const { data, error, isLoading } = useRivalDashboardSWR(targetId);
- *   const dashboard  = data?.dashboard ?? null;
- *   const techniques = data?.techniques ?? [];
- */
-export function useRivalDashboardSWR(targetId: string) {
-  const userId = getCurrentUserId();
-
-  return useSWR<RivalDashboardSWRData>(
-    userId && targetId ? (['rivalDashboard', targetId] as const) : null,
-    async ([, tid]: readonly [string, string]) => {
-      const myUserId = getCurrentUserId();
-      const isSelf   = myUserId === tid;
-
-      const [dash, techs, users, evalRes] = await Promise.all([
-        fetchDashboard(tid),
-        fetchTechniques(tid),
-        fetchUsers(),
-        isSelf
-          ? Promise.resolve({ evaluated_task_ids: [] as string[] })
-          : fetchTodayEvaluations(tid).catch(() => ({ evaluated_task_ids: [] as string[] })),
-      ]);
-
-      const found = users.find(u => u.user_id === tid);
-
-      return {
-        dashboard:               dash,
-        techniques:              techs,
-        targetName:              found?.name ?? tid,
-        initialEvaluatedTaskIds: evalRes.evaluated_task_ids,
-      };
-    },
-    {
-      revalidateOnFocus: false,
-      dedupingInterval:  60_000,
+      revalidateOnFocus:       false,
+      revalidateOnReconnect:   false,
+      shouldRetryOnError:      (err: Error) => err.message !== 'AUTH_REQUIRED',
     },
   );
 }
@@ -332,6 +193,27 @@ export async function fetchTechniques(targetUserId?: string): Promise<Technique[
     targetUserId
       ? { action: 'getTechniques', user_id: targetUserId }
       : { action: 'getTechniques' },
+  );
+}
+
+/**
+ * 技の習熟度一覧を SWR でキャッシュ付きフェッチする。
+ * - キャッシュキー: ['techniques'] または ['techniques', targetUserId]
+ * - AUTH_REQUIRED エラー時は SWR の再試行を止め、静かに無視する。
+ *
+ * @param targetUserId 省略時は自分自身
+ */
+export function useTechniquesSWR(targetUserId?: string) {
+  const key = targetUserId ? ['techniques', targetUserId] : ['techniques'];
+
+  return useSWR<Technique[], Error>(
+    key,
+    () => fetchTechniques(targetUserId),
+    {
+      revalidateOnFocus:       false,
+      revalidateOnReconnect:   false,
+      shouldRetryOnError:      (err: Error) => err.message !== 'AUTH_REQUIRED',
+    },
   );
 }
 
