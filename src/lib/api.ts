@@ -5,7 +5,8 @@
 // ★ Phase4: updateTasks を TaskDiff[] 対応に変更。settings 関連を削除。
 // ★ Phase6: fetchAchievements 追加。saveLog の戻り値に newAchievements を追加。
 // ★ Phase7: evaluatePeer を PeerEvalItem[] 対応に変更。fetchTodayEvaluations 追加。
-// ★ SWR:  useDashboardSWR / useTechniquesSWR を追加。
+// ★ SWR:  useDashboardSWR / useTechniquesSWR / useRivalsSWR / useRivalDashboardSWR を追加。
+//         useDashboardSWR は { dashboard, techniques } を返すよう修正。
 // =====================================================================
 
 import useSWR from 'swr';
@@ -129,24 +130,40 @@ export async function fetchDashboard(targetUserId?: string): Promise<DashboardDa
   );
 }
 
+// SWR フックの共通オプション
+const SWR_OPTS = {
+  revalidateOnFocus:     false,
+  revalidateOnReconnect: false,
+  shouldRetryOnError:    (err: Error) => err.message !== 'AUTH_REQUIRED',
+} as const;
+
+// ---- useDashboardSWR の戻り値型 ----
+export interface DashboardSWRData {
+  dashboard:  DashboardData;
+  techniques: Technique[];
+}
+
 /**
- * ダッシュボードデータを SWR でキャッシュ付きフェッチする。
+ * ホーム画面用 SWR フック。
+ * ダッシュボードと技一覧を並列取得し { dashboard, techniques } で返す。
  * - キャッシュキー: ['dashboard'] または ['dashboard', targetUserId]
- * - AUTH_REQUIRED エラー時は SWR の再試行を止め、静かに無視する。
+ * - AUTH_REQUIRED エラー時は再試行しない。
  *
  * @param targetUserId 省略時は自分自身
  */
 export function useDashboardSWR(targetUserId?: string) {
   const key = targetUserId ? ['dashboard', targetUserId] : ['dashboard'];
 
-  return useSWR<DashboardData, Error>(
+  return useSWR<DashboardSWRData, Error>(
     key,
-    () => fetchDashboard(targetUserId),
-    {
-      revalidateOnFocus:       false,
-      revalidateOnReconnect:   false,
-      shouldRetryOnError:      (err: Error) => err.message !== 'AUTH_REQUIRED',
+    async () => {
+      const [dashboard, techniques] = await Promise.all([
+        fetchDashboard(targetUserId),
+        fetchTechniques(targetUserId),
+      ]);
+      return { dashboard, techniques };
     },
+    SWR_OPTS,
   );
 }
 
@@ -199,7 +216,7 @@ export async function fetchTechniques(targetUserId?: string): Promise<Technique[
 /**
  * 技の習熟度一覧を SWR でキャッシュ付きフェッチする。
  * - キャッシュキー: ['techniques'] または ['techniques', targetUserId]
- * - AUTH_REQUIRED エラー時は SWR の再試行を止め、静かに無視する。
+ * - AUTH_REQUIRED エラー時は再試行しない。
  *
  * @param targetUserId 省略時は自分自身
  */
@@ -209,11 +226,7 @@ export function useTechniquesSWR(targetUserId?: string) {
   return useSWR<Technique[], Error>(
     key,
     () => fetchTechniques(targetUserId),
-    {
-      revalidateOnFocus:       false,
-      revalidateOnReconnect:   false,
-      shouldRetryOnError:      (err: Error) => err.message !== 'AUTH_REQUIRED',
-    },
+    SWR_OPTS,
   );
 }
 
@@ -236,6 +249,62 @@ export async function updateTechniqueRating(id: string, rating: number): Promise
 export async function updateTasks(tasks: TaskDiff[]): Promise<{ active_count: number }> {
   logger.info('api', '評価項目をまとめて更新', { detail: { count: tasks.length } });
   return gasPost<{ active_count: number }>({ action: 'updateTasks', tasks } as Record<string, unknown>);
+}
+
+// =====================================================================
+// 門下生（ライバル）★ SWR追加
+// =====================================================================
+
+/**
+ * 門下生一覧画面用 SWR フック。
+ * fetchUsers() をキャッシュ付きで取得する。
+ * - キャッシュキー: 'rivals'
+ */
+export function useRivalsSWR() {
+  return useSWR<{ user_id: string; name: string; role: string }[], Error>(
+    'rivals',
+    () => fetchUsers(),
+    SWR_OPTS,
+  );
+}
+
+// ---- useRivalDashboardSWR の戻り値型 ----
+export interface RivalDashboardSWRData {
+  dashboard:              DashboardData;
+  techniques:             Technique[];
+  targetName:             string;
+  initialEvaluatedTaskIds: string[];
+}
+
+/**
+ * 門下生詳細画面用 SWR フック。
+ * 対象ユーザーのダッシュボード・技一覧・ユーザー名・本日評価済み課題IDを並列取得し
+ * { dashboard, techniques, targetName, initialEvaluatedTaskIds } で返す。
+ * - キャッシュキー: ['rivalDashboard', targetId]
+ * - targetId が null/空の場合はフェッチしない（SWRキーを null に設定）。
+ *
+ * @param targetId 対象ユーザーID
+ */
+export function useRivalDashboardSWR(targetId: string | null) {
+  return useSWR<RivalDashboardSWRData, Error>(
+    targetId ? ['rivalDashboard', targetId] : null,
+    async ([, uid]: [string, string]) => {
+      const [dashboard, techniques, users, todayEval] = await Promise.all([
+        fetchDashboard(uid),
+        fetchTechniques(uid),
+        fetchUsers(),
+        fetchTodayEvaluations(uid),
+      ]);
+      const targetName = users.find(u => u.user_id === uid)?.name ?? uid;
+      return {
+        dashboard,
+        techniques,
+        targetName,
+        initialEvaluatedTaskIds: todayEval.evaluated_task_ids,
+      };
+    },
+    SWR_OPTS,
+  );
 }
 
 // =====================================================================
