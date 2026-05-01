@@ -5,6 +5,8 @@
 // ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
 // ★ Phase6 Step3: saveLog レスポンスの newAchievements をトースト通知で表示
 // ★ SWR: PracticeTab → useDashboardSWR / TechniqueTab → useTechniquesSWR に移行
+// ★ SWR修正: useDashboardSWR の戻り値が { dashboard, techniques } になったため
+//            PracticeTab の data 受け取り方を修正（data: swrData → swrData.dashboard）
 // =====================================================================
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
@@ -401,7 +403,6 @@ export default function RecordPage() {
               background: tab === t.key ? '#fff' : 'transparent',
               color:      tab === t.key ? 'var(--ai)' : '#a8a29e',
               boxShadow:  tab === t.key ? '0 1px 4px rgba(99,102,241,.12)' : 'none',
-              transition: 'all .2s',
             }}
           >
             {t.label}
@@ -409,10 +410,8 @@ export default function RecordPage() {
         ))}
       </div>
 
-      {/* タブコンテンツ */}
-      {tab === 'practice'  && <PracticeTab />}
+      {tab === 'practice'  && <PracticeTab  />}
       {tab === 'technique' && <TechniqueTab />}
-
     </div>
   );
 }
@@ -422,12 +421,18 @@ export default function RecordPage() {
 // ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
 // ★ Phase6 Step3: saveLog レスポンスの newAchievements をトーストで通知
 // ★ SWR: fetchDashboard の手動フェッチを useDashboardSWR に置き換え
+// ★ SWR修正: useDashboardSWR が { dashboard, techniques } を返すため
+//            data を swrData として受け取り、swrData.dashboard を参照する
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
 
   // ── SWR でダッシュボードを取得 ────────────────────────────────────
-  const { data: dashboard, isLoading, error: fetchError } = useDashboardSWR();
+  // useDashboardSWR は { dashboard: DashboardData, techniques: Technique[] } を返す
+  const { data: swrData, isLoading, error: fetchError } = useDashboardSWR();
+
+  // dashboard を一段ほどいて参照する（旧: data: dashboard と直接受け取っていた）
+  const dashboard = swrData?.dashboard ?? null;
 
   // ── ローカル UI ステート ──────────────────────────────────────────
   const [scores, setScores]                = useState<ScoreMap>({});
@@ -608,7 +613,7 @@ function PracticeTab() {
         )}
       </div>
 
-      {/* ★ Phase6 Step3: アチーブメントトースト（入力フォーム表示中は通常ここには来ないが念のため） */}
+      {/* ★ Phase6 Step3: アチーブメントトースト */}
       {toastAchievements.length > 0 && (
         <AchievementToast
           achievements={toastAchievements}
