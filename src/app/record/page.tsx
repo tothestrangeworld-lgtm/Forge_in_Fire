@@ -918,8 +918,7 @@ function TechniqueTab() {
 }
 
 // =====================================================================
-// 技カード ★ Phase8 刷新
-// 星評価（1〜5ボタン）→ 量/質 ステッパー UI
+// 技カード ★ Phase8 刷新 / モバイル最適化: ステッパー → select
 // =====================================================================
 interface TechCardProps {
   technique: Technique;
@@ -929,68 +928,23 @@ interface TechCardProps {
   onSave:    () => void;
 }
 
-/** ステッパーボタン: [-] [値] [+] */
-function Stepper({
-  label, value, disabled, onChange,
-}: {
-  label: string; value: number; disabled: boolean; onChange: (v: number) => void;
-}) {
-  const btnBase: React.CSSProperties = {
-    width:        26,
-    height:       26,
-    borderRadius: 6,
-    border:       '1.5px solid #c7d2fe',
-    background:   '#fff',
-    color:        '#4f46e5',
-    fontSize:     '0.9rem',
-    fontWeight:   800,
-    fontFamily:   'inherit',
-    cursor:       disabled ? 'not-allowed' : 'pointer',
-    display:      'flex',
-    alignItems:   'center',
-    justifyContent: 'center',
-    flexShrink:   0,
-    lineHeight:   1,
-    transition:   'all .1s',
-    opacity:      disabled ? 0.5 : 1,
-  };
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
-      <span style={{ fontSize:'0.6rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.05em' }}>
-        {label}
-      </span>
-      <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-        <button
-          style={btnBase}
-          disabled={disabled || value <= 1}
-          onClick={() => onChange(value - 1)}
-        >−</button>
-        <div style={{
-          width:          30,
-          height:         26,
-          display:        'flex',
-          alignItems:     'center',
-          justifyContent: 'center',
-          borderRadius:   6,
-          background:     '#eef2ff',
-          border:         '1.5px solid #c7d2fe',
-          fontWeight:     800,
-          fontSize:       '0.95rem',
-          color:          '#4338ca',
-          lineHeight:     1,
-        }}>
-          {value}
-        </div>
-        <button
-          style={btnBase}
-          disabled={disabled || value >= 5}
-          onClick={() => onChange(value + 1)}
-        >＋</button>
-      </div>
-    </div>
-  );
-}
+/** 量/質セレクト共通スタイル */
+const selectStyle: React.CSSProperties = {
+  background:   'rgba(30, 27, 75, 0.55)',
+  border:       '1px solid rgba(99,102,241,0.35)',
+  color:        '#e0e7ff',
+  borderRadius: 8,
+  padding:      '4px 2px 4px 6px',
+  fontSize:     '0.82rem',
+  fontWeight:   700,
+  fontFamily:   'inherit',
+  cursor:       'pointer',
+  outline:      'none',
+  width:        56,
+  appearance:   'none',
+  WebkitAppearance: 'none',
+  textAlign:    'center',
+};
 
 function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardProps) {
   const { quantity, quality } = rating;
@@ -1020,7 +974,6 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
             <span style={{ fontWeight:700, color:'#6366f1' }}>
               {t.points.toLocaleString()} pt
             </span>
-            {/* 前回フィードバック */}
             {t.lastFeedback && (
               <span style={{ marginLeft:6, color:'#7c3aed', fontWeight:700 }}>
                 [{t.lastFeedback}]
@@ -1038,42 +991,66 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
         )}
       </div>
 
-      {/* ── 下段: ステッパー × 2 + 獲得予定 + 記録ボタン ── */}
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+      {/* ── 下段: select×2 + 獲得予定 + 記録ボタン ── */}
+      <div style={{
+        display:    'flex',
+        alignItems: 'center',
+        flexWrap:   'nowrap',
+        gap:        6,
+      }}>
 
-        {/* 量ステッパー */}
-        <Stepper
-          label="量（反復）"
-          value={quantity}
-          disabled={isBusy}
-          onChange={v => onRate('quantity', v)}
-        />
+        {/* 量セレクト */}
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, flexShrink:0 }}>
+          <span style={{ fontSize:'0.55rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.04em' }}>
+            量
+          </span>
+          <select
+            value={quantity}
+            disabled={isBusy}
+            onChange={e => onRate('quantity', Number(e.target.value))}
+            style={{ ...selectStyle, opacity: isBusy ? 0.5 : 1 }}
+          >
+            {[1,2,3,4,5].map(v => (
+              <option key={v} value={v} style={{ background:'#1e1b4b', color:'#e0e7ff' }}>{v}</option>
+            ))}
+          </select>
+        </div>
 
         {/* 区切り */}
-        <div style={{ width:1, height:40, background:'#e0e7ff', flexShrink:0 }} />
+        <div style={{ width:1, height:34, background:'rgba(199,210,254,0.3)', flexShrink:0 }} />
 
-        {/* 質ステッパー */}
-        <Stepper
-          label="質（冴え）"
-          value={quality}
-          disabled={isBusy}
-          onChange={v => onRate('quality', v)}
-        />
+        {/* 質セレクト */}
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, flexShrink:0 }}>
+          <span style={{ fontSize:'0.55rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.04em' }}>
+            質
+          </span>
+          <select
+            value={quality}
+            disabled={isBusy}
+            onChange={e => onRate('quality', Number(e.target.value))}
+            style={{ ...selectStyle, opacity: isBusy ? 0.5 : 1 }}
+          >
+            {[1,2,3,4,5].map(v => (
+              <option key={v} value={v} style={{ background:'#1e1b4b', color:'#e0e7ff' }}>{v}</option>
+            ))}
+          </select>
+        </div>
 
         {/* 獲得予定XP */}
-        <div style={{ flex:1, textAlign:'center' }}>
-          <div style={{ fontSize:'0.58rem', color:'#a5b4fc', fontWeight:700, letterSpacing:'0.05em', marginBottom:2 }}>
+        <div style={{ flex:1, textAlign:'center', minWidth:48 }}>
+          <div style={{ fontSize:'0.52rem', color:'#a5b4fc', fontWeight:700, letterSpacing:'0.04em', marginBottom:1 }}>
             獲得予定
           </div>
           <div style={{
-            fontSize:   '1.05rem',
+            fontSize:   '0.95rem',
             fontWeight: 800,
             color:      saveState === 'saved' ? '#10b981' : '#e0e7ff',
             lineHeight: 1.1,
             transition: 'color .2s',
+            whiteSpace: 'nowrap',
           }}>
             +{previewXp}
-            <span style={{ fontSize:'0.65rem', fontWeight:600, color:'#a5b4fc', marginLeft:2 }}>pt</span>
+            <span style={{ fontSize:'0.58rem', fontWeight:600, color:'#a5b4fc', marginLeft:1 }}>pt</span>
           </div>
         </div>
 
@@ -1082,34 +1059,33 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           onClick={onSave}
           disabled={isBusy}
           style={{
-            height:         40,
-            paddingInline:  12,
+            height:         36,
+            paddingInline:  10,
             borderRadius:   10,
             border:         'none',
             fontFamily:     'inherit',
             fontWeight:     700,
-            fontSize:       '0.75rem',
+            fontSize:       '0.72rem',
             cursor:         isBusy ? 'not-allowed' : 'pointer',
             background:     btnBg,
             color:          '#fff',
             display:        'flex',
             alignItems:     'center',
-            gap:            4,
+            gap:            3,
             transition:     'all .15s',
             flexShrink:     0,
-            minWidth:       62,
+            whiteSpace:     'nowrap',
             justifyContent: 'center',
-            opacity:        saveState === 'error' ? 0.9 : 1,
           }}
         >
           {saveState === 'saving' && (
-            <Loader2 style={{ width:12, height:12, animation:'spin .8s linear infinite' }} />
+            <Loader2 style={{ width:11, height:11, animation:'spin .8s linear infinite' }} />
           )}
           {saveState === 'saved' && (
-            <CheckCircle style={{ width:12, height:12 }} />
+            <CheckCircle style={{ width:11, height:11 }} />
           )}
           {(saveState === 'idle' || saveState === 'error') && (
-            <PlusCircle style={{ width:12, height:12 }} />
+            <PlusCircle style={{ width:11, height:11 }} />
           )}
           <span>{btnLabel}</span>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
