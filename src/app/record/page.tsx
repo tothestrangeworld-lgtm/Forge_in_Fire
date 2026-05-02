@@ -59,18 +59,6 @@ type RatingMap   = Record<string, RatingEntry>;
 
 /** ★ Phase8: 四字熟語フィードバックトースト用 */
 interface YojiToastInfo {
-  techName:    string;
-  feedback:    string;
-  earnedPoints: number;
-}
-
-/** ★ Phase8: 量基礎点・質倍率テーブル（GAS と完全同期） */
-const QUANTITY_BASE: Record<number, number> = { 1:10, 2:20, 3:30, 4:40, 5:50 };
-const QUALITY_MULT:  Record<number, number> = { 1:0.1, 2:0.5, 3:1.0, 4:2.0, 5:5.0 };
-
-function calcPreviewXp(quantity: number, quality: number): number {
-  return Math.ceil((QUANTITY_BASE[quantity] ?? 30) * (QUALITY_MULT[quality] ?? 1.0));
-}
 
 const SCORE_LABELS: Record<number, string> = {
   1:'悪い', 2:'少し悪い', 3:'普通', 4:'少し良い', 5:'良い',
@@ -948,8 +936,7 @@ const selectStyle: React.CSSProperties = {
 
 function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardProps) {
   const { quantity, quality } = rating;
-  const previewXp = calcPreviewXp(quantity, quality);
-  const isBusy    = saveState === 'saving' || saveState === 'saved';
+  const isBusy = saveState === 'saving' || saveState === 'saved';
 
   const btnBg =
     saveState === 'saved'  ? '#10b981' :
@@ -961,49 +948,73 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
     saveState === 'error'  ? 'エラー'  : '＋記録';
 
   return (
-    <div className="wa-card" style={{ padding:'0.85rem 1rem' }}>
+    <div className="wa-card" style={{ padding:'0.7rem 0.85rem' }}>
 
-      {/* ── 上段: 技名・サブカテゴリ・累計pt ── */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
-        <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontWeight:700, color:'#e0e7ff', fontSize:'0.9rem', margin:'0 0 3px' }}>
-            {t.name}
-          </p>
-          <p style={{ fontSize:'0.65rem', color:'#a8a29e', margin:0 }}>
-            累計{' '}
-            <span style={{ fontWeight:700, color:'#6366f1' }}>
-              {t.points.toLocaleString()} pt
+      {/* ── 上段: 技名 / pt[四字熟語] / サブカテゴリバッジ ── */}
+      <div style={{
+        display:     'flex',
+        alignItems:  'center',
+        gap:         6,
+        marginBottom: 7,
+        minWidth:    0,
+      }}>
+        {/* 技名 */}
+        <span style={{
+          fontWeight:   700,
+          color:        '#e0e7ff',
+          fontSize:     '0.88rem',
+          whiteSpace:   'nowrap',
+          overflow:     'hidden',
+          textOverflow: 'ellipsis',
+          flexShrink:   1,
+          minWidth:     0,
+        }}>
+          {t.name}
+        </span>
+
+        {/* pt + 四字熟語 */}
+        <span style={{
+          fontSize:   '0.72rem',
+          color:      '#a5b4fc',
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+        }}>
+          {t.points.toLocaleString()} pt
+          {t.lastFeedback && (
+            <span style={{ color:'#7c3aed', fontWeight:700, marginLeft:3 }}>
+              [{t.lastFeedback}]
             </span>
-            {t.lastFeedback && (
-              <span style={{ marginLeft:6, color:'#7c3aed', fontWeight:700 }}>
-                [{t.lastFeedback}]
-              </span>
-            )}
-          </p>
-        </div>
+          )}
+        </span>
+
+        {/* サブカテゴリバッジ（右端） */}
         {t.subCategory && (
           <span style={{
-            fontSize:'0.6rem', fontWeight:700, padding:'2px 8px', borderRadius:999,
-            background:'#eef2ff', color:'#4f46e5', flexShrink:0, marginLeft:8,
+            marginLeft:   'auto',
+            flexShrink:   0,
+            fontSize:     '0.58rem',
+            fontWeight:   700,
+            padding:      '2px 7px',
+            borderRadius: 999,
+            background:   '#eef2ff',
+            color:        '#4f46e5',
+            whiteSpace:   'nowrap',
           }}>
             {t.subCategory}
           </span>
         )}
       </div>
 
-      {/* ── 下段: select×2 + 獲得予定 + 記録ボタン ── */}
+      {/* ── 下段: 量 × 質 ＋記録 ── */}
       <div style={{
         display:    'flex',
         alignItems: 'center',
-        flexWrap:   'nowrap',
-        gap:        6,
+        gap:        5,
       }}>
-
-        {/* 量セレクト */}
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, flexShrink:0 }}>
-          <span style={{ fontSize:'0.55rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.04em' }}>
-            量
-          </span>
+        {/* 量 label + select */}
+        <div style={{ display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
+          <span style={{ fontSize:'0.58rem', color:'#a5b4fc', fontWeight:700, whiteSpace:'nowrap' }}>量</span>
           <select
             value={quantity}
             disabled={isBusy}
@@ -1016,14 +1027,12 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           </select>
         </div>
 
-        {/* 区切り */}
-        <div style={{ width:1, height:34, background:'rgba(199,210,254,0.3)', flexShrink:0 }} />
+        {/* × 記号 */}
+        <span style={{ fontSize:'0.72rem', color:'#a8a29e', fontWeight:700, flexShrink:0 }}>×</span>
 
-        {/* 質セレクト */}
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, flexShrink:0 }}>
-          <span style={{ fontSize:'0.55rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.04em' }}>
-            質
-          </span>
+        {/* 質 label + select */}
+        <div style={{ display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
+          <span style={{ fontSize:'0.58rem', color:'#a5b4fc', fontWeight:700, whiteSpace:'nowrap' }}>質</span>
           <select
             value={quality}
             disabled={isBusy}
@@ -1036,32 +1045,15 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           </select>
         </div>
 
-        {/* 獲得予定XP */}
-        <div style={{ flex:1, textAlign:'center', minWidth:48 }}>
-          <div style={{ fontSize:'0.52rem', color:'#a5b4fc', fontWeight:700, letterSpacing:'0.04em', marginBottom:1 }}>
-            獲得予定
-          </div>
-          <div style={{
-            fontSize:   '0.95rem',
-            fontWeight: 800,
-            color:      saveState === 'saved' ? '#10b981' : '#e0e7ff',
-            lineHeight: 1.1,
-            transition: 'color .2s',
-            whiteSpace: 'nowrap',
-          }}>
-            +{previewXp}
-            <span style={{ fontSize:'0.58rem', fontWeight:600, color:'#a5b4fc', marginLeft:1 }}>pt</span>
-          </div>
-        </div>
-
-        {/* 記録ボタン */}
+        {/* 記録ボタン（左の要素を押しのけて右端に） */}
         <button
           onClick={onSave}
           disabled={isBusy}
           style={{
-            height:         36,
-            paddingInline:  10,
-            borderRadius:   10,
+            marginLeft:     'auto',
+            height:         34,
+            paddingInline:  11,
+            borderRadius:   9,
             border:         'none',
             fontFamily:     'inherit',
             fontWeight:     700,
