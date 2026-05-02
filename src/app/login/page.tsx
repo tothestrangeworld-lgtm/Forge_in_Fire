@@ -39,7 +39,9 @@ export default function LoginPage() {
     try {
       const user = await loginUser({ user_id: selectedId, password });
       setAuthUser(user);
-      router.replace('/');
+      // router.replace だとNext.jsのキャッシュが残りログアウト後に再ログインできないケースがあるため
+      // window.location.href でハードナビゲーションを使用する
+      window.location.href = '/';
     } catch {
       setError('パスコードが正しくありません');
     } finally {
@@ -65,10 +67,9 @@ export default function LoginPage() {
           70%  { box-shadow: 0 0 0 10px rgba(99,102,241,0); }
           100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
         }
-        .login-card   { animation: fadeUp .45s cubic-bezier(.22,1,.36,1) both; }
-        .login-logo   { animation: fadeUp .4s .05s cubic-bezier(.22,1,.36,1) both; }
+        .login-card { animation: fadeUp .45s cubic-bezier(.22,1,.36,1) both; }
+        .login-logo { animation: fadeUp .4s .05s cubic-bezier(.22,1,.36,1) both; }
 
-        /* プルダウン共通リセット */
         .user-select {
           appearance: none;
           -webkit-appearance: none;
@@ -87,6 +88,7 @@ export default function LoginPage() {
           cursor: pointer;
           transition: border-color .15s, box-shadow .15s;
           outline: none;
+          touch-action: manipulation;
         }
         .user-select:focus {
           border-color: #6366f1;
@@ -108,6 +110,10 @@ export default function LoginPage() {
           box-sizing: border-box;
           outline: none;
           transition: border-color .15s, box-shadow .15s;
+          /* iOS PWA でキーボードを確実に起動させるために必要 */
+          touch-action: manipulation;
+          -webkit-user-select: text;
+          user-select: text;
         }
         .pw-input:focus {
           border-color: #6366f1 !important;
@@ -127,15 +133,28 @@ export default function LoginPage() {
         }
       `}</style>
 
+      {/*
+        外側コンテナ:
+        - position: relative + overflow: hidden で内側の absolute 装飾を正しくクリップ
+        - overflowY: auto + WebkitOverflowScrolling: touch で iOS PWA のタッチ応答を確保
+      */}
       <div style={{
+        position: 'relative',
         minHeight: '100dvh',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
         background: 'linear-gradient(160deg,#07071a 0%,#1e1b4b 60%,#0d0b2a 100%)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '1.5rem',
-      }}>
-        {/* グリッドオーバーレイ（装飾） */}
+      } as React.CSSProperties}>
+
+        {/*
+          グリッドオーバーレイ: fixed → absolute に変更。
+          iOS PWA では position:fixed の要素が pointer-events:none でも
+          タッチイベントに干渉するケースがあるため absolute で代替する。
+        */}
         <div style={{
-          position: 'fixed', inset: 0, pointerEvents: 'none',
+          position: 'absolute', inset: 0, pointerEvents: 'none',
           backgroundImage:
             'linear-gradient(rgba(99,102,241,0.04) 1px, transparent 1px),' +
             'linear-gradient(90deg, rgba(99,102,241,0.04) 1px, transparent 1px)',
@@ -175,12 +194,17 @@ export default function LoginPage() {
           </div>
 
           {/* ログインカード */}
+          {/*
+            backdropFilter を削除。
+            iOS では backdropFilter が compositing layer を生成し、
+            その内部の input 要素がソフトキーボードを起動できなくなる既知の問題がある。
+            代替として background の不透明度を上げて視覚的な差異を最小化する。
+          */}
           <div className="login-card" style={{
-            background: 'rgba(255,255,255,0.035)',
+            background: 'rgba(13,11,42,0.82)',
             border: '1px solid rgba(129,140,248,0.2)',
             borderRadius: 20,
             padding: '2rem 1.75rem',
-            backdropFilter: 'blur(16px)',
             boxShadow: '0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
           }}>
 
@@ -190,6 +214,7 @@ export default function LoginPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} noValidate>
+
                 {/* ユーザー選択（プルダウン） */}
                 <div style={{ marginBottom: '1.25rem' }}>
                   <label style={{
@@ -246,6 +271,7 @@ export default function LoginPage() {
                         background: 'none', border: 'none', cursor: 'pointer',
                         color: 'rgba(99,102,241,0.7)', padding: 4,
                         display: 'flex', alignItems: 'center',
+                        touchAction: 'manipulation',
                       }}
                     >
                       {showPw
@@ -289,12 +315,14 @@ export default function LoginPage() {
                     transition: 'all .2s cubic-bezier(.22,1,.36,1)',
                     boxShadow: password ? '0 4px 20px rgba(99,102,241,0.35)' : 'none',
                     letterSpacing: '0.18em',
+                    touchAction: 'manipulation',
                   }}
                 >
                   {submitting
                     ? <><Loader2 style={{ width: 16, height: 16, animation: 'spin .8s linear infinite' }} />LOADING...</>
                     : <><LogIn   style={{ width: 16, height: 16 }} />LOGIN</>}
                 </button>
+
               </form>
             )}
           </div>
