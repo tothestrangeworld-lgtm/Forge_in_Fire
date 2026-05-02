@@ -7,8 +7,8 @@
 > - **型・論理的意味** … `types/index.ts` を正とする
 > - **初期化ロジック・制約** … `Code.gs` の `appendRow` / `getRange.setValues` を参照
 >
-> 最終更新: 2026-04-30
-> 対応フェーズ: Phase7（課題単位他者評価）まで反映済み
+> 最終更新: 2026-05-02
+> 対応フェーズ: Phase8 Step1（技の稽古 量×質マトリックス）まで反映済み
 
 ---
 
@@ -24,6 +24,7 @@
    - 2-1. logs
    - 2-2. xp_history
    - 2-3. peer_evaluations
+   - 2-4. technique_logs ★ Phase8 新設
 3. [マスタ系シート](#3-マスタ系シート)
    - 3-1. technique_master
    - 3-2. title_master
@@ -114,20 +115,26 @@
 ### 1-4. user_techniques
 
 **シート名:** `user_techniques`
-**役割:** ユーザーごとの技の習熟度（累計ポイントと直近レーティング）を管理する。1ユーザー × 1技 = 1行。
+**役割:** ユーザーごとの技の習熟度（累計ポイント・直近の量/質/フィードバック）を管理する。1ユーザー × 1技 = 1行。
 **定数名:** `SHEET_USER_TECHNIQUES`
 **自動作成:** `updateTechniqueRating()` が初回書き込み時に自動作成する。
+**★ Phase8 変更:** 列を4列→7列に拡張。`last_quantity`, `last_quality`, `last_feedback` を追加。
 
 | 列 | 物理名 | 型 | 制約 | 説明 |
 |---|---|---|---|---|
 | A | `user_id` | string | PK(複合), FK → UserMaster.user_id, NOT NULL | ユーザーID |
 | B | `technique_id` | string | PK(複合), FK → technique_master.id, NOT NULL | 技ID。例: `T001` |
-| C | `Points` | number | NOT NULL, ≥0 | 累計習熟ポイント。`updateTechniqueRating()` の都度 `+= rating` で加算。初回は rating 値がそのまま入る |
-| D | `LastRating` | number | NOT NULL, 1〜5 | 直近レーティング（上書き）。`updateTechniqueRating()` で毎回 rating 値に置き換える |
+| C | `Points` | number | NOT NULL, ≥0 | 累計習熟ポイント。`updateTechniqueRating()` の都度 `+= earnedPoints` で加算。`earnedPoints = ceil(量基礎点 × 質倍率)` |
+| D | `LastRating` | number | NOT NULL, 1〜5 | 直近の質（quality）スコア（上書き）。`updateTechniqueRating()` で毎回 quality 値に置き換える |
+| E | `last_quantity` | number | NOT NULL, 1〜5 | ★ Phase8追加。直近の量スコア（上書き）。稽古の本数・繰り返し数の自己評価 |
+| F | `last_quality` | number | NOT NULL, 1〜5 | ★ Phase8追加。直近の質スコア（上書き）。D列 `LastRating` と同値（可読性のため列名付きで保持） |
+| G | `last_feedback` | string | NOT NULL | ★ Phase8追加。直近の四字熟語フィードバック（上書き）。例: `切磋琢磨`、`百錬自得` |
 
 **備考:**
 - 複合主キー: `(user_id, technique_id)` の組み合わせでユニーク
-- `getTechniques()` は `technique_master` と LEFT JOIN し、`user_techniques` に存在しない技は `Points:0 / LastRating:0` として返す
+- `getTechniques()` は `technique_master` と LEFT JOIN し、`user_techniques` に存在しない技は `Points:0 / lastRating:0 / lastQuantity:0 / lastQuality:0 / lastFeedback:''` として返す
+- Phase8以前の既存行は E〜G 列が空の場合がある（新規書き込み・更新時に自動補完される）
+- ポイント計算仕様は [6-5. 技の稽古XP計算](#6-5-技の稽古xp計算phase8) を参照
 
 ---
 
@@ -214,6 +221,38 @@
 - 重複評価ガード: 同一 `(evaluator_id, target_id, task_id, date の日付部分)` の組み合わせは `skipped_tasks` に分類され記録しない
 - XP計算式: `xpGranted = ceil(Σscores × 2 × getPeerLevelMultiplier(evaluator_level))`
 - 評価者レベル倍率: `level < 20: ×1.0`, `≥20: ×1.2`, `≥30: ×1.5`, `≥40: ×2.0`, `≥60: ×3.0`, `≥80: ×5.0`（`Code.gs` の `getPeerLevelMultiplier()` と `index.ts` の `getPeerMultiplier()` は同一ロジック）
+
+---
+
+### 2-4. technique_logs ★ Phase8 新設
+
+**シート名:** `technique_logs`
+**役割:** 技の稽古記録の全履歴。`updateTechniqueRating()` の呼び出し毎に1行追記される。`user_techniques` は最新状態のスナップショット、このシートは完全な時系列履歴。
+**定数名:** `SHEET_TECH_LOGS`
+**自動作成:** `updateTechniqueRating()` が初回書き込み時に自動作成する。
+
+| 列 | 物理名 | 型 | 制約 | 説明 |
+|---|---|---|---|---|
+| A | `user_id` | string | FK → UserMaster.user_id, NOT NULL | ユーザーID |
+| B | `date` | datetime (YYYY-MM-DD HH:mm:ss) | NOT NULL | 記録日時（JST）。`nowJstTs()` で記録 |
+| C | `technique_id` | string | FK → technique_master.id, NOT NULL | 技ID。例: `T001` |
+| D | `quantity` | number | NOT NULL, 1〜5 | 量スコア（本数・繰り返しの自己評価）。1=ほぼゼロ 〜 5=大量 |
+| E | `quality` | number | NOT NULL, 1〜5 | 質スコア（精度・集中度の自己評価）。1=散漫 〜 5=完璧 |
+| F | `xp_earned` | number | NOT NULL, ≥0 | この稽古で獲得したXP。`ceil(QUANTITY_BASE[quantity] × QUALITY_MULT[quality])` |
+| G | `feedback` | string | NOT NULL | 四字熟語フィードバック。量×質の組み合わせに対応する25パターンの一つ。例: `百錬自得`、`切磋琢磨` |
+
+**備考:**
+- 行は追記のみ。削除・更新は行わない（完全な稽古ログ）
+- `user_techniques` との関係: このシートが「稽古の全履歴」、`user_techniques` が「最新状態のサマリー」
+- ポイント計算表:
+
+| 量＼質 | 1 (×0.1) | 2 (×0.5) | 3 (×1.0) | 4 (×2.0) | 5 (×5.0) |
+|---|---|---|---|---|---|
+| **1 (基礎点10)** | 1pt 点滴穿石 | 5pt 一念発起 | 10pt 虚心坦懐 | 20pt 明鏡止水 | 50pt 一撃必殺 |
+| **2 (基礎点20)** | 2pt 試行錯誤 | 10pt 日進月歩 | 20pt 一意専心 | 40pt 不撓不屈 | 100pt 電光石火 |
+| **3 (基礎点30)** | 3pt 継続是力 | 15pt 磨斧作針 | 30pt 切磋琢磨 | 60pt 剣禅一如 | 150pt 勇猛精進 |
+| **4 (基礎点40)** | 4pt 積小成大 | 20pt 臥薪嘗胆 | 40pt 粒粒辛苦 | 80pt 威風堂々 | 200pt 破竹之勢 |
+| **5 (基礎点50)** | 5pt 徒労無功 | 25pt 七転八起 | 50pt 心技体一 | 100pt 鬼神之勇 | 250pt 百錬自得 |
 
 ---
 
@@ -390,6 +429,21 @@ penalty = floor(20 × (daysAbsent - 3)^1.3)  // daysAbsent > 3 の場合のみ
 xpGranted = ceil(Σ(評価スコア) × 2 × 評価者レベル倍率)
 ```
 
+### 6-5. 技の稽古XP計算（Phase8）
+
+`updateTechniqueRating()` が使用するポイント計算式。`saveLog()` とは独立した XP 源。
+
+```
+量基礎点 = { 1:10, 2:20, 3:30, 4:40, 5:50 }
+質倍率   = { 1:0.1, 2:0.5, 3:1.0, 4:2.0, 5:5.0 }
+獲得XP   = ceil(量基礎点[quantity] × 質倍率[quality])
+```
+
+最小: 量1×質1 = 1pt（点滴穿石）
+最大: 量5×質5 = 250pt（百錬自得）
+
+この獲得XP は `user_status.total_xp` に直接加算され、レベル・称号・`xp_history` が連動して更新される。
+
 ---
 
 ## 7. シート間リレーション図
@@ -413,6 +467,9 @@ UserMaster (user_id)
     │
     ├──── xp_history      (A: user_id)
     │
+    ├──── technique_logs  (A: user_id)  ★ Phase8 新設
+    │         └── C: technique_id ──────→ technique_master (id)
+    │
     └──── peer_evaluations
               A: evaluator_id ────────────→ UserMaster (user_id)
               B: target_id ───────────────→ UserMaster (user_id)
@@ -421,7 +478,8 @@ UserMaster (user_id)
 共通マスタ（user_id なし）
     technique_master     ← user_techniques.technique_id
                          ← user_status.favorite_technique_id
-    title_master         ← saveLog / applyDecay / evaluatePeer での称号算出
+                         ← technique_logs.technique_id         ★ Phase8
+    title_master         ← saveLog / applyDecay / evaluatePeer / updateTechniqueRating での称号算出
     EpithetMaster        ← フロントエンドでの二つ名算出
     achievement_master   ← user_achievements.achievement_id
 ```

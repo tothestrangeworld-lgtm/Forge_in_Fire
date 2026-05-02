@@ -7,6 +7,11 @@
 // ★ Phase7: evaluatePeer を課題単位配列評価に変更
 //   - peer_evaluations スキーマに task_id 列を追加
 //   - getTodayEvaluations アクション追加
+// ★ Phase8 Step1: updateTechniqueRating を量×質マトリックス方式に刷新
+//   - user_techniques スキーマ拡張 (7列: +last_quantity, last_quality, last_feedback)
+//   - technique_logs シート新設（稽古履歴の永続記録）
+//   - 四字熟語フィードバック25パターン実装
+//   - XP・レベル・称号・xp_history 連動
 // =====================================================================
 
 const SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -18,7 +23,8 @@ const SHEET_STATUS            = 'user_status';        // user_id, total_xp, leve
 const SHEET_XP_HIST           = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
 const SHEET_USER_TASKS        = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
 const SHEET_PEER_EVALS        = 'peer_evaluations';   // evaluator_id, target_id, task_id, date, score, xp_granted ★ Phase7: task_id 追加
-const SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Points, LastRating
+const SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Points, LastRating, last_quantity, last_quality, last_feedback ★ Phase8
+const SHEET_TECH_LOGS         = 'technique_logs';     // user_id, date, technique_id, quantity, quality, xp_earned, feedback ★ Phase8 新設
 const SHEET_USER_ACHIEVEMENTS = 'user_achievements';  // user_id, achievement_id, unlocked_at ★ Phase6
 
 // 全ユーザー共通マスタ（user_id なし）
@@ -607,7 +613,8 @@ function getTechniqueMasterData(ss) {
 
 // =====================================================================
 // I2. user_techniques（ユーザーごとの習熟度）
-// 列: user_id(0), technique_id(1), Points(2), LastRating(3)
+// ★ Phase8: 列拡張 user_id(0), technique_id(1), Points(2), LastRating(3),
+//            last_quantity(4), last_quality(5), last_feedback(6)
 // =====================================================================
 
 function getTechniques(params) {
@@ -628,22 +635,28 @@ function getTechniques(params) {
     utRows.forEach(function(r){
       var tid = String(r[1]);
       userMap[tid] = {
-        points:     Number(r[2]) || 0,
-        lastRating: Number(r[3]) || 0,
+        points:        Number(r[2]) || 0,
+        lastRating:    Number(r[3]) || 0,
+        lastQuantity:  Number(r[4]) || 0,
+        lastQuality:   Number(r[5]) || 0,
+        lastFeedback:  String(r[6] || ''),
       };
     });
   }
 
   var techs = master.map(function(m){
-    var rec = userMap[m.id] || { points: 0, lastRating: 0 };
+    var rec = userMap[m.id] || { points: 0, lastRating: 0, lastQuantity: 0, lastQuality: 0, lastFeedback: '' };
     return {
-      id:          m.id,
-      bodyPart:    m.bodyPart,
-      actionType:  m.actionType,
-      subCategory: m.subCategory,
-      name:        m.name,
-      points:      rec.points,
-      lastRating:  rec.lastRating,
+      id:           m.id,
+      bodyPart:     m.bodyPart,
+      actionType:   m.actionType,
+      subCategory:  m.subCategory,
+      name:         m.name,
+      points:       rec.points,
+      lastRating:   rec.lastRating,
+      lastQuantity: rec.lastQuantity,
+      lastQuality:  rec.lastQuality,
+      lastFeedback: rec.lastFeedback,
     };
   });
 
@@ -651,18 +664,41 @@ function getTechniques(params) {
   return createResponse(techs);
 }
 
+/**
+ * updateTechniqueRating ★ Phase8 完全刷新
+ *
+ * body: { user_id, id (technique_id), quantity (1-5), quality (1-5) }
+ *
+ * ポイント計算:
+ *   量基礎点: 1=10, 2=20, 3=30, 4=40, 5=50
+ *   質倍率:   1=0.1, 2=0.5, 3=1.0, 4=2.0, 5=5.0
+ *   獲得XP:   Math.ceil(量基礎点 × 質倍率)
+ *
+ * 四字熟語フィードバック: 量(1-5) × 質(1-5) の 25パターン
+ *
+ * 更新シート:
+ *   user_techniques  - 7列: [user_id, technique_id, Points, LastRating, last_quantity, last_quality, last_feedback]
+ *   technique_logs   - 7列: [user_id, date, technique_id, quantity, quality, xp_earned, feedback]
+ *   user_status      - total_xp / level / title を更新
+ *   xp_history       - 理由「技の稽古: [技名] ([四字熟語])」で記録
+ *
+ * レスポンス: { id, points, earnedPoints, feedback, total_xp, level }
+ */
 function updateTechniqueRating(body) {
-  var userId    = body.user_id;
-  var id        = body.id;
-  var ratingNum = parseInt(body.rating);
+  var userId   = body.user_id;
+  var id       = body.id;
+  var quantity = parseInt(body.quantity);
+  var quality  = parseInt(body.quality);
 
   if (!userId)  return createError('user_id は必須です', 400);
   if (!id)      return createError('id は必須です', 400);
-  if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5)
-    return createError('rating は 1〜5 の整数で指定してください', 400);
+  if (isNaN(quantity) || quantity < 1 || quantity > 5)
+    return createError('quantity は 1〜5 の整数で指定してください', 400);
+  if (isNaN(quality) || quality < 1 || quality > 5)
+    return createError('quality は 1〜5 の整数で指定してください', 400);
 
+  // ── 1. 技名をマスタから取得 ──
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-
   var master      = getTechniqueMasterData(ss);
   var masterEntry = null;
   for (var m = 0; m < master.length; m++) {
@@ -672,39 +708,134 @@ function updateTechniqueRating(body) {
     gasLog('WARN', 'updateTechniqueRating', 'technique_master に ID=' + id + ' が見つかりません');
     return createError('technique_master に ID=' + id + ' が存在しません', 404);
   }
+  var techniqueName = masterEntry.name;
 
-  var sheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_USER_TECHNIQUES);
-    sheet.appendRow(['user_id', 'technique_id', 'Points', 'LastRating']);
-    sheet.getRange(1,1,1,4).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
-    sheet.setFrozenRows(1);
-    gasLog('INFO', 'updateTechniqueRating', 'user_techniques シートを自動作成しました');
+  // ── 2. ポイント計算 ──
+  var QUANTITY_BASE = { 1: 10, 2: 20, 3: 30, 4: 40, 5: 50 };
+  var QUALITY_MULT  = { 1: 0.1, 2: 0.5, 3: 1.0, 4: 2.0, 5: 5.0 };
+  var earnedPoints  = Math.ceil(QUANTITY_BASE[quantity] * QUALITY_MULT[quality]);
+
+  // ── 3. 四字熟語フィードバック（量 × 質 = 25パターン）──
+  // 行=量(1-5)、列=質(1-5)
+  // 量少/質低 → 地道な継続を促す語
+  // 量多/質低 → 空疎な努力を戒める語
+  // 量少/質高 → 少数精鋭を讃える語
+  // 量多/質高 → 最高の達成を讃える語
+  var YOJI_MATRIX = {
+    '1_1': '点滴穿石',  // 少量・低品質 → 少しずつでも岩に穴を開ける
+    '1_2': '一念発起',  // 少量・やや低 → 志を立てた第一歩
+    '1_3': '虚心坦懐',  // 少量・中品質 → 先入観なく真摯に向き合う
+    '1_4': '明鏡止水',  // 少量・高品質 → 澄み切った境地での鋭い一本
+    '1_5': '一撃必殺',  // 少量・最高品質 → 少数でも完璧な技
+    '2_1': '試行錯誤',  // やや少・低品質 → 模索しながら前進
+    '2_2': '日進月歩',  // やや少・やや低 → 日々少しずつ進歩
+    '2_3': '一意専心',  // やや少・中品質 → 一つのことに専念
+    '2_4': '不撓不屈',  // やや少・高品質 → 折れない心で高い技を
+    '2_5': '電光石火',  // やや少・最高品質 → 閃光のような鋭さ
+    '3_1': '継続是力',  // 中量・低品質 → 継続すること自体が力
+    '3_2': '磨斧作針',  // 中量・やや低 → 根気よく磨き続ける
+    '3_3': '切磋琢磨',  // 中量・中品質 → バランス良く研磨する
+    '3_4': '剣禅一如',  // 中量・高品質 → 剣と禅が一つになった境地
+    '3_5': '勇猛精進',  // 中量・最高品質 → 勇ましく精力的に
+    '4_1': '積小成大',  // 多量・低品質 → 小さな積み重ねが大を成す
+    '4_2': '臥薪嘗胆',  // 多量・やや低 → 苦労を重ねてこそ実る
+    '4_3': '粒粒辛苦',  // 多量・中品質 → 一粒一粒の積み重ねの苦労
+    '4_4': '威風堂々',  // 多量・高品質 → 堂々たる風格
+    '4_5': '破竹之勢',  // 多量・最高品質 → 竹を割るような勢い
+    '5_1': '徒労無功',  // 最多・低品質 → 量だけでは功なし
+    '5_2': '七転八起',  // 最多・やや低 → 何度倒れても起き上がる
+    '5_3': '心技体一',  // 最多・中品質 → 心・技・体が一体化
+    '5_4': '鬼神之勇',  // 最多・高品質 → 鬼神のごとき勇気と技量
+    '5_5': '百錬自得',  // 最多・最高品質 → 百回鍛えて自ら体得する（アプリ名の本意）
+  };
+  var feedbackKey = quantity + '_' + quality;
+  var feedback    = YOJI_MATRIX[feedbackKey] || '切磋琢磨'; // フォールバック
+
+  // ── 4. user_techniques シートを更新（7列）──
+  var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
+  if (!utSheet) {
+    utSheet = ss.insertSheet(SHEET_USER_TECHNIQUES);
+    utSheet.appendRow(['user_id', 'technique_id', 'Points', 'LastRating', 'last_quantity', 'last_quality', 'last_feedback']);
+    utSheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    utSheet.setFrozenRows(1);
+    gasLog('INFO', 'updateTechniqueRating', 'user_techniques シートを自動作成しました（Phase8 7列）');
   }
 
-  var rows   = sheet.getDataRange().getValues();
-  var rowIdx = -1;
-  for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]) === String(userId) && String(rows[i][1]) === String(id)) {
-      rowIdx = i; break;
+  var utRows   = utSheet.getDataRange().getValues();
+  var utRowIdx = -1;
+  for (var i = 1; i < utRows.length; i++) {
+    if (String(utRows[i][0]) === String(userId) && String(utRows[i][1]) === String(id)) {
+      utRowIdx = i; break;
     }
   }
 
   var newPoints;
-  if (rowIdx === -1) {
-    newPoints = ratingNum;
-    sheet.appendRow([userId, id, newPoints, ratingNum]);
-    gasLog('INFO', 'updateTechniqueRating', 'INSERT user=' + userId + ' id=' + id + ' pts=' + newPoints);
+  if (utRowIdx === -1) {
+    // 新規行: Points = earnedPoints
+    newPoints = earnedPoints;
+    utSheet.appendRow([userId, id, newPoints, quality, quantity, quality, feedback]);
+    gasLog('INFO', 'updateTechniqueRating', 'INSERT user=' + userId + ' id=' + id + ' pts=' + newPoints + ' feedback=' + feedback);
   } else {
-    var currentPts = Number(rows[rowIdx][2]) || 0;
-    newPoints = currentPts + ratingNum;
-    var sheetRow = rowIdx + 1;
-    sheet.getRange(sheetRow, 3).setValue(newPoints);
-    sheet.getRange(sheetRow, 4).setValue(ratingNum);
-    gasLog('INFO', 'updateTechniqueRating', 'UPDATE user=' + userId + ' id=' + id + ' ' + currentPts + '->' + newPoints);
+    // 既存行: Points += earnedPoints、LastRating/量/質/feedback は最新値で上書き
+    var currentPts = Number(utRows[utRowIdx][2]) || 0;
+    newPoints      = currentPts + earnedPoints;
+    var sheetRow   = utRowIdx + 1;
+    utSheet.getRange(sheetRow, 3, 1, 5).setValues([[newPoints, quality, quantity, quality, feedback]]);
+    gasLog('INFO', 'updateTechniqueRating',
+      'UPDATE user=' + userId + ' id=' + id + ' ' + currentPts + '->' + newPoints + ' feedback=' + feedback);
   }
 
-  return createResponse({ id: String(id), points: newPoints, lastRating: ratingNum });
+  // ── 5. technique_logs シートへ履歴追記 ──
+  var tlSheet = ss.getSheetByName(SHEET_TECH_LOGS);
+  if (!tlSheet) {
+    tlSheet = ss.insertSheet(SHEET_TECH_LOGS);
+    tlSheet.appendRow(['user_id', 'date', 'technique_id', 'quantity', 'quality', 'xp_earned', 'feedback']);
+    tlSheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    tlSheet.setFrozenRows(1);
+    gasLog('INFO', 'updateTechniqueRating', 'technique_logs シートを自動作成しました（Phase8）');
+  }
+  var ts = nowJstTs();
+  tlSheet.appendRow([userId, ts, id, quantity, quality, earnedPoints, feedback]);
+
+  // ── 6. user_status の total_xp / level / title を更新 ──
+  var statSheet = ss.getSheetByName(SHEET_STATUS);
+  if (!statSheet) return createError('user_status シートが存在しません', 500);
+
+  var statAllRows = statSheet.getDataRange().getValues();
+  var statRowIdx  = -1;
+  for (var s = 1; s < statAllRows.length; s++) {
+    if (String(statAllRows[s][0]) === String(userId)) { statRowIdx = s; break; }
+  }
+
+  var currentXp = statRowIdx !== -1 ? (parseInt(statAllRows[statRowIdx][1]) || 0) : 0;
+  var newXp     = currentXp + earnedPoints;
+  var titleMD   = getTitleMasterData(ss);
+  var newLevel  = calcLevel(newXp);
+  var newTitle  = calcTitleFromMaster(newLevel, titleMD);
+  var today     = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+
+  if (statRowIdx !== -1) {
+    statSheet.getRange(statRowIdx + 1, 2, 1, 3).setValues([[newXp, newLevel, newTitle]]);
+  } else {
+    statSheet.appendRow([userId, newXp, newLevel, newTitle, '', today, '', '', '']);
+  }
+
+  // ── 7. xp_history へ記録 ──
+  var reason = '技の稽古: ' + techniqueName + '（' + feedback + '）';
+  writeXpHistory(ss, userId, 'gain', earnedPoints, reason, newXp, newLevel, newTitle);
+
+  gasLog('INFO', 'updateTechniqueRating',
+    'DONE user=' + userId + ' tech=' + id + '(' + techniqueName + ')' +
+    ' qty=' + quantity + ' qlt=' + quality + ' +' + earnedPoints + 'XP ' + feedback);
+
+  return createResponse({
+    id:          String(id),
+    points:      newPoints,
+    earnedPoints: earnedPoints,
+    feedback:    feedback,
+    total_xp:    newXp,
+    level:       newLevel,
+  });
 }
 
 // =====================================================================
