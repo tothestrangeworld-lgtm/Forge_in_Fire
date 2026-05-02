@@ -11,10 +11,11 @@ const mplus = M_PLUS_Rounded_1c({
   display:  'swap',
 });
 
+// ★ 上にあった重複部分を削除し、こちらにまとめました
 export const metadata: Metadata = {
   title:       '百錬自得 | 剣道稽古記録',
   description: '剣道の稽古を記録し、成長を可視化する稽古管理アプリ',
-  manifest:    '/manifest.webmanifest',
+  manifest:    '/manifest.json', // ← ここを .webmanifest から .json に変更
   appleWebApp: {
     capable:           true,
     statusBarStyle:    'black-translucent',
