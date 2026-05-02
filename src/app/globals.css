@@ -601,10 +601,12 @@ textarea::placeholder {
     cursor: not-allowed;
   }
 
-  /* iOS PWAでの入力不可バグ回避策 */
+/* iOS PWAでの入力不可バグ回避策（最強版） */
 input,
 textarea,
 select {
-  -webkit-user-select: text !important;
-  user-select: text !important;
+  -webkit-user-select: auto !important;
+  user-select: auto !important;
+  -webkit-touch-callout: default !important;
+  pointer-events: auto !important;
 }

@@ -144,18 +144,20 @@ export default function LoginPage() {
 
         <div style={{ width: '100%', maxWidth: 360, position: 'relative', zIndex: 1 }}>
 
-          {/* ロゴエリア */}
-          <div className="login-logo" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+{/* ロゴエリア */}
+<div className="login-logo" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
             <div style={{
-              width: 68, height: 68, borderRadius: '50%',
-              background: 'linear-gradient(135deg,#312e81,#4f46e5)',
+              width: 80, height: 80, borderRadius: '22%', // サイズを少し大きくし、今風の角丸にする
               border: '2px solid rgba(129,140,248,0.6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
               margin: '0 auto 1.1rem',
               boxShadow: '0 0 48px rgba(99,102,241,0.45), inset 0 1px 0 rgba(255,255,255,0.1)',
-              fontSize: '1.85rem',
+              overflow: 'hidden', // 枠からはみ出た画像を切り抜く
             }}>
-              ⚔️
+              <img 
+                src="/icons/icon-192x192.png?v=3" 
+                alt="百錬自得アイコン" 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              />
             </div>
             <h1 style={{
               fontSize: '2rem', fontWeight: 800, color: '#fff',
