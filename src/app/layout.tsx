@@ -11,16 +11,15 @@ const mplus = M_PLUS_Rounded_1c({
   display:  'swap',
 });
 
-// ★ 上にあった重複部分を削除し、こちらにまとめました
 export const metadata: Metadata = {
   title:       '百錬自得 | 剣道稽古記録',
   description: '剣道の稽古を記録し、成長を可視化する稽古管理アプリ',
-  manifest:    '/manifest.json', // ← ここを .webmanifest から .json に変更
+  manifest:    '/manifest.json',
   appleWebApp: {
-    capable:           true,
-    statusBarStyle:    'black-translucent',
-    title:             '百錬自得',
-    startupImage:      '/icon/icon-512x512.png',
+    capable:        true,
+    statusBarStyle: 'black-translucent',
+    title:          '百錬自得',
+    startupImage:   '/icon/icon-512x512.png',
   },
   icons: {
     icon: [
@@ -37,12 +36,18 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor:           '#1e1b4b',
-  width:                'device-width',
-  initialScale:         1,
-  maximumScale:         1,
-  userScalable:         false,
-  viewportFit:          'cover',
+  themeColor:   '#1e1b4b',
+  width:        'device-width',
+  initialScale: 1,
+  // maximumScale: 1 と userScalable: false を削除。
+  //
+  // iOS 16以降、PWA standaloneモードで user-scalable=no / maximum-scale=1 を
+  // 指定すると、input・textarea タップ時にソフトキーボードが表示されない
+  // Apple側の既知バグが発生する。Safari通常タブでは再現せず standaloneのみ。
+  //
+  // ズーム防止の代替策として、globals.css 側で入力要素の font-size を 16px 以上に
+  // 設定している（iOS は font-size < 16px の input フォーカス時に自動ズームするため）。
+  viewportFit:  'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

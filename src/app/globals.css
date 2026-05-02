@@ -601,12 +601,16 @@ textarea::placeholder {
     cursor: not-allowed;
   }
 
-/* iOS PWAでの入力不可バグ回避策（最強版） */
+/* ==========================================================================
+   iOS PWA ズーム防止（viewport の user-scalable=no 代替策）
+   ==========================================================================
+   layout.tsx から maximumScale:1 / userScalable:false を削除したため、
+   iOS がフォーカス時に自動ズームする可能性がある。
+   iOS は font-size が 16px 未満の input にフォーカスすると自動ズームするため、
+   すべての入力要素に font-size: 16px 以上を保証することでズームを防ぐ。
+   ========================================================================== */
 input,
 textarea,
 select {
-  -webkit-user-select: auto !important;
-  user-select: auto !important;
-  -webkit-touch-callout: default !important;
-  pointer-events: auto !important;
+  font-size: max(16px, 1em);
 }
