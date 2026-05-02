@@ -10,6 +10,9 @@
 // ★ Phase7: 個別課題単位の他者評価対応
 //   - PeerEvalItem 型を追加
 //   - EvaluatePeerResponse を配列評価レスポンス対応に更新
+// ★ Phase8: 技の稽古 量×質マトリックス対応
+//   - Technique 型に lastQuantity / lastQuality / lastFeedback を追加
+//   - TechniqueUpdateResponse に earnedPoints / feedback / total_xp / level を追加
 // =====================================================================
 
 export interface LogEntry {
@@ -322,24 +325,43 @@ export function getPeerMultiplier(level: number): number {
 
 // =====================================================================
 // 技の習熟度（Technique）
+// ★ Phase8: lastQuantity / lastQuality / lastFeedback を追加
 // =====================================================================
 
 /** user_techniques × technique_master を JOIN した結果の型 */
 export interface Technique {
-  id:          string;
-  bodyPart:    string;
-  actionType:  string;
-  subCategory: string;
-  name:        string;
-  points:      number;
-  lastRating:  number;
+  id:           string;
+  bodyPart:     string;
+  actionType:   string;
+  subCategory:  string;
+  name:         string;
+  points:       number;
+  lastRating:   number;
+  /** ★ Phase8: 直近の量スコア（1〜5）。Phase8以前の行は undefined になる場合がある */
+  lastQuantity?: number;
+  /** ★ Phase8: 直近の質スコア（1〜5）。Phase8以前の行は undefined になる場合がある */
+  lastQuality?:  number;
+  /** ★ Phase8: 直近の四字熟語フィードバック。Phase8以前の行は undefined になる場合がある */
+  lastFeedback?: string;
 }
 
-/** updateTechniqueRating のレスポンス */
+/**
+ * updateTechniqueRating のレスポンス
+ * ★ Phase8: earnedPoints / feedback / total_xp / level を追加
+ */
 export interface TechniqueUpdateResponse {
-  id:         string;
-  points:     number;
-  lastRating: number;
+  id:          string;
+  points:      number;
+  /** ★ Phase8: 今回獲得したXP（ceil(量基礎点 × 質倍率)） */
+  earnedPoints: number;
+  /** ★ Phase8: 四字熟語フィードバック（例: "切磋琢磨"） */
+  feedback:     string;
+  /** ★ Phase8: 更新後の累計XP */
+  total_xp:     number;
+  /** ★ Phase8: 更新後のレベル */
+  level:        number;
+  /** Phase7以前との互換性のため残す */
+  lastRating:   number;
 }
 
 // =====================================================================

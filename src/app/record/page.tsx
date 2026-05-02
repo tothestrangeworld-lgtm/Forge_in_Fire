@@ -7,10 +7,17 @@
 // ★ SWR: PracticeTab → useDashboardSWR / TechniqueTab → useTechniquesSWR に移行
 // ★ SWR修正: useDashboardSWR の戻り値が { dashboard, techniques } になったため
 //            PracticeTab の data 受け取り方を修正（data: swrData → swrData.dashboard）
+// ★ Phase8: TechniqueTab を量×質ステッパーUIに刷新
+//   - ratings ステート: Record<string, { quantity, quality }> に変更（初期値 3/3）
+//   - handleSave: updateTechniqueRating(id, quantity, quality) に変更
+//   - 保存後: techniques SWR をローカル更新 + dashboard SWR を再検証
+//   - YojiToast: 四字熟語フィードバックを画面左下にトースト表示
+//   - TechCard: 星評価廃止 → 量/質ステッパー + リアルタイム獲得XPプレビュー
 // =====================================================================
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSWRConfig } from 'swr';
 import {
   CheckCircle,
   Loader2,
@@ -45,6 +52,25 @@ type Tab       = 'practice' | 'technique';
 type ScoreMap  = Record<string, number>;
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type SavedMap  = Record<string, SaveState>;
+
+/** ★ Phase8: 量×質 の2軸評価ステート */
+type RatingEntry = { quantity: number; quality: number };
+type RatingMap   = Record<string, RatingEntry>;
+
+/** ★ Phase8: 四字熟語フィードバックトースト用 */
+interface YojiToastInfo {
+  techName:    string;
+  feedback:    string;
+  earnedPoints: number;
+}
+
+/** ★ Phase8: 量基礎点・質倍率テーブル（GAS と完全同期） */
+const QUANTITY_BASE: Record<number, number> = { 1:10, 2:20, 3:30, 4:40, 5:50 };
+const QUALITY_MULT:  Record<number, number> = { 1:0.1, 2:0.5, 3:1.0, 4:2.0, 5:5.0 };
+
+function calcPreviewXp(quantity: number, quality: number): number {
+  return Math.ceil((QUANTITY_BASE[quantity] ?? 30) * (QUALITY_MULT[quality] ?? 1.0));
+}
 
 const SCORE_LABELS: Record<number, string> = {
   1:'悪い', 2:'少し悪い', 3:'普通', 4:'少し良い', 5:'良い',
@@ -367,8 +393,121 @@ function SingleToast({ item }: { item: ToastItem }) {
 }
 
 // =====================================================================
-// ルートページ
+// ★ Phase8: 四字熟語フィードバックトースト
+// 技の稽古記録後、画面左下に一時表示するコンパクトなトースト。
+// AchievementToast（右下）と干渉しないよう左下に配置する。
 // =====================================================================
+
+interface YojiToastProps {
+  info:    YojiToastInfo;
+  visible: boolean;
+}
+
+function YojiToast({ info, visible }: YojiToastProps) {
+  return (
+    <>
+      <style>{`
+        @keyframes yojiIn  { 0%{opacity:0;transform:translateX(-24px) scale(0.94)} 60%{opacity:1;transform:translateX(4px) scale(1.02)} 100%{opacity:1;transform:translateX(0) scale(1)} }
+        @keyframes yojiOut { 0%{opacity:1;transform:translateX(0)} 100%{opacity:0;transform:translateX(-20px)} }
+        @keyframes yojiShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        @keyframes yojiGlow { 0%,100%{opacity:.5} 50%{opacity:1} }
+      `}</style>
+      <div style={{
+        position:  'fixed',
+        bottom:    80,
+        left:      16,
+        zIndex:    9997,
+        animation: visible ? 'yojiIn .45s cubic-bezier(0.34,1.56,0.64,1) forwards'
+                           : 'yojiOut .35s ease forwards',
+        pointerEvents: 'none',
+      }}>
+        <div style={{
+          position:     'relative',
+          background:   'linear-gradient(135deg, rgba(8,6,20,0.97), rgba(20,10,40,0.97))',
+          border:       '1px solid #7c3aed88',
+          borderRadius: 14,
+          padding:      '10px 16px 10px 14px',
+          display:      'flex',
+          alignItems:   'center',
+          gap:          12,
+          minWidth:     200,
+          maxWidth:     280,
+          overflow:     'hidden',
+        }}>
+          {/* シマーライン */}
+          <div style={{
+            position:       'absolute',
+            inset:          0,
+            background:     'linear-gradient(105deg,transparent 30%,#7c3aed22 50%,transparent 70%)',
+            backgroundSize: '200% 100%',
+            animation:      'yojiShimmer 2s linear infinite',
+            borderRadius:   14,
+          }} />
+          {/* 上辺グロウ */}
+          <div style={{
+            position:   'absolute',
+            top:        0, left:'15%', right:'15%', height: 1.5,
+            background: 'linear-gradient(90deg,transparent,#a78bfa,transparent)',
+            animation:  'yojiGlow 2s ease-in-out infinite',
+          }} />
+
+          {/* 漢字アイコン */}
+          <div style={{
+            flexShrink:     0,
+            width:          38,
+            height:         38,
+            borderRadius:   10,
+            background:     'radial-gradient(circle at 35% 35%,#7c3aed33,#3b0764aa)',
+            border:         '1px solid #7c3aed77',
+            display:        'flex',
+            alignItems:     'center',
+            justifyContent: 'center',
+            boxShadow:      '0 0 12px #7c3aed55',
+            zIndex:         1,
+          }}>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>⚔️</span>
+          </div>
+
+          {/* テキスト */}
+          <div style={{ zIndex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize:      9,
+              letterSpacing: '0.18em',
+              fontWeight:    700,
+              color:         '#a78bfa',
+              textTransform: 'uppercase',
+              marginBottom:  2,
+            }}>
+              技の稽古
+            </div>
+            <div style={{
+              fontSize:      16,
+              fontWeight:    800,
+              color:         '#fff',
+              letterSpacing: '0.12em',
+              lineHeight:    1.1,
+              textShadow:    '0 0 10px #a78bfacc',
+              whiteSpace:    'nowrap',
+            }}>
+              {info.feedback}
+            </div>
+            <div style={{
+              fontSize:   11,
+              color:      '#c4b5fd',
+              marginTop:  3,
+              whiteSpace: 'nowrap',
+            }}>
+              {info.techName} &nbsp;
+              <span style={{ color:'#10b981', fontWeight:700 }}>+{info.earnedPoints} pt</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+
 export default function RecordPage() {
   const [tab, setTab] = useState<Tab>('practice');
 
@@ -626,21 +765,27 @@ function PracticeTab() {
 
 // =====================================================================
 // タブ②：技を記録（習熟度評価）
-// ★ SWR: fetchTechniques の手動フェッチを useTechniquesSWR に置き換え
-//        評価保存後のローカル更新は SWR の mutate で対応
+// ★ Phase8: 量×質ステッパーUIに刷新
+//   - ratings: Record<id, { quantity, quality }> / 初期値 3/3
+//   - 保存後: techniques SWR ローカル更新 + dashboard SWR 再検証
+//   - YojiToast で四字熟語フィードバックを表示
 // =====================================================================
 function TechniqueTab() {
-  // ── SWR で技一覧を取得 ────────────────────────────────────────────
   const { data: techniques, isLoading, error: fetchError, mutate } = useTechniquesSWR();
+  const { mutate: globalMutate } = useSWRConfig();
 
   // ── ローカル UI ステート ──────────────────────────────────────────
-  const [ratings, setRatings]       = useState<ScoreMap>({});
+  const [ratings,    setRatings]    = useState<RatingMap>({});
   const [saveStates, setSaveStates] = useState<SavedMap>({});
+  const [yojiToast,  setYojiToast]  = useState<YojiToastInfo | null>(null);
+  const [yojiVisible, setYojiVisible] = useState(false);
+  const yojiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // AUTH_REQUIRED は静かに無視
-  const error = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
-
+  const error   = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
   const techList = techniques ?? [];
+
+  // 指定IDのレーティングを取得（未設定なら量3/質3）
+  const getRating = (id: string): RatingEntry => ratings[id] ?? { quantity: 3, quality: 3 };
 
   const grouped = useMemo(() => {
     const map: Record<string, Record<string, Technique[]>> = {};
@@ -654,22 +799,50 @@ function TechniqueTab() {
     return map;
   }, [techList]);
 
+  /** 量 or 質 のステッパー値を更新する */
+  function handleRate(id: string, axis: 'quantity' | 'quality', val: number) {
+    const clamped = Math.min(5, Math.max(1, val));
+    setRatings(prev => ({ ...prev, [id]: { ...getRating(id), [axis]: clamped } }));
+  }
+
   async function handleSave(t: Technique) {
-    const rating = ratings[t.id];
-    if (!rating || rating < 1) return;
+    const { quantity, quality } = getRating(t.id);
     setSaveStates(prev => ({ ...prev, [t.id]: 'saving' }));
     try {
-      const res = await updateTechniqueRating(t.id, rating);
-      // SWR キャッシュをローカル更新（再フェッチなし）
+      const res = await updateTechniqueRating(t.id, quantity, quality);
+
+      // ── SWR: techniques をローカル更新（再フェッチなし）──
       mutate(
         prev => prev?.map(tech =>
-          tech.id === t.id ? { ...tech, points: res.points, lastRating: res.lastRating } : tech
+          tech.id === t.id
+            ? {
+                ...tech,
+                points:       res.points,
+                lastRating:   quality,
+                lastQuantity: quantity,
+                lastQuality:  quality,
+                lastFeedback: res.feedback,
+              }
+            : tech,
         ),
         { revalidate: false },
       );
+
+      // ── SWR: dashboard を再検証（total_xp / level を最新化）──
+      void globalMutate(['dashboard']);
+
+      // ── 四字熟語トーストを表示 ──
+      if (yojiTimerRef.current) clearTimeout(yojiTimerRef.current);
+      setYojiToast({ techName: t.name, feedback: res.feedback, earnedPoints: res.earnedPoints });
+      setYojiVisible(true);
+      yojiTimerRef.current = setTimeout(() => {
+        setYojiVisible(false);
+        // フェードアウト完了後にアンマウント
+        setTimeout(() => setYojiToast(null), 400);
+      }, 3000);
+
       setSaveStates(prev => ({ ...prev, [t.id]: 'saved' }));
       setTimeout(() => {
-        setRatings(prev => ({ ...prev, [t.id]: 0 }));
         setSaveStates(prev => ({ ...prev, [t.id]: 'idle' }));
       }, 1800);
     } catch {
@@ -680,7 +853,7 @@ function TechniqueTab() {
 
   if (isLoading) return (
     <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-      {[1,2,3].map(i => <div key={i} style={{ height:90, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
+      {[1,2,3].map(i => <div key={i} style={{ height:110, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
     </div>
   );
@@ -702,115 +875,242 @@ function TechniqueTab() {
   );
 
   return (
-    <div>
-      {Object.entries(grouped).map(([bodyPart, actionTypes]) => (
-        <div key={bodyPart} style={{ marginBottom:'1.25rem' }}>
-          {/* BodyPart 区切り */}
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:'0.5rem' }}>
-            <div style={{ flex:1, height:1, background:'#e0e7ff' }} />
-            <span style={{ fontSize:'0.7rem', fontWeight:800, color:'#6366f1', letterSpacing:'0.1em', whiteSpace:'nowrap' }}>
-              {bodyPart}
-            </span>
-            <div style={{ flex:1, height:1, background:'#e0e7ff' }} />
-          </div>
-
-          {Object.entries(actionTypes).map(([actionType, techs]) => (
-            <div key={actionType} style={{ marginBottom:'0.75rem' }}>
-              <p style={{ fontSize:'0.7rem', fontWeight:700, color:'#a5b4fc', margin:'0 0 6px 2px', letterSpacing:'0.05em' }}>
-                {actionType}
-              </p>
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {techs.map(t => (
-                  <TechCard
-                    key={t.id} technique={t}
-                    rating={ratings[t.id] ?? 0}
-                    saveState={saveStates[t.id] ?? 'idle'}
-                    onRate={star => setRatings(prev => ({...prev,[t.id]:star}))}
-                    onSave={() => handleSave(t)}
-                  />
-                ))}
-              </div>
+    <>
+      <div>
+        {Object.entries(grouped).map(([bodyPart, actionTypes]) => (
+          <div key={bodyPart} style={{ marginBottom:'1.25rem' }}>
+            {/* BodyPart 区切り */}
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:'0.5rem' }}>
+              <div style={{ flex:1, height:1, background:'#e0e7ff' }} />
+              <span style={{ fontSize:'0.7rem', fontWeight:800, color:'#6366f1', letterSpacing:'0.1em', whiteSpace:'nowrap' }}>
+                {bodyPart}
+              </span>
+              <div style={{ flex:1, height:1, background:'#e0e7ff' }} />
             </div>
-          ))}
-        </div>
-      ))}
-    </div>
+
+            {Object.entries(actionTypes).map(([actionType, techs]) => (
+              <div key={actionType} style={{ marginBottom:'0.75rem' }}>
+                <p style={{ fontSize:'0.7rem', fontWeight:700, color:'#a5b4fc', margin:'0 0 6px 2px', letterSpacing:'0.05em' }}>
+                  {actionType}
+                </p>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {techs.map(t => (
+                    <TechCard
+                      key={t.id}
+                      technique={t}
+                      rating={getRating(t.id)}
+                      saveState={saveStates[t.id] ?? 'idle'}
+                      onRate={(axis, val) => handleRate(t.id, axis, val)}
+                      onSave={() => handleSave(t)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* ★ Phase8: 四字熟語フィードバックトースト */}
+      {yojiToast && <YojiToast info={yojiToast} visible={yojiVisible} />}
+    </>
   );
 }
 
 // =====================================================================
-// 技カード
+// 技カード ★ Phase8 刷新
+// 星評価（1〜5ボタン）→ 量/質 ステッパー UI
 // =====================================================================
 interface TechCardProps {
-  technique:  Technique;
-  rating:     number;
-  saveState:  SaveState;
-  onRate:     (star: number) => void;
-  onSave:     () => void;
+  technique: Technique;
+  rating:    RatingEntry;
+  saveState: SaveState;
+  onRate:    (axis: 'quantity' | 'quality', val: number) => void;
+  onSave:    () => void;
+}
+
+/** ステッパーボタン: [-] [値] [+] */
+function Stepper({
+  label, value, disabled, onChange,
+}: {
+  label: string; value: number; disabled: boolean; onChange: (v: number) => void;
+}) {
+  const btnBase: React.CSSProperties = {
+    width:        26,
+    height:       26,
+    borderRadius: 6,
+    border:       '1.5px solid #c7d2fe',
+    background:   '#fff',
+    color:        '#4f46e5',
+    fontSize:     '0.9rem',
+    fontWeight:   800,
+    fontFamily:   'inherit',
+    cursor:       disabled ? 'not-allowed' : 'pointer',
+    display:      'flex',
+    alignItems:   'center',
+    justifyContent: 'center',
+    flexShrink:   0,
+    lineHeight:   1,
+    transition:   'all .1s',
+    opacity:      disabled ? 0.5 : 1,
+  };
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+      <span style={{ fontSize:'0.6rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.05em' }}>
+        {label}
+      </span>
+      <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+        <button
+          style={btnBase}
+          disabled={disabled || value <= 1}
+          onClick={() => onChange(value - 1)}
+        >−</button>
+        <div style={{
+          width:          30,
+          height:         26,
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'center',
+          borderRadius:   6,
+          background:     '#eef2ff',
+          border:         '1.5px solid #c7d2fe',
+          fontWeight:     800,
+          fontSize:       '0.95rem',
+          color:          '#4338ca',
+          lineHeight:     1,
+        }}>
+          {value}
+        </div>
+        <button
+          style={btnBase}
+          disabled={disabled || value >= 5}
+          onClick={() => onChange(value + 1)}
+        >＋</button>
+      </div>
+    </div>
+  );
 }
 
 function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardProps) {
-  const canRecord = rating >= 1 && saveState !== 'saving';
+  const { quantity, quality } = rating;
+  const previewXp = calcPreviewXp(quantity, quality);
+  const isBusy    = saveState === 'saving' || saveState === 'saved';
+
   const btnBg =
     saveState === 'saved'  ? '#10b981' :
     saveState === 'error'  ? '#ef4444' :
-    canRecord              ? '#1e1b4b' : '#e0e7ff';
+    saveState === 'saving' ? '#6366f1' : '#1e1b4b';
   const btnLabel =
     saveState === 'saving' ? '記録中…' :
-    saveState === 'saved'  ? '記録完了' :
-    saveState === 'error'  ? 'エラー'   : '＋記録';
+    saveState === 'saved'  ? '完了！'  :
+    saveState === 'error'  ? 'エラー'  : '＋記録';
 
   return (
     <div className="wa-card" style={{ padding:'0.85rem 1rem' }}>
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:8 }}>
+
+      {/* ── 上段: 技名・サブカテゴリ・累計pt ── */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:10 }}>
         <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontWeight:700, color:'#e0e7ff', fontSize:'0.9rem', margin:'0 0 2px' }}>{t.name}</p>
+          <p style={{ fontWeight:700, color:'#e0e7ff', fontSize:'0.9rem', margin:'0 0 3px' }}>
+            {t.name}
+          </p>
           <p style={{ fontSize:'0.65rem', color:'#a8a29e', margin:0 }}>
-            累計 <span style={{ fontWeight:700, color:'#6366f1' }}>{t.points.toLocaleString()} pt</span>
-            {rating >= 1 && saveState === 'idle' && (
-              <span style={{ color:'#10b981', fontWeight:700, marginLeft:4 }}>→ {(t.points+rating).toLocaleString()} pt（+{rating}）</span>
-            )}
-            {t.lastRating > 0 && (
-              <span style={{ marginLeft:8, color:'#cbd5e1' }}>
-                前回 {'★'.repeat(t.lastRating)}{'☆'.repeat(5-t.lastRating)}
+            累計{' '}
+            <span style={{ fontWeight:700, color:'#6366f1' }}>
+              {t.points.toLocaleString()} pt
+            </span>
+            {/* 前回フィードバック */}
+            {t.lastFeedback && (
+              <span style={{ marginLeft:6, color:'#7c3aed', fontWeight:700 }}>
+                [{t.lastFeedback}]
               </span>
             )}
           </p>
         </div>
         {t.subCategory && (
-          <span style={{ fontSize:'0.6rem', fontWeight:700, padding:'2px 8px', borderRadius:999, background:'#eef2ff', color:'#4f46e5', flexShrink:0, marginLeft:8 }}>
+          <span style={{
+            fontSize:'0.6rem', fontWeight:700, padding:'2px 8px', borderRadius:999,
+            background:'#eef2ff', color:'#4f46e5', flexShrink:0, marginLeft:8,
+          }}>
             {t.subCategory}
           </span>
         )}
       </div>
 
-      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-        <div style={{ display:'flex', gap:4, flex:1 }}>
-          {[1,2,3,4,5].map(star => (
-            <button key={star} onClick={() => onRate(star)}
-              disabled={saveState==='saving' || saveState==='saved'}
-              style={{
-                flex:1, height:34, borderRadius:8,
-                border:`2px solid ${rating>=star ? '#4f46e5' : '#e0e7ff'}`,
-                background: rating>=star ? '#4f46e5' : '#fff',
-                color:      rating>=star ? '#fff' : '#c7d2fe',
-                fontSize:'0.8rem', fontWeight:700, fontFamily:'inherit',
-                cursor: saveState==='saving'||saveState==='saved' ? 'not-allowed' : 'pointer',
-                transition:'all .12s', opacity: saveState==='saved' ? 0.5 : 1,
-              }}>{star}</button>
-          ))}
+      {/* ── 下段: ステッパー × 2 + 獲得予定 + 記録ボタン ── */}
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+
+        {/* 量ステッパー */}
+        <Stepper
+          label="量（反復）"
+          value={quantity}
+          disabled={isBusy}
+          onChange={v => onRate('quantity', v)}
+        />
+
+        {/* 区切り */}
+        <div style={{ width:1, height:40, background:'#e0e7ff', flexShrink:0 }} />
+
+        {/* 質ステッパー */}
+        <Stepper
+          label="質（冴え）"
+          value={quality}
+          disabled={isBusy}
+          onChange={v => onRate('quality', v)}
+        />
+
+        {/* 獲得予定XP */}
+        <div style={{ flex:1, textAlign:'center' }}>
+          <div style={{ fontSize:'0.58rem', color:'#a5b4fc', fontWeight:700, letterSpacing:'0.05em', marginBottom:2 }}>
+            獲得予定
+          </div>
+          <div style={{
+            fontSize:   '1.05rem',
+            fontWeight: 800,
+            color:      saveState === 'saved' ? '#10b981' : '#e0e7ff',
+            lineHeight: 1.1,
+            transition: 'color .2s',
+          }}>
+            +{previewXp}
+            <span style={{ fontSize:'0.65rem', fontWeight:600, color:'#a5b4fc', marginLeft:2 }}>pt</span>
+          </div>
         </div>
-        <button onClick={onSave} disabled={!canRecord} style={{
-          height:34, paddingInline:10, borderRadius:8, border:'none',
-          fontFamily:'inherit', fontWeight:700, fontSize:'0.75rem',
-          cursor: canRecord ? 'pointer' : 'not-allowed',
-          background: btnBg, color: '#fff',
-          display:'flex', alignItems:'center', gap:4,
-          transition:'all .15s', flexShrink:0, minWidth:68, justifyContent:'center',
-        }}>
-          {saveState==='saving' && <Loader2 style={{ width:12, height:12, animation:'spin .8s linear infinite' }} />}
-          {saveState==='saved'  && <CheckCircle style={{ width:12, height:12 }} />}
-          {saveState==='idle' && canRecord && <PlusCircle style={{ width:12, height:12 }} />}
+
+        {/* 記録ボタン */}
+        <button
+          onClick={onSave}
+          disabled={isBusy}
+          style={{
+            height:         40,
+            paddingInline:  12,
+            borderRadius:   10,
+            border:         'none',
+            fontFamily:     'inherit',
+            fontWeight:     700,
+            fontSize:       '0.75rem',
+            cursor:         isBusy ? 'not-allowed' : 'pointer',
+            background:     btnBg,
+            color:          '#fff',
+            display:        'flex',
+            alignItems:     'center',
+            gap:            4,
+            transition:     'all .15s',
+            flexShrink:     0,
+            minWidth:       62,
+            justifyContent: 'center',
+            opacity:        saveState === 'error' ? 0.9 : 1,
+          }}
+        >
+          {saveState === 'saving' && (
+            <Loader2 style={{ width:12, height:12, animation:'spin .8s linear infinite' }} />
+          )}
+          {saveState === 'saved' && (
+            <CheckCircle style={{ width:12, height:12 }} />
+          )}
+          {(saveState === 'idle' || saveState === 'error') && (
+            <PlusCircle style={{ width:12, height:12 }} />
+          )}
           <span>{btnLabel}</span>
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </button>
