@@ -59,10 +59,10 @@ export default function LoginPage() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
+          from { opacity: 0; }
+          to   { opacity: 1; }
         }
-        @keyframes pulse-ring {
+          @keyframes pulse-ring {
           0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
           70%  { box-shadow: 0 0 0 10px rgba(99,102,241,0); }
           100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
