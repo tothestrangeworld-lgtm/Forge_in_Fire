@@ -37,6 +37,22 @@ export function clearAuthUser(): void {
   localStorage.removeItem(AUTH_KEY);
 }
 
+/**
+ * ログアウトしてログイン画面へ遷移する。
+ *
+ * router.push / router.replace（ソフトナビゲーション）を使うと、
+ * pathname が変わらない場合に AuthGuard の useEffect が再発火せず、
+ * authState が 'authenticated' のまま残ってログイン画面に遷移しない問題がある。
+ * window.location.href によるハードナビゲーションでページを完全にリロードし、
+ * AuthGuard を初期状態から再評価させることで確実にログアウトを完了させる。
+ */
+export function logoutAndRedirect(): void {
+  clearAuthUser();
+  if (isBrowser) {
+    window.location.href = '/login';
+  }
+}
+
 /** ログイン済みかどうか */
 export function isLoggedIn(): boolean {
   return getAuthUser() !== null;
