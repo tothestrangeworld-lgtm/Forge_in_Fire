@@ -600,3 +600,11 @@ textarea::placeholder {
     color: rgba(255, 255, 255, 0.3);
     cursor: not-allowed;
   }
+
+  /* iOS PWAでの入力不可バグ回避策 */
+input,
+textarea,
+select {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
