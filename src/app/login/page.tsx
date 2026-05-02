@@ -47,8 +47,9 @@ export default function LoginPage() {
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter') handleLogin();
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await handleLogin();
   }
 
   return (
@@ -144,19 +145,19 @@ export default function LoginPage() {
 
         <div style={{ width: '100%', maxWidth: 360, position: 'relative', zIndex: 1 }}>
 
-{/* ロゴエリア */}
-<div className="login-logo" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+          {/* ロゴエリア */}
+          <div className="login-logo" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
             <div style={{
-              width: 80, height: 80, borderRadius: '22%', // サイズを少し大きくし、今風の角丸にする
+              width: 80, height: 80, borderRadius: '22%',
               border: '2px solid rgba(129,140,248,0.6)',
               margin: '0 auto 1.1rem',
               boxShadow: '0 0 48px rgba(99,102,241,0.45), inset 0 1px 0 rgba(255,255,255,0.1)',
-              overflow: 'hidden', // 枠からはみ出た画像を切り抜く
+              overflow: 'hidden',
             }}>
-              <img 
-                src="/icons/icon-192x192.png?v=3" 
-                alt="百錬自得アイコン" 
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              <img
+                src="/icons/icon-192x192.png?v=3"
+                alt="百錬自得アイコン"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             </div>
             <h1 style={{
@@ -188,7 +189,7 @@ export default function LoginPage() {
                 <Loader2 style={{ width: 28, height: 28, animation: 'spin .8s linear infinite', margin: '0 auto' }} />
               </div>
             ) : (
-              <>
+              <form onSubmit={handleSubmit} noValidate>
                 {/* ユーザー選択（プルダウン） */}
                 <div style={{ marginBottom: '1.25rem' }}>
                   <label style={{
@@ -228,16 +229,16 @@ export default function LoginPage() {
                       type={showPw ? 'text' : 'password'}
                       value={password}
                       onChange={e => setPassword(e.target.value)}
-                      onKeyDown={handleKeyDown}
                       placeholder="••••••••"
                       maxLength={8}
-                      autoComplete="off"
+                      autoComplete="current-password"
                       style={{
                         border: `1.5px solid ${error ? 'rgba(248,113,113,0.6)' : 'rgba(129,140,248,0.3)'}`,
                         letterSpacing: showPw ? '0.05em' : '0.3em',
                       }}
                     />
                     <button
+                      type="button"
                       onClick={() => setShowPw(v => !v)}
                       style={{
                         position: 'absolute', right: 10, top: '50%',
@@ -270,8 +271,8 @@ export default function LoginPage() {
 
                 {/* ログインボタン */}
                 <button
+                  type="submit"
                   className="login-btn"
-                  onClick={handleLogin}
                   disabled={submitting || !selectedId || !password}
                   style={{
                     width: '100%', padding: '0.9rem',
@@ -294,7 +295,7 @@ export default function LoginPage() {
                     ? <><Loader2 style={{ width: 16, height: 16, animation: 'spin .8s linear infinite' }} />LOADING...</>
                     : <><LogIn   style={{ width: 16, height: 16 }} />LOGIN</>}
                 </button>
-              </>
+              </form>
             )}
           </div>
 
