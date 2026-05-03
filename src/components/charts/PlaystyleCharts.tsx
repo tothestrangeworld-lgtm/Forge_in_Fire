@@ -10,7 +10,7 @@ import type { Technique } from '@/types';
 interface Props { techniques: Technique[]; }
 
 // ダークモード対応カラー
-const ACTION_COLORS   = ['#6366f1', '#f59e0b'];  // 仕掛け技・応じ技
+const ACTION_COLORS      = ['#6366f1', '#f59e0b'];  // 仕掛け技・応じ技
 const SUBCATEGORY_COLORS = ['#818cf8', '#34d399', '#f59e0b', '#f472b6', '#60a5fa', '#a78bfa'];
 
 const TOOLTIP_STYLE = {
@@ -65,37 +65,44 @@ export default function PlaystyleCharts({ techniques }: Props) {
   if (!mounted) return null;
   if (totalPts === 0) {
     return (
-      <div style={{ textAlign:'center', padding:'1.5rem', color:'#a8a29e', fontSize:'0.82rem' }}>
+      <div style={{ textAlign: 'center', padding: '1.5rem', color: '#a8a29e', fontSize: '0.82rem' }}>
         技を評価するとプレイスタイル分析が表示されます
       </div>
     );
   }
 
   return (
+    // ── flex横並び（スマホでも1行） ──
     <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-      gap: 12,
+      display: 'flex',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
       width: '100%',
     }}>
 
-      {/* ── ドーナツチャート（ActionType） ── */}
+      {/* ── ドーナツチャート（ActionType）: 幅40% ── */}
       <div style={{
+        flex: '0 0 40%',
+        minWidth: 0,
         background: 'rgba(255,255,255,0.04)',
         borderRadius: 14,
-        padding: '0.85rem 0.5rem 0.5rem',
+        padding: '0.75rem 0.4rem 0.5rem',
         border: '1px solid rgba(129,140,248,0.15)',
       }}>
-        <p style={{ textAlign:'center', fontSize:'0.65rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.1em', marginBottom:4 }}>
+        <p style={{
+          textAlign: 'center', fontSize: '0.62rem', fontWeight: 700,
+          color: '#a5b4fc', letterSpacing: '0.08em', marginBottom: 4,
+        }}>
           仕掛け / 応じ
         </p>
-        <div style={{ width:'100%', height:160 }}>
+        <div style={{ width: '100%', height: 150 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={actionData}
                 cx="50%" cy="50%"
-                innerRadius="48%" outerRadius="72%"
+                innerRadius="46%" outerRadius="68%"
                 paddingAngle={3}
                 dataKey="value"
                 labelLine={false}
@@ -111,31 +118,36 @@ export default function PlaystyleCharts({ techniques }: Props) {
               />
               <Legend
                 iconType="circle"
-                iconSize={8}
-                wrapperStyle={{ fontSize: 10, color: '#c7d2fe', paddingTop: 4 }}
+                iconSize={7}
+                wrapperStyle={{ fontSize: 9, color: '#c7d2fe', paddingTop: 4 }}
               />
             </PieChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* ── レーダーチャート（SubCategory） ── */}
+      {/* ── レーダーチャート（SubCategory）: 幅60% ── */}
       <div style={{
+        flex: '0 0 calc(60% - 8px)',
+        minWidth: 0,
         background: 'rgba(255,255,255,0.04)',
         borderRadius: 14,
-        padding: '0.85rem 0.5rem 0.5rem',
+        padding: '0.75rem 0.4rem 0.5rem',
         border: '1px solid rgba(129,140,248,0.15)',
       }}>
-        <p style={{ textAlign:'center', fontSize:'0.65rem', fontWeight:700, color:'#a5b4fc', letterSpacing:'0.1em', marginBottom:4 }}>
+        <p style={{
+          textAlign: 'center', fontSize: '0.62rem', fontWeight: 700,
+          color: '#a5b4fc', letterSpacing: '0.08em', marginBottom: 4,
+        }}>
           技の種類バランス
         </p>
-        <div style={{ width:'100%', height:160 }}>
+        <div style={{ width: '100%', height: 150 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <RadarChart data={subData} outerRadius="65%">
+            <RadarChart data={subData} outerRadius="62%">
               <PolarGrid stroke="rgba(129,140,248,0.25)" />
               <PolarAngleAxis
                 dataKey="subject"
-                tick={{ fontSize: 9, fill: '#c7d2fe', fontFamily: 'M PLUS Rounded 1c, sans-serif' }}
+                tick={{ fontSize: 8, fill: '#c7d2fe', fontFamily: 'M PLUS Rounded 1c, sans-serif' }}
               />
               <PolarRadiusAxis tick={false} axisLine={false} />
               <Radar
