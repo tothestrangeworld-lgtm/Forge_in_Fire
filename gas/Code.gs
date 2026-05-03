@@ -12,6 +12,9 @@
 //   - technique_logs シート新設（稽古履歴の永続記録）
 //   - 四字熟語フィードバック25パターン実装
 //   - XP・レベル・称号・xp_history 連動
+// ★ Phase8 Step3-1: getDashboard に peerLogs を追加
+//   - peer_evaluations から target_id === userId の行を抽出
+//   - task_id を buildTaskTextMap で item_name に JOIN して返却
 // =====================================================================
 
 const SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -1064,6 +1067,7 @@ function getTodayEvaluations(params) {
 // =====================================================================
 // J. getDashboard（統合取得）
 // ★ Phase4: settings フィールド廃止。logs は task_id → item_name に JOIN して返す。
+// ★ Phase8 Step3-1: peerLogs を追加（他者から受けた評価ログ）
 // =====================================================================
 
 function getDashboard(params) {
@@ -1144,6 +1148,30 @@ function getDashboard(params) {
   // ── 9. technique_master（全件） ──
   var techniqueMaster = getTechniqueMasterData(ss);
 
+  // ── 10. peerLogs（他者から受けた評価ログ）★ Phase8 Step3-1 ──
+  // peer_evaluations 列: evaluator_id(0), target_id(1), task_id(2), date(3), score(4), xp_granted(5)
+  // target_id === userId の行を抽出し、task_id を item_name（課題テキスト）に JOIN する。
+  var peerLogs = [];
+  var peSheet  = ss.getSheetByName(SHEET_PEER_EVALS);
+  if (peSheet) {
+    var peRows = peSheet.getDataRange().getValues();
+    for (var i = 1; i < peRows.length; i++) {
+      var pe = peRows[i];
+      // target_id（列1）が userId と一致する行のみ対象
+      if (String(pe[1]) !== String(userId)) continue;
+      var taskId   = String(pe[2] || '');
+      var itemName = taskMap[taskId] || taskId;  // buildTaskTextMap で解決済みの taskMap を再利用
+      var dateStr  = pe[3] ? String(pe[3]).slice(0, 10) : '';
+      var score    = parseInt(pe[4]) || 0;
+      if (!dateStr || !itemName || score < 1) continue;
+      peerLogs.push({
+        date:      dateStr,
+        item_name: itemName,
+        score:     score,
+      });
+    }
+  }
+
   return createResponse({
     status:          status,
     tasks:           tasks,
@@ -1154,6 +1182,7 @@ function getDashboard(params) {
     epithetMaster:   epithetMaster,
     xpHistory:       xpHistory,
     techniqueMaster: techniqueMaster,
+    peerLogs:        peerLogs,
   });
 }
 

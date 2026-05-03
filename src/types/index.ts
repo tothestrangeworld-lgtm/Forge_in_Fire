@@ -13,6 +13,9 @@
 // ★ Phase8: 技の稽古 量×質マトリックス対応
 //   - Technique 型に lastQuantity / lastQuality / lastFeedback を追加
 //   - TechniqueUpdateResponse に earnedPoints / feedback / total_xp / level を追加
+// ★ Phase8 Step3-1: getDashboard レスポンスに peerLogs を追加
+//   - PeerLogEntry 型を新設
+//   - DashboardData に peerLogs?: PeerLogEntry[] を追加
 // =====================================================================
 
 export interface LogEntry {
@@ -105,6 +108,25 @@ export interface DashboardData {
    * 得意技ID → 技名変換や SkillGrid のハイライトに使用。
    */
   techniqueMaster?: TechniqueMasterEntry[];
+  /**
+   * 他者から受けた評価ログ。★ Phase8 Step3-1
+   * peer_evaluations シートの target_id === userId の行を
+   * task_id → item_name に JOIN して返す。
+   */
+  peerLogs?:        PeerLogEntry[];
+}
+
+// =====================================================================
+// PeerLogEntry ★ Phase8 Step3-1
+// getDashboard の peerLogs フィールドの1件あたりの型。
+// peer_evaluations シートから target_id === userId の行を抽出し、
+// task_id を item_name（課題テキスト）に JOIN した結果。
+// xp_earned は他者評価ログには存在しないため省略。
+// =====================================================================
+export interface PeerLogEntry {
+  date:      string;  // YYYY-MM-DD
+  item_name: string;  // 課題テキスト（task_id → JOIN済み）
+  score:     number;  // 1〜5（評価者がつけたスコア）
 }
 
 // =====================================================================
