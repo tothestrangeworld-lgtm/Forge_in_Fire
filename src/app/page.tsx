@@ -467,17 +467,15 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* ── プレイスタイル分析 ───────────────────── */}
-      {techniques.length > 0 && (
-        <div className="hud-card animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
-          <span className="section-title">プレイスタイル分析</span>
-          <PlaystyleCharts techniques={techniques} />
-        </div>
-      )}
+      {/* ── XP推移 ───────────────────────────────── */}
+      <div className="hud-card animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
+        <span className="section-title">XP推移</span>
+        <XPTimelineChart xpHistory={xpHistory} compact={true} />
+      </div>
 
-      {/* ── 稽古スコアバランス（課題別スコア分布）───── */}
+      {/* ── 課題別 評価スコア分布（積み上げバー）───── */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '0.75rem' }}>
-        <span className="section-title">稽古スコアバランス（直近50回）</span>
+        <span className="section-title">課題別 評価スコア分布（直近50回）</span>
 
         {/* 凡例 */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -581,11 +579,13 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── XP推移 ───────────────────────────────── */}
-      <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
-        <span className="section-title">XP推移</span>
-        <XPTimelineChart xpHistory={xpHistory} compact={true} />
-      </div>
+      {/* ── プレイスタイル分析 ───────────────────── */}
+      {techniques.length > 0 && (
+        <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
+          <span className="section-title">プレイスタイル分析</span>
+          <PlaystyleCharts techniques={techniques} />
+        </div>
+      )}
 
     </div>
   );
