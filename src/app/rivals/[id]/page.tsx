@@ -13,13 +13,23 @@ import type { PeerEvalItem, UserTask } from '@/types';
 export const runtime = 'edge';
 
 // Recharts は SSR 非対応のため dynamic import
-const RadarChart      = dynamic(() => import('@/components/charts/RadarChart'),      { ssr: false });
 const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false });
 const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleCharts'), { ssr: false });
 const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),       { ssr: false });
 
 // =====================================================================
-// XP → 次レベルまでの進捗（型定義から xpForLevel を利用）
+// スコア分布バー 色定義（サイバー和風テーマ）
+// =====================================================================
+const SCORE_COLORS: Record<number, string> = {
+  5: '#4f46e5',
+  4: '#6366f1',
+  3: '#818cf8',
+  2: '#c7d2fe',
+  1: '#e0e7ff',
+};
+
+// =====================================================================
+// XP → 次レベルまでの進捗
 // =====================================================================
 function xpForLevel(n: number): number {
   return n <= 1 ? 0 : Math.floor(100 * Math.pow(n - 1, 1.8));
@@ -60,9 +70,7 @@ export default function RivalDashboardPage({
   useEffect(() => { setMounted(true); }, []);
 
   // ---- 他者評価ステート ----
-  // task_id → 選択スコア（null = 未選択）
   const [taskScores,       setTaskScores]       = useState<Record<string, number | null>>({});
-  // 今日すでに評価済みの task_id セット（SWR 初期値 + 送信成功後に追加）
   const [evaluatedTaskIds, setEvaluatedTaskIds] = useState<Set<string>>(new Set());
   const [evalLoading,      setEvalLoading]      = useState(false);
   const [evalResult,       setEvalResult]       = useState<{ xp: number; mult: number; count: number } | null>(null);
@@ -85,7 +93,6 @@ export default function RivalDashboardPage({
 
     const activeTasks: UserTask[] = (dashboard.tasks ?? []).filter(t => t.status === 'active');
 
-    // 評価済みでない & スコア選択済みの課題のみ送信
     const items: PeerEvalItem[] = activeTasks
       .filter(t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null)
       .map(t => ({ taskId: t.id, score: taskScores[t.id]! }));
@@ -99,16 +106,13 @@ export default function RivalDashboardPage({
     try {
       const res = await evaluatePeer(targetId, items);
 
-      // 新たに評価成功した task_id をセットに追加
       setEvaluatedTaskIds(prev => {
         const next = new Set(prev);
         res.evaluated_tasks.forEach(id => next.add(id));
-        // GAS 側でスキップされたものも評価済みとして扱う
         res.skipped_tasks.forEach(id => next.add(id));
         return next;
       });
 
-      // 送信済みのスコア選択をクリア
       setTaskScores(prev => {
         const next = { ...prev };
         items.forEach(item => { next[item.taskId] = null; });
@@ -171,24 +175,22 @@ export default function RivalDashboardPage({
   const myUserId = getCurrentUserId();
   const isSelf   = myUserId === targetId;
 
-  // 稽古評価レーダー用
-  const activeItems = activeTasks.map(t => t.task_text);
-  const totals: Record<string, { sum: number; count: number }> = {};
-  activeItems.forEach(i => { totals[i] = { sum: 0, count: 0 }; });
-  logs.slice(-50).forEach(l => {
-    if (totals[l.item_name]) { totals[l.item_name].sum += l.score; totals[l.item_name].count++; }
+  // ── 課題別 評価スコア分布（直近50回）計算 ──────────────────────────
+  const scoreDistData = activeTasks.map(t => {
+    const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let totalPts   = 0;
+    let totalCount = 0;
+    logs.slice(-50).forEach(l => {
+      if (l.item_name === t.task_text) {
+        const s = l.score as number;
+        if (s >= 1 && s <= 5) dist[s] = (dist[s] ?? 0) + 1;
+        totalPts += s;
+        totalCount++;
+      }
+    });
+    return { taskText: t.task_text, dist, totalPts, totalCount };
   });
-  const radarData = activeItems.map(item => ({
-    subject:  item,
-    score:    totals[item].count > 0 ? +(totals[item].sum / totals[item].count).toFixed(1) : 0,
-    fullMark: 5,
-  }));
-  const hasRadarData = radarData.some(r => r.score > 0);
-
-  // 二つ名の算出
-  const epithet = epithetMaster && techniques.length > 0
-    ? calcEpithet(techniques, epithetMaster)
-    : null;
+  const hasScoreData = scoreDistData.some(d => d.totalCount > 0);
 
   // 次レベルまでのXP進捗
   const currentLevelXp = xpForLevel(status.level);
@@ -197,14 +199,16 @@ export default function RivalDashboardPage({
   const rangeXp        = nextLevelXp - currentLevelXp;
   const progressPct    = rangeXp > 0 ? Math.min(100, Math.round((progressXp / rangeXp) * 100)) : 100;
 
-  // 送信可能な課題（評価済みでなく、スコア選択済み）が1つ以上あるか
   const hasSelectableItems = activeTasks.some(
     t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null,
   );
-  // まだ評価できる課題（評価済みでない）が残っているか
   const hasUnevaluatedTasks = activeTasks.some(t => !evaluatedTaskIds.has(t.id));
-  // 全課題が評価済みか
-  const allTasksEvaluated = activeTasks.length > 0 && !hasUnevaluatedTasks;
+  const allTasksEvaluated   = activeTasks.length > 0 && !hasUnevaluatedTasks;
+
+  // 二つ名の算出
+  const epithet = epithetMaster && techniques.length > 0
+    ? calcEpithet(techniques, epithetMaster)
+    : null;
 
   return (
     <main style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 90 }}>
@@ -330,8 +334,7 @@ export default function RivalDashboardPage({
         </div>
 
         {/* =====================================================================
-            現在の課題 + 他者評価（課題単位）
-            ★ Phase7: 全アクティブ課題をリスト表示し、個別に星評価
+            1. 現在の課題 + 他者評価（課題単位）★ メインアクション・最上部
         ===================================================================== */}
         <div className="wa-card" style={{
           background: 'linear-gradient(135deg, rgba(13,11,42,0.92), rgba(30,27,75,0.82))',
@@ -607,33 +610,9 @@ export default function RivalDashboardPage({
           )}
         </div>
 
-        {/* ======================= XP推移チャート ======================= */}
-        {mounted && xpHistory && xpHistory.length > 0 && (
-          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <TrendingUp style={{ width: 15, height: 15, color: '#a78bfa' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>
-                XP推移
-              </span>
-            </div>
-            <XPTimelineChart xpHistory={xpHistory} compact />
-          </div>
-        )}
-
-        {/* ======================= スコアバランス ======================= */}
-        {mounted && hasRadarData && (
-          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <Star style={{ width: 15, height: 15, color: '#a78bfa' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>
-                稽古スコアバランス
-              </span>
-            </div>
-            <RadarChart data={radarData} />
-          </div>
-        )}
-
-        {/* ======================= スキルグリッド（閲覧専用） ======================= */}
+        {/* =====================================================================
+            2. スキルグリッド（閲覧専用）
+        ===================================================================== */}
         {mounted && techniques.length > 0 && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -660,7 +639,141 @@ export default function RivalDashboardPage({
           </div>
         )}
 
-        {/* ======================= プレイスタイル分析 ======================= */}
+        {/* =====================================================================
+            3. XP推移チャート
+        ===================================================================== */}
+        {mounted && xpHistory && xpHistory.length > 0 && (
+          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+              <TrendingUp style={{ width: 15, height: 15, color: '#a78bfa' }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>
+                XP推移
+              </span>
+            </div>
+            <XPTimelineChart xpHistory={xpHistory} compact />
+          </div>
+        )}
+
+        {/* =====================================================================
+            4. 課題別 評価スコア分布（直近50回）
+        ===================================================================== */}
+        {mounted && (
+          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+              <Star style={{ width: 15, height: 15, color: '#a78bfa' }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>
+                課題別 評価スコア分布（直近50回）
+              </span>
+            </div>
+
+            {/* 凡例 */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              {([5, 4, 3, 2, 1] as const).map(n => (
+                <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <div style={{
+                    width: 8, height: 8, borderRadius: 2,
+                    background: SCORE_COLORS[n], flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: '0.6rem', color: 'rgba(199,210,254,0.5)', fontWeight: 600 }}>
+                    {n}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {hasScoreData ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {scoreDistData.map(({ taskText, dist, totalPts, totalCount }) => (
+                  <div
+                    key={taskText}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      width: '100%',
+                    }}
+                  >
+                    {/* 課題名 (約30%) */}
+                    <div style={{
+                      flex: '0 0 30%',
+                      minWidth: 0,
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      color: 'rgba(199,210,254,0.85)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {taskText}
+                    </div>
+
+                    {/* 積み上げバー (約55%) */}
+                    <div style={{
+                      flex: '0 0 55%',
+                      minWidth: 0,
+                      height: 12,
+                      borderRadius: 6,
+                      overflow: 'hidden',
+                      background: 'rgba(99,102,241,0.1)',
+                      display: 'flex',
+                      flexDirection: 'row',
+                    }}>
+                      {totalCount > 0
+                        ? ([5, 4, 3, 2, 1] as const).map(score => {
+                            const pct = (dist[score] / totalCount) * 100;
+                            if (pct <= 0) return null;
+                            return (
+                              <div
+                                key={score}
+                                title={`評価${score}: ${dist[score]}回`}
+                                style={{
+                                  width: `${pct}%`,
+                                  background: SCORE_COLORS[score],
+                                  flexShrink: 0,
+                                  transition: 'width 0.4s ease',
+                                }}
+                              />
+                            );
+                          })
+                        : (
+                          <div style={{
+                            width: '100%',
+                            background: 'rgba(99,102,241,0.08)',
+                            borderRadius: 6,
+                          }} />
+                        )
+                      }
+                    </div>
+
+                    {/* 合計ポイント (約15%) */}
+                    <div style={{
+                      flex: '0 0 15%',
+                      textAlign: 'right',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      color: totalCount > 0 ? '#a5b4fc' : 'rgba(99,102,241,0.25)',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {totalCount > 0 ? `${totalPts} pt` : '—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{
+                textAlign: 'center', fontSize: '0.82rem',
+                color: 'rgba(99,102,241,0.4)', padding: '1.5rem 0', margin: 0,
+              }}>
+                稽古ログがまだ記録されていません
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* =====================================================================
+            5. プレイスタイル分析
+        ===================================================================== */}
         {mounted && techniques.length > 0 && epithetMaster && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
