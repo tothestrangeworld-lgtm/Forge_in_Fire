@@ -59,6 +59,10 @@ type RatingMap   = Record<string, RatingEntry>;
 
 /** ★ Phase8: 四字熟語フィードバックトースト用 */
 interface YojiToastInfo {
+  techName:     string;
+  feedback:     string;
+  earnedPoints: number;
+}
 
 const SCORE_LABELS: Record<number, string> = {
   1:'悪い', 2:'少し悪い', 3:'普通', 4:'少し良い', 5:'良い',
