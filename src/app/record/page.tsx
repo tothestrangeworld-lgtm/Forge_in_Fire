@@ -652,9 +652,31 @@ function PracticeTab() {
     <>
       <div>
         {/* 日付 */}
-        <div className="wa-card" style={{ marginBottom:'1rem' }}>
-          <span className="section-title">稽古日</span>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        <div className="wa-card" style={{
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.6rem 0.9rem',
+        }}>
+          <span className="section-title" style={{ margin: 0 }}>稽古日</span>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            style={{
+              background:   'rgba(30,27,75,0.55)',
+              border:       '1px solid rgba(99,102,241,0.35)',
+              borderRadius: 8,
+              color:        '#e0e7ff',
+              fontSize:     '0.82rem',
+              fontWeight:   700,
+              fontFamily:   'inherit',
+              padding:      '4px 8px',
+              outline:      'none',
+              colorScheme:  'dark',
+            }}
+          />
         </div>
 
         {/* 評価カード */}
@@ -687,23 +709,40 @@ function PracticeTab() {
                     )}
                   </div>
                   {/* 星評価ボタン */}
-                  <div style={{ display:'flex', gap:6 }}>
-                    {[1,2,3,4,5].map(star => (
-                      <button
-                        key={star}
-                        onClick={() => setScores(prev => ({ ...prev, [task.id]: star }))}
-                        style={{
-                          flex:1, height:40, borderRadius:10,
-                          border:`2px solid ${(current ?? 0) >= star ? '#4f46e5' : '#e0e7ff'}`,
-                          background: (current ?? 0) >= star ? '#4f46e5' : '#fff',
-                          color:      (current ?? 0) >= star ? '#fff' : '#c7d2fe',
-                          fontSize:'0.9rem', fontWeight:700, fontFamily:'inherit',
-                          cursor:'pointer', transition:'all .12s',
-                        }}
-                      >
-                        {star}
-                      </button>
-                    ))}
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[1, 2, 3, 4, 5].map(star => {
+                      const filled = (current ?? 0) >= star;
+                      return (
+                        <button
+                          key={star}
+                          onClick={() => setScores(prev => ({ ...prev, [task.id]: star }))}
+                          style={{
+                            flex:       1,
+                            height:     44,
+                            border:     'none',
+                            background: 'transparent',
+                            cursor:     'pointer',
+                            padding:    0,
+                            display:    'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'transform .1s',
+                          }}
+                          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.88)')}
+                          onMouseUp={e   => (e.currentTarget.style.transform = 'scale(1)')}
+                          onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+                          onTouchStart={e => (e.currentTarget.style.transform = 'scale(0.88)')}
+                          onTouchEnd={e   => (e.currentTarget.style.transform = 'scale(1)')}
+                        >
+                          <Star
+                            size={32}
+                            fill={filled ? '#f59e0b' : 'none'}
+                            color={filled ? '#f59e0b' : 'rgba(167,139,250,0.3)'}
+                            strokeWidth={filled ? 0 : 1.8}
+                          />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               );
