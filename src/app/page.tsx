@@ -87,23 +87,51 @@ export default function DashboardPage() {
   // 課題
   const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
 
-  // ── 稽古スコアバランス（分布）計算 ──────────────────────────────────
-  // 直近50回のログから、課題ごとに評価1〜5の出現数・合計ポイントを集計
+  // 他者評価ログ（Phase8 Step3-1 で追加）
+  const peerLogs = data.peerLogs ?? [];
+
+  // ── 課題別 評価スコア分布（ダブルバー）計算 ────────────────────────
+  // 直近50回の自己ログ・他者ログから、課題ごとに評価1〜5の分布と合計ポイントを集計
   const scoreDistData = activeTasks.map(t => {
-    const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    let totalPts  = 0;
-    let totalCount = 0;
-    logs.slice(-50).forEach(l => {
+    // 自己評価
+    const selfDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let selfTotalPts   = 0;
+    let selfTotalCount = 0;
+    (logs ?? []).slice(-50).forEach(l => {
       if (l.item_name === t.task_text) {
         const s = l.score as number;
-        if (s >= 1 && s <= 5) dist[s] = (dist[s] ?? 0) + 1;
-        totalPts += s;
-        totalCount++;
+        if (s >= 1 && s <= 5) selfDist[s] = (selfDist[s] ?? 0) + 1;
+        selfTotalPts += s;
+        selfTotalCount++;
       }
     });
-    return { taskText: t.task_text, dist, totalPts, totalCount };
+
+    // 他者評価
+    const peerDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let peerTotalPts   = 0;
+    let peerTotalCount = 0;
+    peerLogs.slice(-50).forEach(l => {
+      if (l.item_name === t.task_text) {
+        const s = l.score as number;
+        if (s >= 1 && s <= 5) peerDist[s] = (peerDist[s] ?? 0) + 1;
+        peerTotalPts += s;
+        peerTotalCount++;
+      }
+    });
+
+    return {
+      taskText:       t.task_text,
+      // 自己評価
+      dist:           selfDist,
+      totalPts:       selfTotalPts,
+      totalCount:     selfTotalCount,
+      // 他者評価
+      peerDist,
+      peerTotalPts,
+      peerTotalCount,
+    };
   });
-  const hasScoreData = scoreDistData.some(d => d.totalCount > 0);
+  const hasScoreData = scoreDistData.some(d => d.totalCount > 0 || d.peerTotalCount > 0);
 
   // 減衰
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
@@ -473,102 +501,161 @@ export default function DashboardPage() {
         <XPTimelineChart xpHistory={xpHistory} compact={true} />
       </div>
 
-      {/* ── 課題別 評価スコア分布（積み上げバー）───── */}
+      {/* ── 課題別 評価スコア分布（ダブルバー）───── */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">課題別 評価スコア分布（直近50回）</span>
 
         {/* 凡例 */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-          {([5, 4, 3, 2, 1] as const).map(n => (
-            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-              <div style={{
-                width: 8, height: 8, borderRadius: 2,
-                background: SCORE_COLORS[n], flexShrink: 0,
-              }} />
-              <span style={{ fontSize: '0.6rem', color: 'rgba(199,210,254,0.5)', fontWeight: 600 }}>
-                {n}
-              </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+          {/* スコア色凡例 */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {([5, 4, 3, 2, 1] as const).map(n => (
+              <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: 2,
+                  background: SCORE_COLORS[n], flexShrink: 0,
+                }} />
+                <span style={{ fontSize: '0.6rem', color: 'rgba(199,210,254,0.5)', fontWeight: 600 }}>
+                  {n}
+                </span>
+              </div>
+            ))}
+          </div>
+          {/* バー太さ凡例 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 18, height: 10, borderRadius: 3, background: 'rgba(129,140,248,0.5)' }} />
+              <span style={{ fontSize: '0.58rem', color: 'rgba(199,210,254,0.45)', fontWeight: 600 }}>自己</span>
             </div>
-          ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 18, height: 6, borderRadius: 2, background: 'rgba(129,140,248,0.35)' }} />
+              <span style={{ fontSize: '0.58rem', color: 'rgba(199,210,254,0.45)', fontWeight: 600 }}>剣友評価</span>
+            </div>
+          </div>
         </div>
 
         {hasScoreData ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {scoreDistData.map(({ taskText, dist, totalPts, totalCount }) => (
-              <div
-                key={taskText}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  width: '100%',
-                }}
-              >
-                {/* 課題名 (約30%) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {scoreDistData.map(({ taskText, dist, totalPts, totalCount, peerDist, peerTotalPts, peerTotalCount }) => (
+              <div key={taskText} style={{ width: '100%' }}>
+
+                {/* ── 1行目：自己評価 ── */}
                 <div style={{
-                  flex: '0 0 30%',
-                  minWidth: 0,
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  color: 'rgba(199,210,254,0.85)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  display: 'flex', flexDirection: 'row',
+                  alignItems: 'center', gap: 6, width: '100%',
+                  marginBottom: peerTotalCount > 0 ? 3 : 0,
                 }}>
-                  {taskText}
+                  {/* 課題名 (30%) */}
+                  <div style={{
+                    flex: '0 0 30%', minWidth: 0,
+                    fontSize: '0.72rem', fontWeight: 700,
+                    color: 'rgba(199,210,254,0.85)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {taskText}
+                  </div>
+
+                  {/* 自己評価バー (55%・高さ10px) */}
+                  <div style={{
+                    flex: '0 0 55%', minWidth: 0,
+                    height: 10, borderRadius: 5, overflow: 'hidden',
+                    background: 'rgba(99,102,241,0.1)',
+                    display: 'flex', flexDirection: 'row',
+                  }}>
+                    {totalCount > 0
+                      ? ([5, 4, 3, 2, 1] as const).map(score => {
+                          const pct = (dist[score] / totalCount) * 100;
+                          if (pct <= 0) return null;
+                          return (
+                            <div
+                              key={score}
+                              title={`自己評価${score}: ${dist[score]}回`}
+                              style={{
+                                width: `${pct}%`,
+                                background: SCORE_COLORS[score],
+                                flexShrink: 0,
+                                transition: 'width 0.4s ease',
+                              }}
+                            />
+                          );
+                        })
+                      : <div style={{ width: '100%', background: 'rgba(99,102,241,0.08)', borderRadius: 5 }} />
+                    }
+                  </div>
+
+                  {/* 自己合計ポイント (15%) */}
+                  <div style={{
+                    flex: '0 0 15%', textAlign: 'right',
+                    fontSize: '0.7rem', fontWeight: 700,
+                    color: totalCount > 0 ? '#a5b4fc' : 'rgba(99,102,241,0.25)',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {totalCount > 0 ? `${totalPts} pt` : '—'}
+                  </div>
                 </div>
 
-                {/* 積み上げバー (約55%) */}
-                <div style={{
-                  flex: '0 0 55%',
-                  minWidth: 0,
-                  height: 12,
-                  borderRadius: 6,
-                  overflow: 'hidden',
-                  background: 'rgba(99,102,241,0.1)',
-                  display: 'flex',
-                  flexDirection: 'row',
-                }}>
-                  {totalCount > 0
-                    ? ([5, 4, 3, 2, 1] as const).map(score => {
-                        const pct = (dist[score] / totalCount) * 100;
+                {/* ── 2行目：他者評価（データある場合のみ） ── */}
+                {peerTotalCount > 0 && (
+                  <div style={{
+                    display: 'flex', flexDirection: 'row',
+                    alignItems: 'center', gap: 6, width: '100%',
+                  }}>
+                    {/* 「他者」ラベル (30%) */}
+                    <div style={{
+                      flex: '0 0 30%', minWidth: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                      paddingRight: 4,
+                    }}>
+                      <span style={{
+                        fontSize: '0.58rem', fontWeight: 800,
+                        color: 'rgba(167,139,250,0.5)',
+                        letterSpacing: '0.04em',
+                        background: 'rgba(99,102,241,0.1)',
+                        border: '1px solid rgba(99,102,241,0.2)',
+                        borderRadius: 4,
+                        padding: '1px 5px',
+                      }}>
+                        他者
+                      </span>
+                    </div>
+
+                    {/* 他者評価バー (55%・高さ6px) */}
+                    <div style={{
+                      flex: '0 0 55%', minWidth: 0,
+                      height: 6, borderRadius: 3, overflow: 'hidden',
+                      background: 'rgba(99,102,241,0.08)',
+                      display: 'flex', flexDirection: 'row',
+                    }}>
+                      {([5, 4, 3, 2, 1] as const).map(score => {
+                        const pct = (peerDist[score] / peerTotalCount) * 100;
                         if (pct <= 0) return null;
                         return (
                           <div
                             key={score}
-                            title={`評価${score}: ${dist[score]}回`}
+                            title={`他者評価${score}: ${peerDist[score]}回`}
                             style={{
                               width: `${pct}%`,
                               background: SCORE_COLORS[score],
+                              opacity: 0.75,   // 自己評価より少し薄く（主従を視覚化）
                               flexShrink: 0,
                               transition: 'width 0.4s ease',
                             }}
                           />
                         );
-                      })
-                    : (
-                      // データなし：薄いプレースホルダー
-                      <div style={{
-                        width: '100%',
-                        background: 'rgba(99,102,241,0.08)',
-                        borderRadius: 6,
-                      }} />
-                    )
-                  }
-                </div>
+                      })}
+                    </div>
 
-                {/* 合計ポイント (約15%) */}
-                <div style={{
-                  flex: '0 0 15%',
-                  textAlign: 'right',
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  color: totalCount > 0 ? '#a5b4fc' : 'rgba(99,102,241,0.25)',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {totalCount > 0 ? `${totalPts} pt` : '—'}
-                </div>
+                    {/* 他者合計ポイント (15%) */}
+                    <div style={{
+                      flex: '0 0 15%', textAlign: 'right',
+                      fontSize: '0.65rem', fontWeight: 700,
+                      color: 'rgba(167,139,250,0.5)',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {peerTotalPts} pt
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
