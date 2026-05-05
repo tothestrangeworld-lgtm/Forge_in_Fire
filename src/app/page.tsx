@@ -9,6 +9,7 @@ import {
 } from '@/types';
 import { useDashboardSWR, resetStatus, fetchAchievements } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
+import type { EpithetResult } from '@/lib/epithet';
 import { getAuthUser } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import dynamic from 'next/dynamic';
@@ -27,6 +28,32 @@ const SCORE_COLORS: Record<number, string> = {
   2: '#c7d2fe',
   1: '#e0e7ff',
 };
+
+// =====================================================================
+// ★ Phase9: レア度別カラー
+// =====================================================================
+/**
+ * EpithetMaster の Rarity フラグに応じた文字色を返す
+ *   N  → #2B2B2B（墨黒）
+ *   R  → #2C4F7C（藍鉄色）
+ *   SR → #8B2E2E（深紅）
+ */
+function rarityTextColor(rarity: 'N' | 'R' | 'SR'): string {
+  if (rarity === 'SR') return '#8B2E2E';
+  if (rarity === 'R')  return '#2C4F7C';
+  return '#2B2B2B';
+}
+
+/**
+ * SR レア度のとき追加するインラインスタイル（font-bold + tracking-widest 相当）
+ */
+function rarityExtraStyle(rarity: 'N' | 'R' | 'SR'): React.CSSProperties {
+  if (rarity !== 'SR') return {};
+  return {
+    fontWeight:    800,
+    letterSpacing: '0.18em',
+  };
+}
 
 // =====================================================================
 // メインページ
@@ -72,7 +99,10 @@ export default function DashboardPage() {
   const progressPct   = calcProgressPercent(status.total_xp);
   const nextTitle     = nextTitleLevel(level, tm);
   const color         = levelColor(level);
-  const epithet       = calcEpithet(techniques, em);
+
+  // ★ Phase9: calcEpithet に level と titleMaster を渡す
+  const epithet: EpithetResult = calcEpithet(techniques, em, level, tm);
+
   const realRankLabel = status.real_rank ? status.real_rank : '無段';
 
   // 得意技名（techniqueMaster から解決）
@@ -265,32 +295,96 @@ export default function DashboardPage() {
 
       {/* ── XP + 称号カード ───────────────────────── */}
       <div className="hud-card hud-frame animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-        {/* 名前 + 段位 + 編集ボタン */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: '0.65rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'rgba(199,210,254,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {user?.name ?? '剣士'}
-            </span>
-            <span style={{
-              fontSize: '0.62rem', fontWeight: 800,
-              padding: '0.15rem 0.5rem', borderRadius: 999,
-              background: 'rgba(99,102,241,0.15)',
-              border: '1px solid rgba(129,140,248,0.3)',
-              color: 'rgba(167,139,250,0.8)',
-              whiteSpace: 'nowrap',
+
+        {/* ★ Phase9: 3層称号エリア ─────────────────────────────────── */}
+        {/* 右上：プロフィール編集ボタンを配置（絶対 or flex で右端揃え） */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: '0.75rem' }}>
+
+          {/* 3行の称号テキストブロック */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+
+            {/* 1行目：[Lv.XX] [レベル称号] */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              marginBottom: '0.3rem',
             }}>
-              リアル: {realRankLabel}
-            </span>
+              <span style={{
+                display: 'inline-block',
+                fontSize: '0.65rem', fontWeight: 800,
+                padding: '0.2rem 0.55rem', borderRadius: 999,
+                background: color, color: '#fff',
+                boxShadow: `0 0 8px ${color}66`,
+                whiteSpace: 'nowrap', flexShrink: 0,
+              }}>
+                Lv.{level}
+              </span>
+              <span style={{
+                fontSize: '1.1rem', fontWeight: 800,
+                background: `linear-gradient(135deg, #fff, ${color})`,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                lineHeight: 1.2,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {epithet.levelTitle}
+              </span>
+            </div>
+
+            {/* 2行目："{二つ名}" [ユーザ名] */}
+            {/* 二つ名の文字色は Rarity に従う（データ駆動型）*/}
+            <div style={{
+              display: 'flex', alignItems: 'baseline', gap: 8,
+              marginBottom: '0.25rem', flexWrap: 'wrap',
+            }}>
+              <span style={{
+                fontSize: '1.4rem', lineHeight: 1.2,
+                color: rarityTextColor(epithet.epithetRarity),
+                ...rarityExtraStyle(epithet.epithetRarity),
+              }}>
+                &ldquo;{epithet.epithetName}&rdquo;
+              </span>
+              <span style={{
+                fontSize: '0.95rem', fontWeight: 800,
+                color: 'rgba(199,210,254,0.9)',
+                whiteSpace: 'nowrap',
+              }}>
+                {user?.name ?? '剣士'}
+              </span>
+            </div>
+
+            {/* 3行目：得意部位称号 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                fontSize: '0.72rem', fontWeight: 700,
+                color: 'rgba(167,139,250,0.75)',
+                letterSpacing: '0.05em',
+              }}>
+                {epithet.favoritePartTitle}
+              </span>
+              {/* リアル段位バッジ */}
+              <span style={{
+                fontSize: '0.6rem', fontWeight: 800,
+                padding: '0.12rem 0.45rem', borderRadius: 999,
+                background: 'rgba(99,102,241,0.15)',
+                border: '1px solid rgba(129,140,248,0.3)',
+                color: 'rgba(167,139,250,0.8)',
+                whiteSpace: 'nowrap',
+              }}>
+                {realRankLabel}
+              </span>
+            </div>
           </div>
+
+          {/* プロフィール編集ボタン（右上） */}
           <a
             href="/settings/profile"
             style={{
-              width: 34, height: 34, borderRadius: 12,
+              width: 34, height: 34, borderRadius: 12, flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'rgba(99,102,241,0.1)',
               border: '1px solid rgba(129,140,248,0.25)',
               color: 'rgba(167,139,250,0.8)',
-              textDecoration: 'none', flexShrink: 0,
+              textDecoration: 'none',
               transition: 'all .15s',
             }}
             title="プロフィールを編集"
@@ -299,27 +393,10 @@ export default function DashboardPage() {
           </a>
         </div>
 
-        {/* 二つ名 + 称号 */}
-        <div style={{ marginBottom: '0.85rem' }}>
-          <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'rgba(167,139,250,0.8)', letterSpacing: '0.06em', display: 'block', lineHeight: 1.3 }}>
-            {epithet.name}
-          </span>
-          <span style={{
-            fontSize: '1.75rem', fontWeight: 800, display: 'block', lineHeight: 1.2,
-            background: `linear-gradient(135deg, #fff, ${color})`,
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>
-            {title}
-          </span>
-          <span style={{ fontSize: '0.65rem', color: 'rgba(129,140,248,0.35)', display: 'block', marginTop: 2 }}>
-            {epithet.description}
-          </span>
-        </div>
-
         {/* 座右の銘 */}
         {status.motto?.trim() && (
           <p style={{
-            margin: '-0.25rem 0 0.9rem',
+            margin: '0 0 0.9rem',
             color: 'rgba(199,210,254,0.85)',
             fontWeight: 800, fontSize: '0.9rem',
             letterSpacing: '0.06em',

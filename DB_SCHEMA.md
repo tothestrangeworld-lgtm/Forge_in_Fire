@@ -317,17 +317,23 @@
 ### 3-3. EpithetMaster
 
 **シート名:** `EpithetMaster`
-**役割:** ユーザーに表示する「二つ名」のマスタ。技の傾向によって動的に選択される。全ユーザー共通。
+**役割:** プレイスタイル（技の組み合わせ）等に応じて付与される「二つ名」と、そのレア度を管理するマスタ。
 **定数名:** `SHEET_EPITHET_MASTER`
-**自動作成:** `getEpithetMasterData()` が初回参照時に自動作成し、デフォルト6件を挿入する。
+**自動作成:** `getEpithetMasterData()` が初回参照時に自動作成する。
 
 | 列 | 物理名 | 型 | 制約 | 説明 |
 |---|---|---|---|---|
-| A | `ID` | string/number | PK, NOT NULL | 二つ名ID。例: `E000`（実データ）またはシーケンス整数（デフォルト）。`EpithetMasterEntry.id` に対応 |
-| B | `Category` | string | NOT NULL | 二つ名の発動カテゴリ。`status`（初期状態）/ `actionType`（技種別比率）/ `subCategory`（最多サブカテゴリ）/ `balance`（バランス） |
-| C | `TriggerValue` | string | NOT NULL | 発動条件値。`Category` に応じた文字列。例: `仕掛け技`、`出端技`、`初期`、`バランス` |
-| D | `Name` | string | NOT NULL | 二つ名テキスト（前置詞部分）。例: `怒涛の`、`後の先を極めし` |
-| E | `Description` | string | NULLABLE | 発動条件の説明文。例: `仕掛け技のポイントが7割以上` |
+| `ID` | string | 識別用ID（例: `E001`） |
+| `Category` | string | 判定カテゴリ。現在は `styleCombo` 固定（将来の拡張用） |
+| `TriggerValue` | string | 判定キー。`styleCombo` の場合は、ユーザーの累計獲得ポイント上位3つの技サブカテゴリ名を**五十音順でカンマ区切り**にした文字列（例: `基本,二段打ち,払い技`） |
+| `Name` | string | 二つ名のテキスト（例: `暴君`、`神速`）。※UI表示時は自動でダブルクォーテーションで囲まれる |
+| `Rarity` | string | レア度フラグ。`N` (Normal), `R` (Rare), `SR` (Super Rare) のいずれか。※UIの文字色判定に使用される |
+
+**【Rarityの判定基準（マスタ登録時のルール）】**
+上位3技（TriggerValue）の中に、「抜き技」「摺り上げ技」「返し技」がいくつ含まれるかで決定する。
+- 2つ以上： `SR` (Super Rare / 深紅色)
+- 1つ： `R` (Rare / 藍鉄色)
+- 0個： `N` (Normal / 墨黒色)
 
 ---
 

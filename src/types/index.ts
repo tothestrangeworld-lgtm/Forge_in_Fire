@@ -16,6 +16,10 @@
 // ★ Phase8 Step3-1: getDashboard レスポンスに peerLogs を追加
 //   - PeerLogEntry 型を新設
 //   - DashboardData に peerLogs?: PeerLogEntry[] を追加
+// ★ Phase9: 称号システム刷新（3層構造・DBフラグ参照型レア度判定）
+//   - EpithetMasterEntry に rarity フィールドを追加
+//   - EpithetResult 型を新3層構造（epithetName / epithetRarity /
+//     favoritePartTitle / levelTitle）に全面刷新
 // =====================================================================
 
 export interface LogEntry {
@@ -387,16 +391,34 @@ export interface TechniqueUpdateResponse {
 }
 
 // =====================================================================
-// 二つ名（Epithet）システム
+// 二つ名（Epithet）システム ★ Phase9 刷新
 // =====================================================================
 
-/** EpithetMaster シートの1行 */
+/**
+ * EpithetMaster シートの1行
+ *
+ * DB_SCHEMA.md 列構成: ID, Category, TriggerValue, Name, Rarity
+ *
+ * ★ Phase9: rarity フィールドを追加。
+ *   マスタの Rarity 列（N / R / SR）をフロントエンドが直接参照する
+ *   「データ駆動型レア度判定」を採用。
+ *   コード側でレア度を計算しないため、マスタ編集だけで色・演出が変わる。
+ */
 export interface EpithetMasterEntry {
   id:           string;
   category:     string;
   triggerValue: string;
   name:         string;
   description:  string;
+  /**
+   * ★ Phase9: レア度フラグ。EpithetMaster の Rarity 列をそのまま格納。
+   *   N  → Normal  （墨黒 #2B2B2B）
+   *   R  → Rare    （藍鉄色 #2C4F7C）
+   *   SR → Super Rare（深紅 #8B2E2E + font-bold + tracking-widest）
+   * GAS が EpithetMaster を返す際にこの列もフロントに渡すこと。
+   * 旧マスタには存在しない場合があるため optional としている。
+   */
+  rarity?: 'N' | 'R' | 'SR';
 }
 
 export interface DashboardWithEpithet {
