@@ -525,7 +525,7 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <div style={{ width: 18, height: 10, borderRadius: 3, background: 'rgba(129,140,248,0.5)' }} />
-              <span style={{ fontSize: '0.58rem', color: 'rgba(199,210,254,0.45)', fontWeight: 600 }}>自己</span>
+              <span style={{ fontSize: '0.58rem', color: 'rgba(199,210,254,0.45)', fontWeight: 600 }}>自己評価</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <div style={{ width: 18, height: 6, borderRadius: 2, background: 'rgba(129,140,248,0.35)' }} />
@@ -615,7 +615,7 @@ export default function DashboardPage() {
                         borderRadius: 4,
                         padding: '1px 5px',
                       }}>
-                        他者
+                        剣友評価
                       </span>
                     </div>
 
