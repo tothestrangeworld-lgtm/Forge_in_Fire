@@ -18,8 +18,10 @@
 //   - DashboardData に peerLogs?: PeerLogEntry[] を追加
 // ★ Phase9: 称号システム刷新（3層構造・DBフラグ参照型レア度判定）
 //   - EpithetMasterEntry に rarity フィールドを追加
-//   - EpithetResult 型を新3層構造（epithetName / epithetRarity /
-//     favoritePartTitle / levelTitle）に全面刷新
+//   - EpithetResult 型を新3層構造に全面刷新
+// ★ Phase9.1: 二つ名の由来説明文を追加
+//   - EpithetMasterEntry に description フィールドを追加（GAS列: F列）
+//   - EpithetResult に epithetDescription フィールドを追加
 // =====================================================================
 
 export interface LogEntry {
@@ -122,10 +124,6 @@ export interface DashboardData {
 
 // =====================================================================
 // PeerLogEntry ★ Phase8 Step3-1
-// getDashboard の peerLogs フィールドの1件あたりの型。
-// peer_evaluations シートから target_id === userId の行を抽出し、
-// task_id を item_name（課題テキスト）に JOIN した結果。
-// xp_earned は他者評価ログには存在しないため省略。
 // =====================================================================
 export interface PeerLogEntry {
   date:      string;  // YYYY-MM-DD
@@ -152,48 +150,31 @@ export interface SaveLogResponse {
   total_xp:         number;
   level:            number;
   title:            string;
-  /**
-   * 今回の saveLog で新たに解除されたアチーブメント一覧。
-   * 解除なしの場合は空配列 [] が返る。
-   */
   newAchievements?: Achievement[];
 }
 
 // =====================================================================
-// updateTasks ペイロード
-// ★ Phase4: スマート差分に対応
-//   - id あり: 既存タスクを再アクティブ化（テキスト不変＝IDを維持）
-//   - id なし: 新規タスクとして UUID 発行
+// updateTasks ペイロード ★ Phase4
 // =====================================================================
 export interface TaskDiff {
-  id?:  string;   // 既存タスクの UUID（テキスト変更なしの場合に渡す）
-  text: string;   // タスクテキスト
+  id?:  string;
+  text: string;
 }
 
 // =====================================================================
-// 他者評価 ★ Phase7: 個別課題単位の評価対応
+// 他者評価 ★ Phase7
 // =====================================================================
 
-/**
- * evaluatePeer リクエストの課題単位評価アイテム
- * task_id に対して 1〜5 のスコアを設定する
- */
 export interface PeerEvalItem {
-  taskId: string;  // user_tasks の id（UUID）
-  score:  number;  // 1〜5
+  taskId: string;
+  score:  number;
 }
 
-/**
- * evaluatePeer レスポンス
- * ★ Phase7: 配列評価に対応。evaluated_tasks / skipped_tasks を追加。
- */
 export interface EvaluatePeerResponse {
-  xp_granted:      number;    // 今回付与した合計XP（0 の場合は全スキップ）
-  evaluator_level: number;    // 評価者のアプリ内レベル
-  multiplier:      number;    // 評価者レベル倍率
-  /** 今回新たに評価に成功した task_id 一覧 */
+  xp_granted:      number;
+  evaluator_level: number;
+  multiplier:      number;
   evaluated_tasks: string[];
-  /** 本日すでに評価済みでスキップした task_id 一覧 */
   skipped_tasks:   string[];
 }
 
@@ -207,47 +188,23 @@ export interface GASResponse<T> {
 // アチーブメント（実績バッジ）システム ★ Phase6
 // =====================================================================
 
-/**
- * achievement_master シートの1行（全ユーザー共通マスタ）
- * GAS列構成: achievement_id, name, condition_type, condition_value, description, hint, icon_type
- *
- * condition_type の種類:
- *   - 'streak_days'     : 連続稽古日数 >= condition_value
- *   - 'total_practices' : 累計稽古日数 >= condition_value
- *   （将来拡張: 'total_xp', 'level_reached' など）
- */
 export interface AchievementMasterEntry {
-  id:             string;  // 例: "ACH001"
-  name:           string;  // 例: "初稽古"
-  conditionType:  string;  // 例: "total_practices"
-  conditionValue: number;  // 例: 1
-  description:    string;  // 例: "初めての稽古を記録した"
-  hint:           string;  // 例: "稽古記録を1回つけよう"
-  iconType:       string;  // 例: "first_step"（フロントでアイコン選択に使用）
+  id:             string;
+  name:           string;
+  conditionType:  string;
+  conditionValue: number;
+  description:    string;
+  hint:           string;
+  iconType:       string;
 }
 
-/**
- * フロントエンド向けアチーブメント型。
- * getAchievements API が返す配列の要素。
- * achievement_master と user_achievements を JOIN した結果。
- */
 export interface Achievement {
-  /** achievement_id（例: "ACH001"）*/
   id:          string;
-  /** バッジ名（例: "初稽古"）*/
   name:        string;
-  /** 解除条件の説明（例: "初めての稽古を記録した"）*/
   description: string;
-  /** 未解除時のヒント文（例: "稽古記録を1回つけよう"）*/
   hint:        string;
-  /**
-   * アイコン種別（例: "streak", "milestone", "legendary"）。
-   * フロントエンドでアイコン・カラーを切り替えるためのキー。
-   */
   iconType:    string;
-  /** 解除済みなら true */
   isUnlocked:  boolean;
-  /** 解除日時（YYYY-MM-DD HH:mm:ss）。未解除なら null */
   unlockedAt:  string | null;
 }
 
@@ -350,11 +307,9 @@ export function getPeerMultiplier(level: number): number {
 }
 
 // =====================================================================
-// 技の習熟度（Technique）
-// ★ Phase8: lastQuantity / lastQuality / lastFeedback を追加
+// 技の習熟度（Technique）★ Phase8 拡張
 // =====================================================================
 
-/** user_techniques × technique_master を JOIN した結果の型 */
 export interface Technique {
   id:           string;
   bodyPart:     string;
@@ -363,60 +318,52 @@ export interface Technique {
   name:         string;
   points:       number;
   lastRating:   number;
-  /** ★ Phase8: 直近の量スコア（1〜5）。Phase8以前の行は undefined になる場合がある */
   lastQuantity?: number;
-  /** ★ Phase8: 直近の質スコア（1〜5）。Phase8以前の行は undefined になる場合がある */
   lastQuality?:  number;
-  /** ★ Phase8: 直近の四字熟語フィードバック。Phase8以前の行は undefined になる場合がある */
   lastFeedback?: string;
 }
 
-/**
- * updateTechniqueRating のレスポンス
- * ★ Phase8: earnedPoints / feedback / total_xp / level を追加
- */
 export interface TechniqueUpdateResponse {
-  id:          string;
-  points:      number;
-  /** ★ Phase8: 今回獲得したXP（ceil(量基礎点 × 質倍率)） */
+  id:           string;
+  points:       number;
   earnedPoints: number;
-  /** ★ Phase8: 四字熟語フィードバック（例: "切磋琢磨"） */
   feedback:     string;
-  /** ★ Phase8: 更新後の累計XP */
   total_xp:     number;
-  /** ★ Phase8: 更新後のレベル */
   level:        number;
-  /** Phase7以前との互換性のため残す */
   lastRating:   number;
 }
 
 // =====================================================================
-// 二つ名（Epithet）システム ★ Phase9 刷新
+// 二つ名（Epithet）システム ★ Phase9 刷新 / Phase9.1 description 追加
 // =====================================================================
 
 /**
  * EpithetMaster シートの1行
  *
- * DB_SCHEMA.md 列構成: ID, Category, TriggerValue, Name, Rarity
+ * DB_SCHEMA.md 列構成: A=ID, B=Category, C=TriggerValue, D=Name, E=Rarity, F=Description
  *
- * ★ Phase9: rarity フィールドを追加。
- *   マスタの Rarity 列（N / R / SR）をフロントエンドが直接参照する
- *   「データ駆動型レア度判定」を採用。
- *   コード側でレア度を計算しないため、マスタ編集だけで色・演出が変わる。
+ * ★ Phase9:   rarity フィールドを追加。Rarity列（N/R/SR）をフロントが直接参照する
+ *             「データ駆動型レア度判定」を採用（再デプロイ不要でスタイルが変わる）。
+ * ★ Phase9.1: description フィールドを追加。二つ名の由来説明文。
+ *             GAS が EpithetMaster を返す際に F列もフロントに渡すこと。
+ *             旧マスタには存在しない場合があるため optional。
  */
 export interface EpithetMasterEntry {
   id:           string;
   category:     string;
   triggerValue: string;
   name:         string;
-  description:  string;
   /**
-   * ★ Phase9: レア度フラグ。EpithetMaster の Rarity 列をそのまま格納。
-   *   N  → Normal  （墨黒 #2B2B2B）
-   *   R  → Rare    （藍鉄色 #2C4F7C）
-   *   SR → Super Rare（深紅 #8B2E2E + font-bold + tracking-widest）
-   * GAS が EpithetMaster を返す際にこの列もフロントに渡すこと。
-   * 旧マスタには存在しない場合があるため optional としている。
+   * ★ Phase9.1: 二つ名の由来説明文（例: "捨て身の技を好む剣士に与えられる称号"）。
+   * GAS の EpithetMaster F列。旧マスタには存在しない場合があるため optional。
+   * 空または undefined の場合、calcEpithet() が "まだ見ぬ剣の道を歩む者" にフォールバック。
+   */
+  description?: string;
+  /**
+   * ★ Phase9: レア度フラグ（EpithetMaster の E列）。
+   *   N  → Normal   （墨黒 #2B2B2B）
+   *   R  → Rare     （藍鉄色 #2C4F7C）
+   *   SR → Super Rare（深紅 #8B2E2E + fontWeight:800 + letterSpacing:0.18em）
    */
   rarity?: 'N' | 'R' | 'SR';
 }
@@ -429,10 +376,6 @@ export interface DashboardWithEpithet {
 // ユーティリティ: 得意技IDから技名を解決する
 // =====================================================================
 
-/**
- * 技ID（例: "T001"）を techniqueMaster から検索して技名（例: "出小手"）を返す。
- * 見つからない場合は id をそのまま返す。
- */
 export function resolveTechniqueName(
   id: string | undefined | null,
   master: TechniqueMasterEntry[] | undefined,

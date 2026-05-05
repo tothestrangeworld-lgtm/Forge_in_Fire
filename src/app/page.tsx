@@ -11,7 +11,6 @@ import { useDashboardSWR, resetStatus, fetchAchievements } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import type { EpithetResult } from '@/lib/epithet';
 import { getAuthUser } from '@/lib/auth';
-import { logger } from '@/lib/logger';
 import dynamic from 'next/dynamic';
 
 const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false });
@@ -19,40 +18,162 @@ const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),  
 const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleCharts'), { ssr: false, loading: () => <ChartSkeleton h={180} /> });
 
 // =====================================================================
-// スコア分布バー 色定義（サイバー和風テーマ）
+// スコア分布バー 色定義
 // =====================================================================
 const SCORE_COLORS: Record<number, string> = {
-  5: '#4f46e5',
-  4: '#6366f1',
-  3: '#818cf8',
-  2: '#c7d2fe',
-  1: '#e0e7ff',
+  5: '#4f46e5', 4: '#6366f1', 3: '#818cf8', 2: '#c7d2fe', 1: '#e0e7ff',
 };
 
 // =====================================================================
-// ★ Phase9: レア度別カラー
+// ★ Phase9: レア度別カラー・スタイル
 // =====================================================================
-/**
- * EpithetMaster の Rarity フラグに応じた文字色を返す
- *   N  → #2B2B2B（墨黒）
- *   R  → #2C4F7C（藍鉄色）
- *   SR → #8B2E2E（深紅）
- */
 function rarityTextColor(rarity: 'N' | 'R' | 'SR'): string {
   if (rarity === 'SR') return '#8B2E2E';
   if (rarity === 'R')  return '#2C4F7C';
   return '#2B2B2B';
 }
 
-/**
- * SR レア度のとき追加するインラインスタイル（font-bold + tracking-widest 相当）
- */
 function rarityExtraStyle(rarity: 'N' | 'R' | 'SR'): React.CSSProperties {
   if (rarity !== 'SR') return {};
-  return {
-    fontWeight:    800,
-    letterSpacing: '0.18em',
-  };
+  return { fontWeight: 800, letterSpacing: '0.18em' };
+}
+
+// =====================================================================
+// ★ Phase9.1: 二つ名インライントグル（EpithetDescriptionTooltip）
+// =====================================================================
+interface EpithetNameButtonProps {
+  epithet: EpithetResult;
+}
+
+function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
+  const [open, setOpen] = useState(false);
+
+  // レア度に応じたアクセントカラー（吹き出し枠色に使用）
+  const accentColor =
+    epithet.epithetRarity === 'SR' ? 'rgba(139,46,46,0.5)'  :
+    epithet.epithetRarity === 'R'  ? 'rgba(44,79,124,0.5)'  :
+    'rgba(99,102,241,0.3)';
+  const accentBg =
+    epithet.epithetRarity === 'SR' ? 'rgba(139,46,46,0.08)' :
+    epithet.epithetRarity === 'R'  ? 'rgba(44,79,124,0.08)' :
+    'rgba(99,102,241,0.06)';
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      {/* タップ可能な二つ名テキスト */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          background: 'none', border: 'none', padding: 0,
+          cursor: 'pointer', fontFamily: 'inherit',
+          fontSize: '1.4rem', lineHeight: 1.2,
+          color: rarityTextColor(epithet.epithetRarity),
+          ...rarityExtraStyle(epithet.epithetRarity),
+          // タップフィードバック用の下線（点線）
+          borderBottom: `1.5px dotted ${rarityTextColor(epithet.epithetRarity)}`,
+          textDecorationStyle: 'dotted',
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+        }}
+        aria-expanded={open}
+        title="二つ名の由来を見る"
+      >
+        &ldquo;{epithet.epithetName}&rdquo;
+        {/* 小さな▼インジケーター */}
+        <span style={{
+          fontSize: '0.55rem',
+          opacity: 0.6,
+          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s ease',
+          display: 'inline-block',
+          lineHeight: 1,
+          marginBottom: '-0.1em',
+        }}>
+          ▼
+        </span>
+      </button>
+
+      {/* インライン吹き出し（open 時のみ表示） */}
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            left: 0,
+            zIndex: 50,
+            minWidth: 200,
+            maxWidth: 280,
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: accentBg,
+            border: `1px solid ${accentColor}`,
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            boxShadow: `0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px ${accentColor}`,
+            // 吹き出し小三角
+            // (疑似要素は inline style では使えないため、before要素は省略し
+            //  上辺に小三角をdivで代替)
+          }}
+        >
+          {/* 小三角（吹き出しの尻尾） */}
+          <div style={{
+            position: 'absolute',
+            top: -7, left: 16,
+            width: 12, height: 7,
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              width: 10, height: 10,
+              background: accentBg,
+              border: `1px solid ${accentColor}`,
+              transform: 'rotate(45deg)',
+              transformOrigin: 'bottom left',
+              marginTop: 2, marginLeft: 1,
+            }} />
+          </div>
+
+          {/* ラベル */}
+          <p style={{
+            margin: '0 0 5px',
+            fontSize: '0.6rem', fontWeight: 800,
+            letterSpacing: '0.08em',
+            color: rarityTextColor(epithet.epithetRarity),
+            opacity: 0.75,
+          }}>
+            【由来】
+          </p>
+
+          {/* 説明文 */}
+          <p style={{
+            margin: 0,
+            fontSize: '0.78rem', fontWeight: 700,
+            color: 'rgba(199,210,254,0.9)',
+            lineHeight: 1.6,
+            wordBreak: 'break-all',
+          }}>
+            {epithet.epithetDescription}
+          </p>
+
+          {/* 閉じるボタン */}
+          <button
+            onClick={() => setOpen(false)}
+            style={{
+              marginTop: 8,
+              display: 'block', width: '100%',
+              padding: '4px 0',
+              background: 'none', border: 'none',
+              cursor: 'pointer', fontFamily: 'inherit',
+              fontSize: '0.62rem', fontWeight: 700,
+              color: 'rgba(129,140,248,0.5)',
+              textAlign: 'right',
+              letterSpacing: '0.05em',
+            }}
+          >
+            閉じる ✕
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // =====================================================================
@@ -64,18 +185,15 @@ export default function DashboardPage() {
   const [achiev, setAchiev]       = useState<{ unlocked: number; total: number } | null>(null);
   const user = getAuthUser();
 
-  // ── SWR でダッシュボード + 技データを取得 ──────────────────────────
   const { data: swrData, error: swrError, isLoading, mutate } = useDashboardSWR();
 
   const data       = swrData?.dashboard ?? null;
   const techniques = swrData?.techniques ?? [];
 
-  // AUTH_REQUIRED はリダイレクト任せにし、それ以外をエラー表示
   const error = swrError instanceof Error && swrError.message !== 'AUTH_REQUIRED'
     ? swrError.message
     : null;
 
-  // ── 実績カウントを非同期取得 ────────────────────────────────────────
   useEffect(() => {
     fetchAchievements()
       .then((list: Achievement[]) =>
@@ -88,28 +206,25 @@ export default function DashboardPage() {
   if (error)     return <ErrorState message={error} />;
   if (!data)     return null;
 
-  // ── データ展開 ──
   const { status, logs, decay, xpHistory, tasks } = data;
-  const tm            = data.titleMaster;
-  const em            = data.epithetMaster ?? [] as EpithetMasterEntry[];
-  const techMaster    = data.techniqueMaster ?? [];
-  const level         = calcLevelFromXp(status.total_xp);
-  const title         = titleForLevel(level, tm);
-  const nextLv        = calcNextLevel(status.total_xp, tm);
-  const progressPct   = calcProgressPercent(status.total_xp);
-  const nextTitle     = nextTitleLevel(level, tm);
-  const color         = levelColor(level);
+  const tm          = data.titleMaster;
+  const em          = data.epithetMaster ?? [] as EpithetMasterEntry[];
+  const techMaster  = data.techniqueMaster ?? [];
+  const level       = calcLevelFromXp(status.total_xp);
+  const nextLv      = calcNextLevel(status.total_xp, tm);
+  const progressPct = calcProgressPercent(status.total_xp);
+  const nextTitle   = nextTitleLevel(level, tm);
+  const color       = levelColor(level);
+  const title       = titleForLevel(level, tm);
 
   // ★ Phase9: calcEpithet に level と titleMaster を渡す
   const epithet: EpithetResult = calcEpithet(techniques, em, level, tm);
 
   const realRankLabel = status.real_rank ? status.real_rank : '無段';
-
-  // 得意技名（techniqueMaster から解決）
-  const favTechName = resolveTechniqueName(status.favorite_technique, techMaster);
+  const favTechName   = resolveTechniqueName(status.favorite_technique, techMaster);
 
   // 統計
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today  = new Date(); today.setHours(0,0,0,0);
   const dow    = today.getDay();
   const monday = new Date(today); monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
@@ -124,56 +239,33 @@ export default function DashboardPage() {
   const avgScore      = logs.length > 0
     ? (logs.reduce((a, b) => a + b.score, 0) / logs.length).toFixed(1) : '—';
 
-  // 課題
   const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
-
-  // 他者評価ログ（Phase8 Step3-1 で追加）
   const peerLogs = data.peerLogs ?? [];
 
-  // ── 課題別 評価スコア分布（ダブルバー）計算 ────────────────────────
-  // 直近50回の自己ログ・他者ログから、課題ごとに評価1〜5の分布と合計ポイントを集計
   const scoreDistData = activeTasks.map(t => {
-    // 自己評価
-    const selfDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    let selfTotalPts   = 0;
-    let selfTotalCount = 0;
+    const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
+    let selfTotalPts = 0, selfTotalCount = 0;
     (logs ?? []).slice(-50).forEach(l => {
       if (l.item_name === t.task_text) {
         const s = l.score as number;
         if (s >= 1 && s <= 5) selfDist[s] = (selfDist[s] ?? 0) + 1;
-        selfTotalPts += s;
-        selfTotalCount++;
+        selfTotalPts += s; selfTotalCount++;
       }
     });
-
-    // 他者評価
-    const peerDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    let peerTotalPts   = 0;
-    let peerTotalCount = 0;
+    const peerDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
+    let peerTotalPts = 0, peerTotalCount = 0;
     peerLogs.slice(-50).forEach(l => {
       if (l.item_name === t.task_text) {
         const s = l.score as number;
         if (s >= 1 && s <= 5) peerDist[s] = (peerDist[s] ?? 0) + 1;
-        peerTotalPts += s;
-        peerTotalCount++;
+        peerTotalPts += s; peerTotalCount++;
       }
     });
-
-    return {
-      taskText:       t.task_text,
-      // 自己評価
-      dist:           selfDist,
-      totalPts:       selfTotalPts,
-      totalCount:     selfTotalCount,
-      // 他者評価
-      peerDist,
-      peerTotalPts,
-      peerTotalCount,
-    };
+    return { taskText: t.task_text, dist: selfDist, totalPts: selfTotalPts, totalCount: selfTotalCount,
+             peerDist, peerTotalPts, peerTotalCount };
   });
   const hasScoreData = scoreDistData.some(d => d.totalCount > 0 || d.peerTotalCount > 0);
 
-  // 減衰
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
   const decayPerDay  = decay?.today_penalty ?? 0;
   const appliedToday = decay?.applied ?? 0;
@@ -181,20 +273,14 @@ export default function DashboardPage() {
   async function handleReset() {
     if (!confirm('レベルとXPをリセットします。稽古ログは残ります。よろしいですか？')) return;
     setReset(true);
-    try {
-      await resetStatus();
-      // SWR キャッシュを破棄して最新データを再取得
-      await mutate();
-    } finally {
-      setReset(false);
-      setShowReset(false);
-    }
+    try { await resetStatus(); await mutate(); }
+    finally { setReset(false); setShowReset(false); }
   }
 
   return (
     <div className="animate-fade-up" style={{ padding: '1.5rem 1rem 0' }}>
 
-      {/* ── ヘッダー ───────────────────────── */}
+      {/* ── ヘッダー ──────────────────────────────────────────────── */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
         <div>
           <span className="section-title">稽古記録アプリ</span>
@@ -219,41 +305,28 @@ export default function DashboardPage() {
 
       {/* リセットパネル */}
       {showReset && (
-        <div className="hud-card animate-fade-up" style={{
-          marginBottom: '0.75rem',
-          border: '1px solid rgba(239,68,68,0.3)',
-        }}>
+        <div className="hud-card animate-fade-up" style={{ marginBottom: '0.75rem', border: '1px solid rgba(239,68,68,0.3)' }}>
           <p style={{ fontWeight: 700, color: '#f87171', fontSize: '0.85rem', margin: '0 0 6px' }}>⚠️ レベルリセット</p>
           <p style={{ fontSize: '0.75rem', color: 'rgba(129,140,248,0.5)', margin: '0 0 12px' }}>
             XP・レベル・称号を初期値に戻します。稽古ログは削除されません。
           </p>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => setShowReset(false)}
-              style={{
-                flex: 1, padding: '8px', borderRadius: 8,
-                border: '1px solid rgba(99,102,241,0.2)',
-                background: 'rgba(15,14,42,0.6)',
-                cursor: 'pointer', fontSize: '0.8rem',
-                fontFamily: 'inherit', fontWeight: 600,
-                color: 'rgba(129,140,248,0.6)',
-              }}
-            >
-              キャンセル
-            </button>
-            <button
-              onClick={handleReset}
-              disabled={resetting}
-              style={{
-                flex: 1, padding: '8px', borderRadius: 8,
-                border: '1px solid rgba(239,68,68,0.4)',
-                background: 'rgba(239,68,68,0.15)',
-                color: '#f87171',
-                cursor: 'pointer', fontSize: '0.8rem',
-                fontFamily: 'inherit', fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}
-            >
+            <button onClick={() => setShowReset(false)} style={{
+              flex: 1, padding: '8px', borderRadius: 8,
+              border: '1px solid rgba(99,102,241,0.2)',
+              background: 'rgba(15,14,42,0.6)',
+              cursor: 'pointer', fontSize: '0.8rem',
+              fontFamily: 'inherit', fontWeight: 600,
+              color: 'rgba(129,140,248,0.6)',
+            }}>キャンセル</button>
+            <button onClick={handleReset} disabled={resetting} style={{
+              flex: 1, padding: '8px', borderRadius: 8,
+              border: '1px solid rgba(239,68,68,0.4)',
+              background: 'rgba(239,68,68,0.15)',
+              color: '#f87171', cursor: 'pointer', fontSize: '0.8rem',
+              fontFamily: 'inherit', fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}>
               {resetting
                 ? <Loader2 style={{ width: 14, height: 14, animation: 'spin .8s linear infinite' }} />
                 : 'リセットする'}
@@ -267,9 +340,7 @@ export default function DashboardPage() {
       {isDecaying && (
         <div className="animate-fade-up" style={{
           marginBottom: '0.75rem', borderRadius: 14,
-          background: decayPerDay >= 100
-            ? 'rgba(239,68,68,0.08)'
-            : 'rgba(251,191,36,0.07)',
+          background: decayPerDay >= 100 ? 'rgba(239,68,68,0.08)' : 'rgba(251,191,36,0.07)',
           border: `1.5px solid ${decayPerDay >= 100 ? 'rgba(239,68,68,0.3)' : 'rgba(251,191,36,0.25)'}`,
           padding: '0.75rem 1rem',
           display: 'flex', alignItems: 'center', gap: 10,
@@ -293,21 +364,17 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── XP + 称号カード ───────────────────────── */}
+      {/* ── XP + 称号カード ──────────────────────────────────────── */}
       <div className="hud-card hud-frame animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
 
-        {/* ★ Phase9: 3層称号エリア ─────────────────────────────────── */}
-        {/* 右上：プロフィール編集ボタンを配置（絶対 or flex で右端揃え） */}
+        {/* ★ Phase9: 3層称号エリア */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: '0.75rem' }}>
 
           {/* 3行の称号テキストブロック */}
           <div style={{ flex: 1, minWidth: 0 }}>
 
             {/* 1行目：[Lv.XX] [レベル称号] */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              marginBottom: '0.3rem',
-            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.3rem' }}>
               <span style={{
                 display: 'inline-block',
                 fontSize: '0.65rem', fontWeight: 800,
@@ -330,19 +397,15 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            {/* 2行目："{二つ名}" [ユーザ名] */}
-            {/* 二つ名の文字色は Rarity に従う（データ駆動型）*/}
+            {/* 2行目："{二つ名}"（タップで由来トグル）+ ユーザー名 */}
+            {/* ★ Phase9.1: EpithetNameButton コンポーネントで由来トグル */}
             <div style={{
               display: 'flex', alignItems: 'baseline', gap: 8,
               marginBottom: '0.25rem', flexWrap: 'wrap',
+              // 吹き出しがオーバーフローしないよう position: relative を保持
+              position: 'relative',
             }}>
-              <span style={{
-                fontSize: '1.4rem', lineHeight: 1.2,
-                color: rarityTextColor(epithet.epithetRarity),
-                ...rarityExtraStyle(epithet.epithetRarity),
-              }}>
-                &ldquo;{epithet.epithetName}&rdquo;
-              </span>
+              <EpithetNameButton epithet={epithet} />
               <span style={{
                 fontSize: '0.95rem', fontWeight: 800,
                 color: 'rgba(199,210,254,0.9)',
@@ -352,16 +415,11 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            {/* 3行目：得意部位称号 */}
+            {/* 3行目：得意部位称号 + リアル段位バッジ */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{
-                fontSize: '0.72rem', fontWeight: 700,
-                color: 'rgba(167,139,250,0.75)',
-                letterSpacing: '0.05em',
-              }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(167,139,250,0.75)', letterSpacing: '0.05em' }}>
                 {epithet.favoritePartTitle}
               </span>
-              {/* リアル段位バッジ */}
               <span style={{
                 fontSize: '0.6rem', fontWeight: 800,
                 padding: '0.12rem 0.45rem', borderRadius: 999,
@@ -376,19 +434,14 @@ export default function DashboardPage() {
           </div>
 
           {/* プロフィール編集ボタン（右上） */}
-          <a
-            href="/settings/profile"
-            style={{
-              width: 34, height: 34, borderRadius: 12, flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(99,102,241,0.1)',
-              border: '1px solid rgba(129,140,248,0.25)',
-              color: 'rgba(167,139,250,0.8)',
-              textDecoration: 'none',
-              transition: 'all .15s',
-            }}
-            title="プロフィールを編集"
-          >
+          <a href="/settings/profile" style={{
+            width: 34, height: 34, borderRadius: 12, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(99,102,241,0.1)',
+            border: '1px solid rgba(129,140,248,0.25)',
+            color: 'rgba(167,139,250,0.8)',
+            textDecoration: 'none',
+          }} title="プロフィールを編集">
             <UserRoundPen style={{ width: 16, height: 16 }} />
           </a>
         </div>
@@ -406,10 +459,8 @@ export default function DashboardPage() {
           </p>
         )}
 
-        {/* ── 得意技バッジ + 実績バッジ ─────────────────────────── */}
+        {/* 得意技バッジ + 実績バッジ */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: '0.75rem', alignItems: 'center' }}>
-
-          {/* 得意技バッジ */}
           {favTechName && (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -419,37 +470,23 @@ export default function DashboardPage() {
               boxShadow: '0 0 8px rgba(251,191,36,0.1)',
             }}>
               <span style={{ fontSize: 12, filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.8))' }}>★</span>
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.7)', letterSpacing: '0.06em' }}>
-                得意技
-              </span>
-              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fde68a' }}>
-                {favTechName}
-              </span>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.7)', letterSpacing: '0.06em' }}>得意技</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fde68a' }}>{favTechName}</span>
             </div>
           )}
-
-          {/* 実績バッジ（/achievements への導線） */}
-          <a
-            href="/achievements"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 12px', borderRadius: 999,
-              background: 'rgba(79,70,229,0.08)',
-              border: '1px solid rgba(99,102,241,0.28)',
-              textDecoration: 'none',
-              transition: 'border-color .15s, background .15s',
-            }}
-            title="実績一覧を見る"
-          >
+          <a href="/achievements" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 12px', borderRadius: 999,
+            background: 'rgba(79,70,229,0.08)',
+            border: '1px solid rgba(99,102,241,0.28)',
+            textDecoration: 'none',
+          }} title="実績一覧を見る">
             <span style={{ fontSize: 11 }}>🏆</span>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(167,139,250,0.65)', letterSpacing: '0.05em' }}>
-              実績
-            </span>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(167,139,250,0.65)', letterSpacing: '0.05em' }}>実績</span>
             <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#a5b4fc' }}>
               {achiev ? `${achiev.unlocked}/${achiev.total}` : '…'}
             </span>
           </a>
-
         </div>
 
         {/* XP表示 */}
@@ -467,9 +504,7 @@ export default function DashboardPage() {
               padding: '0.2rem 0.65rem', borderRadius: 999,
               background: color, color: '#fff',
               boxShadow: `0 0 8px ${color}66`,
-            }}>
-              {title}
-            </span>
+            }}>{title}</span>
             <p style={{ fontSize: '0.65rem', color: 'rgba(129,140,248,0.35)', marginTop: 3 }}>Lv.{level}</p>
           </div>
         </div>
@@ -503,21 +538,17 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── HUDカウンター群 ───────────────────── */}
+      {/* ── HUDカウンター群 ───────────────────────────────────────── */}
       <div className="hud-card hud-scanline animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">STATS</span>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
           {[
-            { value: String(streak),        unit: '日',  label: 'STREAK',    variant: streak >= 7 ? 'gold' : '' },
-            { value: String(thisWeek),      unit: '回',  label: 'THIS WEEK', variant: 'cyan' },
-            { value: String(totalSessions), unit: '回',  label: 'TOTAL',     variant: '' },
-            { value: String(avgScore),      unit: '',    label: 'AVG SCORE', variant: '' },
+            { value: String(streak),        unit: '日', label: 'STREAK',    variant: streak >= 7 ? 'gold' : '' },
+            { value: String(thisWeek),      unit: '回', label: 'THIS WEEK', variant: 'cyan' },
+            { value: String(totalSessions), unit: '回', label: 'TOTAL',     variant: '' },
+            { value: String(avgScore),      unit: '',   label: 'AVG SCORE', variant: '' },
           ].map(({ value, unit, label, variant }) => (
-            <div key={label} style={{
-              padding: '10px 4px',
-              textAlign: 'center',
-              borderRight: '1px solid rgba(99,102,241,0.1)',
-            }}>
+            <div key={label} style={{ padding: '10px 4px', textAlign: 'center', borderRight: '1px solid rgba(99,102,241,0.1)' }}>
               <div className={`hud-counter-value ${variant}`} style={{ fontSize: '1.4rem' }}>
                 {value}
                 {unit && <span style={{ fontSize: '0.65rem', marginLeft: 1, opacity: 0.7 }}>{unit}</span>}
@@ -526,13 +557,9 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
-
-        {/* 減衰ペナルティ表示 */}
         {isDecaying && (
           <div style={{
-            marginTop: 10,
-            padding: '6px 10px',
-            borderRadius: 8,
+            marginTop: 10, padding: '6px 10px', borderRadius: 8,
             background: 'rgba(239,68,68,0.08)',
             border: '1px solid rgba(239,68,68,0.2)',
             display: 'flex', alignItems: 'center', gap: 6,
@@ -545,7 +572,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── 現在の評価項目 ───────────────────────── */}
+      {/* ── 現在の評価項目 ───────────────────────────────────────── */}
       <div className="hud-card animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
           <div>
@@ -554,22 +581,15 @@ export default function DashboardPage() {
               稽古記録で毎日1〜5評価する課題。
             </p>
           </div>
-          <a
-            href="/settings/tasks"
-            style={{
-              padding: '0.45rem 0.7rem', fontSize: '0.72rem', borderRadius: 10,
-              border: '1px solid rgba(129,140,248,0.3)',
-              color: 'rgba(167,139,250,0.7)',
-              background: 'rgba(99,102,241,0.08)',
-              textDecoration: 'none', flexShrink: 0,
-              fontWeight: 700, fontFamily: 'inherit',
-            }}
-            title="評価項目を編集"
-          >
-            課題を編集する
-          </a>
+          <a href="/settings/tasks" style={{
+            padding: '0.45rem 0.7rem', fontSize: '0.72rem', borderRadius: 10,
+            border: '1px solid rgba(129,140,248,0.3)',
+            color: 'rgba(167,139,250,0.7)',
+            background: 'rgba(99,102,241,0.08)',
+            textDecoration: 'none', flexShrink: 0,
+            fontWeight: 700, fontFamily: 'inherit',
+          }} title="評価項目を編集">課題を編集する</a>
         </div>
-
         {activeTasks.length > 0 ? (
           <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {activeTasks.map(t => (
@@ -585,14 +605,11 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── スキルグリッド ── */}
+      {/* ── スキルグリッド ──────────────────────────────────────── */}
       <div className="animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">スキルグリッド</span>
         {techniques.length > 0 ? (
-          <SkillGrid
-            techniques={techniques}
-            signatureTechId={status.favorite_technique ?? undefined}
-          />
+          <SkillGrid techniques={techniques} signatureTechId={status.favorite_technique ?? undefined} />
         ) : (
           <div style={{
             padding: '2rem 1rem', textAlign: 'center',
@@ -609,33 +626,24 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* ── XP推移 ───────────────────────────────── */}
+      {/* ── XP推移 ─────────────────────────────────────────────── */}
       <div className="hud-card animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">XP推移</span>
         <XPTimelineChart xpHistory={xpHistory} compact={true} />
       </div>
 
-      {/* ── 課題別 評価スコア分布（ダブルバー）───── */}
+      {/* ── 課題別 評価スコア分布（ダブルバー）─────────────────── */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">課題別 評価スコア分布（直近50回）</span>
-
-        {/* 凡例 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-          {/* スコア色凡例 */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {([5, 4, 3, 2, 1] as const).map(n => (
+            {([5,4,3,2,1] as const).map(n => (
               <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: 2,
-                  background: SCORE_COLORS[n], flexShrink: 0,
-                }} />
-                <span style={{ fontSize: '0.6rem', color: 'rgba(199,210,254,0.5)', fontWeight: 600 }}>
-                  {n}
-                </span>
+                <div style={{ width: 8, height: 8, borderRadius: 2, background: SCORE_COLORS[n], flexShrink: 0 }} />
+                <span style={{ fontSize: '0.6rem', color: 'rgba(199,210,254,0.5)', fontWeight: 600 }}>{n}</span>
               </div>
             ))}
           </div>
-          {/* バー太さ凡例 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <div style={{ width: 18, height: 10, borderRadius: 3, background: 'rgba(129,140,248,0.5)' }} />
@@ -647,125 +655,42 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-
         {hasScoreData ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {scoreDistData.map(({ taskText, dist, totalPts, totalCount, peerDist, peerTotalPts, peerTotalCount }) => (
               <div key={taskText} style={{ width: '100%' }}>
-
-                {/* ── 1行目：自己評価 ── */}
-                <div style={{
-                  display: 'flex', flexDirection: 'row',
-                  alignItems: 'center', gap: 6, width: '100%',
-                  marginBottom: peerTotalCount > 0 ? 3 : 0,
-                }}>
-                  {/* 課題名 (30%) */}
-                  <div style={{
-                    flex: '0 0 30%', minWidth: 0,
-                    fontSize: '0.72rem', fontWeight: 700,
-                    color: 'rgba(199,210,254,0.85)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
+                {/* 自己評価行 */}
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6, width: '100%', marginBottom: peerTotalCount > 0 ? 3 : 0 }}>
+                  <div style={{ flex: '0 0 30%', minWidth: 0, fontSize: '0.72rem', fontWeight: 700, color: 'rgba(199,210,254,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {taskText}
                   </div>
-
-                  {/* 自己評価バー (55%・高さ10px) */}
-                  <div style={{
-                    flex: '0 0 55%', minWidth: 0,
-                    height: 10, borderRadius: 5, overflow: 'hidden',
-                    background: 'rgba(99,102,241,0.1)',
-                    display: 'flex', flexDirection: 'row',
-                  }}>
+                  <div style={{ flex: '0 0 55%', minWidth: 0, height: 10, borderRadius: 5, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', display: 'flex', flexDirection: 'row' }}>
                     {totalCount > 0
-                      ? ([5, 4, 3, 2, 1] as const).map(score => {
+                      ? ([5,4,3,2,1] as const).map(score => {
                           const pct = (dist[score] / totalCount) * 100;
                           if (pct <= 0) return null;
-                          return (
-                            <div
-                              key={score}
-                              title={`自己評価${score}: ${dist[score]}回`}
-                              style={{
-                                width: `${pct}%`,
-                                background: SCORE_COLORS[score],
-                                flexShrink: 0,
-                                transition: 'width 0.4s ease',
-                              }}
-                            />
-                          );
+                          return <div key={score} title={`自己評価${score}: ${dist[score]}回`} style={{ width: `${pct}%`, background: SCORE_COLORS[score], flexShrink: 0 }} />;
                         })
-                      : <div style={{ width: '100%', background: 'rgba(99,102,241,0.08)', borderRadius: 5 }} />
-                    }
+                      : <div style={{ width: '100%', background: 'rgba(99,102,241,0.08)', borderRadius: 5 }} />}
                   </div>
-
-                  {/* 自己合計ポイント (15%) */}
-                  <div style={{
-                    flex: '0 0 15%', textAlign: 'right',
-                    fontSize: '0.7rem', fontWeight: 700,
-                    color: totalCount > 0 ? '#a5b4fc' : 'rgba(99,102,241,0.25)',
-                    whiteSpace: 'nowrap',
-                  }}>
+                  <div style={{ flex: '0 0 15%', textAlign: 'right', fontSize: '0.7rem', fontWeight: 700, color: totalCount > 0 ? '#a5b4fc' : 'rgba(99,102,241,0.25)', whiteSpace: 'nowrap' }}>
                     {totalCount > 0 ? `${totalPts} pt` : '—'}
                   </div>
                 </div>
-
-                {/* ── 2行目：他者評価（データある場合のみ） ── */}
+                {/* 他者評価行 */}
                 {peerTotalCount > 0 && (
-                  <div style={{
-                    display: 'flex', flexDirection: 'row',
-                    alignItems: 'center', gap: 6, width: '100%',
-                  }}>
-                    {/* 「他者」ラベル (30%) */}
-                    <div style={{
-                      flex: '0 0 30%', minWidth: 0,
-                      display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-                      paddingRight: 4,
-                    }}>
-                      <span style={{
-                        fontSize: '0.58rem', fontWeight: 800,
-                        color: 'rgba(167,139,250,0.5)',
-                        letterSpacing: '0.04em',
-                        background: 'rgba(99,102,241,0.1)',
-                        border: '1px solid rgba(99,102,241,0.2)',
-                        borderRadius: 4,
-                        padding: '1px 5px',
-                      }}>
-                        剣友評価
-                      </span>
+                  <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6, width: '100%' }}>
+                    <div style={{ flex: '0 0 30%', minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4 }}>
+                      <span style={{ fontSize: '0.58rem', fontWeight: 800, color: 'rgba(167,139,250,0.5)', letterSpacing: '0.04em', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 4, padding: '1px 5px' }}>剣友評価</span>
                     </div>
-
-                    {/* 他者評価バー (55%・高さ6px) */}
-                    <div style={{
-                      flex: '0 0 55%', minWidth: 0,
-                      height: 6, borderRadius: 3, overflow: 'hidden',
-                      background: 'rgba(99,102,241,0.08)',
-                      display: 'flex', flexDirection: 'row',
-                    }}>
-                      {([5, 4, 3, 2, 1] as const).map(score => {
+                    <div style={{ flex: '0 0 55%', minWidth: 0, height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(99,102,241,0.08)', display: 'flex', flexDirection: 'row' }}>
+                      {([5,4,3,2,1] as const).map(score => {
                         const pct = (peerDist[score] / peerTotalCount) * 100;
                         if (pct <= 0) return null;
-                        return (
-                          <div
-                            key={score}
-                            title={`他者評価${score}: ${peerDist[score]}回`}
-                            style={{
-                              width: `${pct}%`,
-                              background: SCORE_COLORS[score],
-                              opacity: 0.75,   // 自己評価より少し薄く（主従を視覚化）
-                              flexShrink: 0,
-                              transition: 'width 0.4s ease',
-                            }}
-                          />
-                        );
+                        return <div key={score} title={`他者評価${score}: ${peerDist[score]}回`} style={{ width: `${pct}%`, background: SCORE_COLORS[score], opacity: 0.75, flexShrink: 0 }} />;
                       })}
                     </div>
-
-                    {/* 他者合計ポイント (15%) */}
-                    <div style={{
-                      flex: '0 0 15%', textAlign: 'right',
-                      fontSize: '0.65rem', fontWeight: 700,
-                      color: 'rgba(167,139,250,0.5)',
-                      whiteSpace: 'nowrap',
-                    }}>
+                    <div style={{ flex: '0 0 15%', textAlign: 'right', fontSize: '0.65rem', fontWeight: 700, color: 'rgba(167,139,250,0.5)', whiteSpace: 'nowrap' }}>
                       {peerTotalPts} pt
                     </div>
                   </div>
@@ -780,7 +705,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── プレイスタイル分析 ───────────────────── */}
+      {/* ── プレイスタイル分析 ────────────────────────────────── */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">プレイスタイル分析</span>
@@ -809,17 +734,8 @@ function calcStreak(dates: string[]): number {
   return streak;
 }
 
-// =====================================================================
-// ローディング・エラー・スケルトン
-// =====================================================================
 function ChartSkeleton({ h }: { h: number }) {
-  return (
-    <div style={{
-      height: h, borderRadius: 16,
-      background: 'rgba(99,102,241,0.06)',
-      border: '1px solid rgba(99,102,241,0.08)',
-    }} />
-  );
+  return <div style={{ height: h, borderRadius: 16, background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.08)' }} />;
 }
 
 function DashboardSkeleton() {
@@ -833,12 +749,7 @@ function DashboardSkeleton() {
           animation: `pulse 1.8s ${i * 0.1}s ease-in-out infinite`,
         }} />
       ))}
-      <style>{`
-        @keyframes pulse {
-          0%,100%{ opacity:0.6; }
-          50%    { opacity:1;   }
-        }
-      `}</style>
+      <style>{`@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}`}</style>
     </div>
   );
 }

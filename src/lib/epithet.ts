@@ -1,16 +1,17 @@
 // =====================================================================
 // 百錬自得 - 二つ名（Epithet）判定ロジック
 // ★ Phase9: 称号システム刷新（3層構造・DBフラグ参照型レア度判定）
+// ★ Phase9.1: epithetDescription を返却値に追加（由来のインライントグル表示用）
 //
 // 【3層構造】
-//   Layer 1 - 二つ名:       EpithetMaster (styleCombo) のマスタから Name / Rarity を取得
+//   Layer 1 - 二つ名:       EpithetMaster (styleCombo) の Name / Rarity / Description を取得
 //   Layer 2 - 得意部位称号: 面・小手・胴・突きの累計ポイントに応じた称号
 //   Layer 3 - レベル称号:   title_master から titleForLevel() で取得
 //
 // 【設計方針】
 //   レア度の判定はコードで行わず、EpithetMaster の Rarity 列（N/R/SR）を
 //   そのまま参照する「データ駆動型設計」を採用。
-//   マスタデータを変更するだけでレア度が変わる（再デプロイ不要）。
+//   Description も同様にマスタから取得し、UIのトグル表示（由来説明）に使用する。
 // =====================================================================
 
 import type { Technique, EpithetMasterEntry, TitleMasterEntry } from '@/types';
@@ -27,9 +28,16 @@ export interface EpithetResult {
    * UIの文字色判定に使用:
    *   N  → #2B2B2B（墨黒）
    *   R  → #2C4F7C（藍鉄色）
-   *   SR → #8B2E2E（深紅）+ font-bold + tracking-widest
+   *   SR → #8B2E2E（深紅）+ fontWeight:800 + letterSpacing:0.18em
    */
   epithetRarity:     'N' | 'R' | 'SR';
+  /**
+   * ★ Phase9.1: 二つ名の由来説明文。
+   * EpithetMaster の Description 列から取得。
+   * 未登録・一致なし・空文字列の場合のフォールバック: "まだ見ぬ剣の道を歩む者"
+   * UI上でタップ時のインライントグル表示（由来説明）に使用する。
+   */
+  epithetDescription: string;
   /**
    * 得意打突部位称号（例: "小手一閃"）
    * 面・小手・胴・突きの累計ポイント最大部位 + しきい値サフィックス
@@ -64,15 +72,18 @@ const PART_TITLE_THRESHOLDS: ReadonlyArray<{ readonly min: number; readonly suff
   { min:     0, suffix: 'の嗜み'   },
 ] as const;
 
-/**
- * 部位の累計ポイントに対応する称号サフィックスを返す
- */
+/** 部位の累計ポイントに対応する称号サフィックスを返す */
 function resolvePartSuffix(totalPts: number): string {
   for (const { min, suffix } of PART_TITLE_THRESHOLDS) {
     if (totalPts >= min) return suffix;
   }
   return 'の嗜み';
 }
+
+// =====================================================================
+// 定数
+// =====================================================================
+const DEFAULT_EPITHET_DESCRIPTION = 'まだ見ぬ剣の道を歩む者';
 
 // =====================================================================
 // calcEpithet
@@ -88,13 +99,13 @@ function resolvePartSuffix(totalPts: number): string {
  *
  * 【算出ロジック詳細】
  *
- * ① 二つ名 + レア度（styleCombo マスタ参照）
+ * ① 二つ名 + レア度 + 説明文（styleCombo マスタ参照）
  *    1. techniques から subCategory ごとの累計ポイントを集計
  *    2. 降順ソート（同点時は localeCompare('ja') 五十音昇順）で上位3件を抽出
  *    3. 上位3件のサブカテゴリ名を五十音順でカンマ結合 → triggerKey
  *    4. epithetMaster の category === 'styleCombo' かつ triggerValue === triggerKey で検索
- *    5. マスタの Name（二つ名）と Rarity（レア度）をそのまま返す
- *    6. 未登録の場合は epithetName: "未知なる"、epithetRarity: "N"
+ *    5. マスタの Name / Rarity / Description をそのまま返す
+ *    6. 未登録: epithetName="未知なる", epithetRarity="N", epithetDescription=フォールバック
  *
  * ② 得意部位称号（favoritePartTitle）
  *    1. 面・小手・胴・突き ごとに所属する技の累計ポイントを合算
@@ -119,14 +130,9 @@ export function calcEpithet(
   // ──────────────────────────────────────────────────────────────────
   // Layer 2: 得意部位称号
   // ──────────────────────────────────────────────────────────────────
-
-  // 部位ごとの累計ポイントを初期化（BODY_PARTS の定義順を保証）
   const partTotals: Record<string, number> = {};
-  for (const bp of BODY_PARTS) {
-    partTotals[bp] = 0;
-  }
+  for (const bp of BODY_PARTS) partTotals[bp] = 0;
 
-  // 全 technique のポイントを部位別に合算（認識できない部位は無視）
   techniques.forEach(t => {
     const bp = t.bodyPart as BodyPart;
     if (Object.prototype.hasOwnProperty.call(partTotals, bp)) {
@@ -134,21 +140,17 @@ export function calcEpithet(
     }
   });
 
-  // 合計ポイント最大の部位を特定（同点時は BODY_PARTS 定義順で先勝ち）
-  let favPart: string = BODY_PARTS[0]; // デフォルト: 面
+  let favPart: string = BODY_PARTS[0];
   let favPts:  number = -1;
   for (const bp of BODY_PARTS) {
     const pts = partTotals[bp] ?? 0;
-    if (pts > favPts) {
-      favPts  = pts;
-      favPart = bp;
-    }
+    if (pts > favPts) { favPts = pts; favPart = bp; }
   }
 
   const favoritePartTitle = favPart + resolvePartSuffix(Math.max(0, favPts));
 
   // ──────────────────────────────────────────────────────────────────
-  // Layer 1: 二つ名 + レア度（EpithetMaster / styleCombo）
+  // Layer 1: 二つ名 + レア度 + 説明文（EpithetMaster / styleCombo）
   // ──────────────────────────────────────────────────────────────────
 
   // SubCategory ごとの累計ポイントを集計
@@ -158,11 +160,11 @@ export function calcEpithet(
     subTotals[t.subCategory] = (subTotals[t.subCategory] ?? 0) + t.points;
   });
 
-  // 上位3つを抽出（降順ソート・同点時は五十音昇順）
+  // 上位3つを抽出（降順・同点時は五十音昇順）
   const top3: string[] = Object.entries(subTotals)
     .sort(([nameA, ptsA], [nameB, ptsB]) => {
-      if (ptsB !== ptsA) return ptsB - ptsA;                   // ポイント降順
-      return nameA.localeCompare(nameB, 'ja');                 // 同点時 → 五十音昇順
+      if (ptsB !== ptsA) return ptsB - ptsA;
+      return nameA.localeCompare(nameB, 'ja');
     })
     .slice(0, 3)
     .map(([name]) => name);
@@ -172,17 +174,19 @@ export function calcEpithet(
     .sort((a, b) => a.localeCompare(b, 'ja'))
     .join(',');
 
-  // EpithetMaster から category === 'styleCombo' かつ triggerValue === triggerKey を検索
-  // ※ category の比較は case-insensitive
+  // EpithetMaster から検索（category は case-insensitive）
   const entry = epithetMaster.find(
     e =>
       e.category.toLowerCase() === 'stylecombo' &&
       e.triggerValue === triggerKey,
   );
 
-  const epithetName: string = entry?.name ?? '未知なる';
+  const epithetName:        string = entry?.name ?? '未知なる';
+  const epithetDescription: string =
+    (entry?.description?.trim())
+      ? entry.description.trim()
+      : DEFAULT_EPITHET_DESCRIPTION;
 
-  // Rarity はマスタから直接取得（N / R / SR 以外の値は N にフォールバック）
   const rawRarity = entry?.rarity;
   const epithetRarity: 'N' | 'R' | 'SR' =
     rawRarity === 'SR' ? 'SR' :
@@ -192,6 +196,7 @@ export function calcEpithet(
   return {
     epithetName,
     epithetRarity,
+    epithetDescription,
     favoritePartTitle,
     levelTitle,
   };
