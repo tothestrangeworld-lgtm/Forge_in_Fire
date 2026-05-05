@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Swords, Trophy, Users, LogOut } from 'lucide-react';
+import { Home, Swords, Users, LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 type NavUser = {
@@ -31,12 +31,11 @@ export default function Navigation() {
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
 
-  /* ── nav items (static 4 + dynamic user item) ────────────────── */
+  /* ── nav items ────────────────────────────────────────────────── */
   const navItems = [
-    { href: '/',             label: 'ホーム',   icon: Home },
-    { href: '/record',       label: '稽古記録', icon: Swords },
-    { href: '/achievements', label: '実績',     icon: Trophy },
-    { href: '/rivals',       label: '門下生',   icon: Users },
+    { href: '/',       label: 'ホーム',   icon: Home   },
+    { href: '/record', label: '稽古記録', icon: Swords },
+    { href: '/rivals', label: '門下生',   icon: Users  },
   ] as const;
 
   return (

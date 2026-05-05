@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TrendingUp, Flame, RotateCcw, Loader2, TrendingDown, UserRoundPen } from 'lucide-react';
-import type { EpithetMasterEntry, UserTask } from '@/types';
+import type { EpithetMasterEntry, UserTask, Achievement } from '@/types';
 import {
   calcLevelFromXp, calcProgressPercent, calcNextLevel,
   titleForLevel, nextTitleLevel, levelColor, resolveTechniqueName,
 } from '@/types';
-import { useDashboardSWR, resetStatus } from '@/lib/api';
+import { useDashboardSWR, resetStatus, fetchAchievements } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import { getAuthUser } from '@/lib/auth';
 import { logger } from '@/lib/logger';
@@ -34,6 +34,7 @@ const SCORE_COLORS: Record<number, string> = {
 export default function DashboardPage() {
   const [resetting, setReset]     = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [achiev, setAchiev]       = useState<{ unlocked: number; total: number } | null>(null);
   const user = getAuthUser();
 
   // ── SWR でダッシュボード + 技データを取得 ──────────────────────────
@@ -46,6 +47,15 @@ export default function DashboardPage() {
   const error = swrError instanceof Error && swrError.message !== 'AUTH_REQUIRED'
     ? swrError.message
     : null;
+
+  // ── 実績カウントを非同期取得 ────────────────────────────────────────
+  useEffect(() => {
+    fetchAchievements()
+      .then((list: Achievement[]) =>
+        setAchiev({ unlocked: list.filter(a => a.isUnlocked).length, total: list.length })
+      )
+      .catch(() => setAchiev({ unlocked: 0, total: 0 }));
+  }, []);
 
   if (isLoading) return <DashboardSkeleton />;
   if (error)     return <ErrorState message={error} />;
@@ -319,24 +329,51 @@ export default function DashboardPage() {
           </p>
         )}
 
-        {/* 得意技バッジ */}
-        {favTechName && (
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '4px 12px', borderRadius: 999, marginBottom: '0.75rem',
-            background: 'rgba(120,53,15,0.2)',
-            border: '1px solid rgba(251,191,36,0.3)',
-            boxShadow: '0 0 8px rgba(251,191,36,0.1)',
-          }}>
-            <span style={{ fontSize: 12, filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.8))' }}>★</span>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.7)', letterSpacing: '0.06em' }}>
-              得意技
+        {/* ── 得意技バッジ + 実績バッジ ─────────────────────────── */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: '0.75rem', alignItems: 'center' }}>
+
+          {/* 得意技バッジ */}
+          {favTechName && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '4px 12px', borderRadius: 999,
+              background: 'rgba(120,53,15,0.2)',
+              border: '1px solid rgba(251,191,36,0.3)',
+              boxShadow: '0 0 8px rgba(251,191,36,0.1)',
+            }}>
+              <span style={{ fontSize: 12, filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.8))' }}>★</span>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.7)', letterSpacing: '0.06em' }}>
+                得意技
+              </span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fde68a' }}>
+                {favTechName}
+              </span>
+            </div>
+          )}
+
+          {/* 実績バッジ（/achievements への導線） */}
+          <a
+            href="/achievements"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '4px 12px', borderRadius: 999,
+              background: 'rgba(79,70,229,0.08)',
+              border: '1px solid rgba(99,102,241,0.28)',
+              textDecoration: 'none',
+              transition: 'border-color .15s, background .15s',
+            }}
+            title="実績一覧を見る"
+          >
+            <span style={{ fontSize: 11 }}>🏆</span>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(167,139,250,0.65)', letterSpacing: '0.05em' }}>
+              実績
             </span>
-            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fde68a' }}>
-              {favTechName}
+            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#a5b4fc' }}>
+              {achiev ? `${achiev.unlocked}/${achiev.total}` : '…'}
             </span>
-          </div>
-        )}
+          </a>
+
+        </div>
 
         {/* XP表示 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>

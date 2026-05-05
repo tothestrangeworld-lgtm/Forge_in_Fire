@@ -42,7 +42,7 @@ Forge_in_Fire/
 │   │   ├── layout.tsx                      # ルートレイアウト（AuthGuard・ナビゲーション・PWAメタデータ）★ Phase7更新
 │   │   ├── manifest.ts                     # PWAマニフェスト（アプリ名・アイコン・テーマカラー等）★ Phase7追加
 │   │   ├── globals.css                     # デザイントークン・共通CSS（サイバー和風テーマ）
-│   │   ├── page.tsx                        # ホーム画面（HUD KPI・スキルグリッド・分析・プロフィール）
+│   │   ├── page.tsx                        # ホーム画面（HUD KPI・スキルグリッド・分析・プロフィール・実績バッジ導線）★ Phase8更新
 │   │   ├── record/
 │   │   │   └── page.tsx                    # 記録画面（稽古記録・技の評価）★ Phase4更新
 │   │   ├── login/
@@ -54,12 +54,12 @@ Forge_in_Fire/
 │   │   │   ├── tasks/page.tsx              # カスタム評価項目設定 ★ Phase4更新
 │   │   │   └── profile/page.tsx            # プロフィール設定（段位・座右の銘・得意技ID選択）
 │   │   ├── achievements/
-│   │   │   └── page.tsx                    # 実績バッジ一覧画面（ボトムナビから導線追加）★ Phase6更新
+│   │   │   └── page.tsx                    # 実績バッジ一覧画面（ホーム画面プロフィールエリアから導線）★ Phase8更新
 │   │   ├── debug/page.tsx                  # ログビューア
 │   │   └── api/gas/route.ts                # GASプロキシ
 │   │
 │   ├── components/
-│   │   ├── Navigation.tsx                  # ボトムナビ（5ボタン: ホーム・稽古記録・実績・門下生・ログアウト）★ Phase6更新
+│   │   ├── Navigation.tsx                  # ボトムナビ（4ボタン: ホーム・稽古記録・門下生・ログアウト）★ Phase8更新
 │   │   ├── AuthGuard.tsx                   # 未ログイン時リダイレクト
 │   │   └── charts/
 │   │       ├── RadarChart.tsx              # 稽古スコアバランス（横型プログレスバー）
@@ -357,25 +357,36 @@ GAS saveLog()
 
 ---
 
-## 5.5 ナビゲーション構成（Phase6 更新）★ NEW
+## 5.5 ナビゲーション構成（Phase8 更新）★ UPDATED
 
-### ボトムナビゲーション — 5ボタン構成
+### ボトムナビゲーション — 4ボタン構成
+
+モバイル UX 最適化のため、Phase8 にてボトムナビを **5ボタン → 4ボタン** に変更。
+「実績（Trophy）」ボタンをナビから削除し、代わりに **ホーム画面のプロフィールエリア** に実績バッジ導線を追加した。
+ボタン数が1つ減ることで各タップターゲットの横幅が広がり、親指での操作が容易になる。
 
 ```
-┌──────────────────────────────────────────────┐
-│  ホーム   稽古記録   実績   門下生  ユーザー名 │
-│   🏠       ⚔️      🏆     👥     🚪      │  ← BottomNav（60px）
-└──────────────────────────────────────────────┘
-   /         /record  /achievements  /rivals  logout
+┌─────────────────────────────────────┐
+│  ホーム   稽古記録   門下生  ユーザー名 │
+│   🏠       ⚔️      👥     🚪      │  ← BottomNav（60px）
+└─────────────────────────────────────┘
+   /         /record   /rivals   logout
 ```
 
 | # | ラベル | アイコン（lucide-react） | リンク先 | ハイライト条件 |
 |---|---|---|---|---|
 | 1 | ホーム | `Home` | `/` | `pathname === '/'` |
 | 2 | 稽古記録 | `Swords` | `/record` | `pathname.startsWith('/record')` |
-| 3 | 実績 | `Trophy` | `/achievements` | `pathname.startsWith('/achievements')` ★ Phase6追加 |
-| 4 | 門下生 | `Users` | `/rivals` | `pathname.startsWith('/rivals')` |
-| 5 | ユーザー名 | `LogOut` | — | ボタン（logout処理） |
+| 3 | 門下生 | `Users` | `/rivals` | `pathname.startsWith('/rivals')` |
+| 4 | ユーザー名 | `LogOut` | — | ボタン（logout処理） |
+
+### 実績ページへのアクセス（Phase8 変更点）
+
+実績一覧（`/achievements`）へのアクセスは、ホーム画面プロフィールエリアの **実績バッジ** から行う。
+
+- バッジは XP・称号カード内の「得意技バッジ」と同行に横並びで表示される
+- 解除数 / 総数を `🏆 実績: X/Y` 形式でリアルタイム表示（`fetchAchievements()` で非同期取得）
+- サイバー和風テーマに合わせた透過背景 + 細枠線デザイン（`rgba(79,70,229,0.08)` 背景 / `rgba(99,102,241,0.28)` ボーダー）
 
 ### ページ遷移図
 
@@ -384,21 +395,23 @@ GAS saveLog()
             ┌──────▶│  /login  │
             │       └──────────┘
             │ 未認証        │ ログイン成功
-            │    ┌──────────▼──────────┐
-            │    │    / (ホーム)        │
-            │    │  HUD KPI・SkillGrid  │
-            │    └──────────┬──────────┘
-            │               │ BottomNav
-            │    ┌──────────┼──────────┬────────────────┐
-            │    ▼          ▼          ▼                ▼
-            │ /record   /achievements  /rivals     /settings/*
-            │ 稽古記録  実績バッジ一覧  門下生一覧   設定
-            │ ★Phase4   ★Phase6追加    │
-            │                          ├── /rivals/[id]
-            │                          │   他ユーザー閲覧
-            │                          │   + 他者評価 ★Phase5
-            │                     /settings/tasks
-            │                     /settings/profile
+            │    ┌──────────▼────────────────────┐
+            │    │    / (ホーム)                   │
+            │    │  HUD KPI・SkillGrid             │
+            │    │  プロフィールエリア               │
+            │    │    └─[🏆 実績バッジ]──────────────────────┐
+            │    └──────────┬────────────────────┘           │
+            │               │ BottomNav                       │
+            │    ┌──────────┼──────────┐                     │
+            │    ▼          ▼          ▼                      ▼
+            │ /record    /rivals   /settings/*         /achievements
+            │ 稽古記録   門下生一覧   設定              実績バッジ一覧
+            │ ★Phase4       │                          ★Phase6追加
+            │               ├── /rivals/[id]
+            │               │   他ユーザー閲覧
+            │               │   + 他者評価 ★Phase5
+            │          /settings/tasks
+            │          /settings/profile
             │
             └─────────── AuthGuard（未ログイン時リダイレクト）
 ```
@@ -685,7 +698,7 @@ edges.push({
 - `peer_evaluations` シートに `score` カラムを追加（D列）
 - `xp_history` の reason に「○○からの評価（スコア: X）」とスコアを明記
 
-### ✅ アチーブメント（実績バッジ）システム バックエンド・API層 + ナビゲーション導線（Phase6） ★ NEW
+### ✅ アチーブメント（実績バッジ）システム バックエンド・API層（Phase6） ★ NEW
 - `achievement_master` シート（全ユーザー共通マスタ）と `user_achievements` シートを新設
 - `achievement_master` が存在しない場合、GAS が初回アクセス時にデフォルト8件を自動挿入
 - `saveLog` の末尾に `checkAndUnlockAchievements()` フックを追加
@@ -697,7 +710,6 @@ edges.push({
 - `Achievement` 型・`AchievementMasterEntry` 型を `types/index.ts` に追加
 - `SaveLogResponse.newAchievements?: Achievement[]` フィールドを追加
 - エラー安全設計: 判定失敗は `saveLog` のレスポンスをブロックしない（`newAchievements: []` で返る）
-- `Navigation.tsx` に **「実績」ボタン（Trophyアイコン・`/achievements`）** を追加し、5ボタン構成に変更 ★ Phase6更新
 
 ### ✅ 体感速度最適化とPWA化（スマホアプリ化）（Phase6/7） ★ NEW
 
@@ -714,6 +726,12 @@ edges.push({
 - `display: 'standalone'` でフルスクリーン起動（ブラウザUIなし）のネイティブアプリライクな体験を実現
 - Workbox によるオフラインキャッシュにより、圏外環境でも既閲覧ページを表示可能
 - 開発環境（`NODE_ENV === "development"`）ではサービスワーカーを無効化し、デバッグ体験を保護
+
+### ✅ モバイル UX 最適化（Phase8） ★ NEW
+- ボトムナビを **5ボタン → 4ボタン** に変更（`Trophy`/実績ボタンを削除）
+- 実績ページへの導線をホーム画面プロフィールエリアの **実績バッジ**（`🏆 実績: X/Y`）に移設
+- バッジは `fetchAchievements()` で解除数/総数を非同期取得してリアルタイム表示
+- サイバー和風テーマに合わせた透過背景 + 細枠線デザイン
 
 ---
 
@@ -753,6 +771,14 @@ edges.push({
 | アイコン配置 | `public/icon-192x192.png` と `public/512x512.png` を手動で配置（推奨: 剣道・百錬自得をイメージしたデザイン） |
 | ビルド確認 | `npm run build` 後に `public/sw.js` と `public/workbox-*.js` が生成されることを確認 |
 
+### Phase8 移行時（モバイル UX 最適化）★ NEW
+
+| 作業 | 内容 |
+|---|---|
+| ファイル更新 | `src/components/Navigation.tsx` を上書き（Trophy インポート・ボタン削除） |
+| ファイル更新 | `src/app/page.tsx` を上書き（実績バッジ追加・`fetchAchievements` 呼び出し） |
+| 再デプロイ | GAS 再デプロイ不要。Cloudflare Pages は GitHub push で自動デプロイ。 |
+
 ---
 
 ## 11. 今後の拡張ポイント
@@ -769,3 +795,4 @@ edges.push({
 - [ ] ページ遷移時・保存完了時のマイクロインタラクション（Phase5 残）
 - [ ] アチーブメント解除通知 UI（トースト・バッジアニメーション）
 - [ ] PWAアイコンのデザイン制作（192px・512px）
+- [x] モバイル UX 最適化（ボトムナビ4ボタン化・実績導線ホーム統合）★ Phase8 完了
