@@ -1,157 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { TrendingUp, Flame, RotateCcw, Loader2, TrendingDown, UserRoundPen } from 'lucide-react';
+import { RotateCcw, Loader2, TrendingDown } from 'lucide-react';
 import type { EpithetMasterEntry, UserTask, Achievement } from '@/types';
 import {
-  calcLevelFromXp, calcProgressPercent, calcNextLevel,
-  titleForLevel, nextTitleLevel, levelColor, resolveTechniqueName,
+  calcLevelFromXp, calcNextLevel, levelColor, resolveTechniqueName,
 } from '@/types';
 import { useDashboardSWR, resetStatus, fetchAchievements } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import type { EpithetResult } from '@/lib/epithet';
 import { getAuthUser } from '@/lib/auth';
+import { UserStatusCard } from '@/components/UserStatusCard';
 import dynamic from 'next/dynamic';
 
 const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false });
 const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),       { ssr: false, loading: () => <ChartSkeleton h={500} /> });
 const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleCharts'), { ssr: false, loading: () => <ChartSkeleton h={180} /> });
 
-// =====================================================================
-// スコア分布バー 色定義
-// =====================================================================
 const SCORE_COLORS: Record<number, string> = {
   5: '#4f46e5', 4: '#6366f1', 3: '#818cf8', 2: '#c7d2fe', 1: '#e0e7ff',
 };
 
-// =====================================================================
-// ★ Phase9 / Phase9.1 UI fix: レア度別カラー・スタイル
-// =====================================================================
-
-/**
- * Rarity に応じた二つ名の文字色を返す。
- *   N  → #A1A1AA（明るいグレー。ダークモードで視認しやすい値に変更）
- *   R  → #2C4F7C（藍鉄色）
- *   SR → #8B2E2E（深紅）
- */
-function rarityTextColor(rarity: 'N' | 'R' | 'SR'): string {
-  if (rarity === 'SR') return '#8B2E2E';
-  if (rarity === 'R')  return '#2C4F7C';
-  return '#A1A1AA'; // ★ Phase9.1 UI fix: #2B2B2B → #A1A1AA（ダークモード視認性向上）
-}
-
-function rarityExtraStyle(rarity: 'N' | 'R' | 'SR'): React.CSSProperties {
-  if (rarity !== 'SR') return {};
-  return { fontWeight: 800, letterSpacing: '0.18em' };
-}
-
-// =====================================================================
-// ★ Phase9.1: 二つ名インライントグル（EpithetNameButton）
-// =====================================================================
-interface EpithetNameButtonProps {
-  epithet: EpithetResult;
-}
-
-function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
-  const [open, setOpen] = useState(false);
-
-  const accentColor =
-    epithet.epithetRarity === 'SR' ? 'rgba(139,46,46,0.5)'  :
-    epithet.epithetRarity === 'R'  ? 'rgba(44,79,124,0.5)'  :
-    'rgba(99,102,241,0.3)';
-  const accentBg =
-    epithet.epithetRarity === 'SR' ? 'rgba(139,46,46,0.08)' :
-    epithet.epithetRarity === 'R'  ? 'rgba(44,79,124,0.08)' :
-    'rgba(99,102,241,0.06)';
-
-  return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      {/* ★ Phase9.1 UI fix: フォントサイズを 1.25rem に統一 */}
-      <button
-        onClick={() => setOpen(v => !v)}
-        style={{
-          background: 'none', border: 'none', padding: 0,
-          cursor: 'pointer', fontFamily: 'inherit',
-          fontSize: '1.25rem',   // ★ 統一サイズ
-          lineHeight: 1.2,
-          color: rarityTextColor(epithet.epithetRarity),
-          ...rarityExtraStyle(epithet.epithetRarity),
-          borderBottom: `1.5px dotted ${rarityTextColor(epithet.epithetRarity)}`,
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-        }}
-        aria-expanded={open}
-        title="二つ名の由来を見る"
-      >
-        &ldquo;{epithet.epithetName}&rdquo;
-        <span style={{
-          fontSize: '0.55rem', opacity: 0.6,
-          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-          transition: 'transform 0.2s ease',
-          display: 'inline-block', lineHeight: 1, marginBottom: '-0.1em',
-        }}>▼</span>
-      </button>
-
-      {/* インライン吹き出し */}
-      {open && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 8px)',
-          left: 0,
-          zIndex: 50,
-          minWidth: 200, maxWidth: 280,
-          padding: '10px 14px',
-          borderRadius: 12,
-          background: accentBg,
-          border: `1px solid ${accentColor}`,
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          boxShadow: `0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px ${accentColor}`,
-        }}>
-          {/* 小三角 */}
-          <div style={{ position: 'absolute', top: -7, left: 16, width: 12, height: 7, overflow: 'hidden' }}>
-            <div style={{
-              width: 10, height: 10,
-              background: accentBg,
-              border: `1px solid ${accentColor}`,
-              transform: 'rotate(45deg)',
-              transformOrigin: 'bottom left',
-              marginTop: 2, marginLeft: 1,
-            }} />
-          </div>
-
-          {/* ★ Phase9.1 UI fix: 【由来】ラベルを削除。説明文のみ表示 */}
-          <p style={{
-            margin: 0,
-            fontSize: '0.78rem', fontWeight: 700,
-            color: 'rgba(199,210,254,0.9)',
-            lineHeight: 1.6,
-            wordBreak: 'break-all',
-          }}>
-            {epithet.epithetDescription}
-          </p>
-
-          <button
-            onClick={() => setOpen(false)}
-            style={{
-              marginTop: 8, display: 'block', width: '100%',
-              padding: '4px 0', background: 'none', border: 'none',
-              cursor: 'pointer', fontFamily: 'inherit',
-              fontSize: '0.62rem', fontWeight: 700,
-              color: 'rgba(129,140,248,0.5)', textAlign: 'right',
-              letterSpacing: '0.05em',
-            }}
-          >
-            閉じる ✕
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// =====================================================================
-// メインページ
-// =====================================================================
 export default function DashboardPage() {
   const [resetting, setReset]     = useState(false);
   const [showReset, setShowReset] = useState(false);
@@ -180,21 +49,16 @@ export default function DashboardPage() {
   if (!data)     return null;
 
   const { status, logs, decay, xpHistory, tasks } = data;
-  const tm          = data.titleMaster;
-  const em          = data.epithetMaster ?? [] as EpithetMasterEntry[];
-  const techMaster  = data.techniqueMaster ?? [];
-  const level       = calcLevelFromXp(status.total_xp);
-  const nextLv      = calcNextLevel(status.total_xp, tm);
-  const progressPct = calcProgressPercent(status.total_xp);
-  const nextTitle   = nextTitleLevel(level, tm);
-  const color       = levelColor(level);
-  const title       = titleForLevel(level, tm);
+  const tm         = data.titleMaster;
+  const em         = data.epithetMaster ?? [] as EpithetMasterEntry[];
+  const techMaster = data.techniqueMaster ?? [];
+  const level      = calcLevelFromXp(status.total_xp);
 
   const epithet: EpithetResult = calcEpithet(techniques, em, level, tm);
 
-  const realRankLabel = status.real_rank ? status.real_rank : '無段';
-  const favTechName   = resolveTechniqueName(status.favorite_technique, techMaster);
+  const favTechName = resolveTechniqueName(status.favorite_technique, techMaster);
 
+  // 統計
   const today  = new Date(); today.setHours(0,0,0,0);
   const dow    = today.getDay();
   const monday = new Date(today); monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
@@ -333,170 +197,49 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── XP + 称号カード ──────────────────────────────────────── */}
-      <div className="hud-card hud-frame animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-
-        {/* ★ Phase9: 3層称号エリア */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: '0.75rem' }}>
-
-          <div style={{ flex: 1, minWidth: 0 }}>
-
-            {/* 1行目：[Lv.XX] [レベル称号] */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.3rem' }}>
-              <span style={{
-                display: 'inline-block',
-                fontSize: '0.65rem', fontWeight: 800,
-                padding: '0.2rem 0.55rem', borderRadius: 999,
-                background: color, color: '#fff',
-                boxShadow: `0 0 8px ${color}66`,
-                whiteSpace: 'nowrap', flexShrink: 0,
-              }}>Lv.{level}</span>
-              <span style={{
-                fontSize: '1.1rem', fontWeight: 800,
-                background: `linear-gradient(135deg, #fff, ${color})`,
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                lineHeight: 1.2,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {epithet.levelTitle}
-              </span>
-            </div>
-
-            {/* 2行目："{二つ名}"（タップで由来トグル）+ ユーザー名 */}
-            <div style={{
-              display: 'flex', alignItems: 'baseline', gap: 8,
-              marginBottom: '0.25rem', flexWrap: 'wrap',
-              position: 'relative',
-            }}>
-              {/* ★ Phase9.1: EpithetNameButton（由来トグル内包） */}
-              <EpithetNameButton epithet={epithet} />
-              {/* ★ Phase9.1 UI fix: ユーザー名も 1.25rem に統一 */}
-              <span style={{
-                fontSize: '1.25rem', fontWeight: 800,
-                color: 'rgba(199,210,254,0.9)',
-                whiteSpace: 'nowrap',
-              }}>
-                {user?.name ?? '剣士'}
-              </span>
-            </div>
-
-            {/* 3行目：得意部位称号 + リアル段位バッジ */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(167,139,250,0.75)', letterSpacing: '0.05em' }}>
-                {epithet.favoritePartTitle}
-              </span>
-              <span style={{
-                fontSize: '0.6rem', fontWeight: 800,
-                padding: '0.12rem 0.45rem', borderRadius: 999,
-                background: 'rgba(99,102,241,0.15)',
-                border: '1px solid rgba(129,140,248,0.3)',
-                color: 'rgba(167,139,250,0.8)', whiteSpace: 'nowrap',
-              }}>
-                {realRankLabel}
-              </span>
-            </div>
-          </div>
-
-          {/* プロフィール編集ボタン */}
+      {/* ── ★ 共通ステータスカード ────────────────────────────────── */}
+      <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
+        {/* プロフィール編集ボタン（カード右上に配置） */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
           <a href="/settings/profile" style={{
-            width: 34, height: 34, borderRadius: 12, flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(99,102,241,0.1)',
-            border: '1px solid rgba(129,140,248,0.25)',
-            color: 'rgba(167,139,250,0.8)', textDecoration: 'none',
-          }} title="プロフィールを編集">
-            <UserRoundPen style={{ width: 16, height: 16 }} />
-          </a>
-        </div>
-
-        {/* 座右の銘 */}
-        {status.motto?.trim() && (
-          <p style={{
-            margin: '0 0 0.9rem',
-            color: 'rgba(199,210,254,0.85)', fontWeight: 800, fontSize: '0.9rem',
-            letterSpacing: '0.06em', textShadow: '0 0 12px rgba(99,102,241,0.4)',
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '4px 10px', borderRadius: 8,
+            background: 'rgba(99,102,241,0.08)',
+            border: '1px solid rgba(129,140,248,0.2)',
+            color: 'rgba(167,139,250,0.7)',
+            textDecoration: 'none', fontSize: '0.62rem', fontWeight: 700,
+            letterSpacing: '0.04em',
           }}>
-            「{status.motto}」
-          </p>
-        )}
-
-        {/* 得意技バッジ + 実績バッジ */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: '0.75rem', alignItems: 'center' }}>
-          {favTechName && (
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 12px', borderRadius: 999,
-              background: 'rgba(120,53,15,0.2)',
-              border: '1px solid rgba(251,191,36,0.3)',
-              boxShadow: '0 0 8px rgba(251,191,36,0.1)',
-            }}>
-              <span style={{ fontSize: 12, filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.8))' }}>★</span>
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.7)', letterSpacing: '0.06em' }}>得意技</span>
-              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fde68a' }}>{favTechName}</span>
-            </div>
-          )}
-          <a href="/achievements" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '4px 12px', borderRadius: 999,
-            background: 'rgba(79,70,229,0.08)',
-            border: '1px solid rgba(99,102,241,0.28)',
-            textDecoration: 'none',
-          }} title="実績一覧を見る">
-            <span style={{ fontSize: 11 }}>🏆</span>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(167,139,250,0.65)', letterSpacing: '0.05em' }}>実績</span>
-            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#a5b4fc' }}>
-              {achiev ? `${achiev.unlocked}/${achiev.total}` : '…'}
-            </span>
+            ✏️ プロフィール編集
           </a>
         </div>
+        <UserStatusCard
+          userName={user?.name ?? '剣士'}
+          epithet={epithet}
+          totalXp={status.total_xp}
+          level={level}
+          realRank={status.real_rank}
+          motto={status.motto}
+          achiev={achiev}
+        />
+      </div>
 
-        {/* XP表示 */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
-          <div>
-            <span className="section-title" style={{ color: 'rgba(129,140,248,0.5)' }}>TOTAL XP</span>
-            <p className="hud-counter-value" style={{ fontSize: '2rem', margin: 0, lineHeight: 1 }}>
-              {status.total_xp.toLocaleString()}
-              <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'rgba(129,140,248,0.4)', marginLeft: 4 }}>xp</span>
-            </p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <span style={{
-              display: 'inline-block', fontSize: '0.68rem', fontWeight: 700,
-              padding: '0.2rem 0.65rem', borderRadius: 999,
-              background: color, color: '#fff', boxShadow: `0 0 8px ${color}66`,
-            }}>{title}</span>
-            <p style={{ fontSize: '0.65rem', color: 'rgba(129,140,248,0.35)', marginTop: 3 }}>Lv.{level}</p>
+      {/* ── 得意技バッジ ──────────────────────────────────────────── */}
+      {favTechName && (
+        <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '5px 14px', borderRadius: 999,
+            background: 'rgba(120,53,15,0.2)',
+            border: '1px solid rgba(251,191,36,0.3)',
+            boxShadow: '0 0 8px rgba(251,191,36,0.1)',
+          }}>
+            <span style={{ fontSize: 13, filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.8))' }}>★</span>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.7)', letterSpacing: '0.06em' }}>得意技</span>
+            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#fde68a' }}>{favTechName}</span>
           </div>
         </div>
-
-        {/* XPバー */}
-        {nextLv && (
-          <>
-            <div className="xp-bar-track">
-              <div className="xp-bar-fill" style={{ width: `${progressPct}%` }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
-              <p style={{ fontSize: '0.65rem', color: 'rgba(129,140,248,0.4)', margin: 0 }}>
-                次のLv.{level+1}まで{' '}
-                <span style={{ fontWeight: 700, color: '#a5b4fc' }}>
-                  {(nextLv.xp - status.total_xp).toLocaleString()} xp
-                </span>
-              </p>
-              {nextTitle && (
-                <p style={{ fontSize: '0.65rem', color: 'rgba(99,102,241,0.3)', margin: 0 }}>
-                  「{nextTitle.title}」→ Lv.{nextTitle.level}
-                </p>
-              )}
-            </div>
-          </>
-        )}
-        {!nextLv && (
-          <p style={{ fontSize: '0.75rem', color: '#fde68a', fontWeight: 700, marginTop: 6,
-            textShadow: '0 0 10px rgba(251,191,36,0.5)' }}>
-            🏆 最高位「剣道の神」に到達！
-          </p>
-        )}
-      </div>
+      )}
 
       {/* ── HUDカウンター群 ───────────────────────────────────────── */}
       <div className="hud-card hud-scanline animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
@@ -587,7 +330,7 @@ export default function DashboardPage() {
         <XPTimelineChart xpHistory={xpHistory} compact={true} />
       </div>
 
-      {/* ── 課題別 評価スコア分布（ダブルバー）─────────────────── */}
+      {/* ── 課題別 評価スコア分布 ─────────────────────────────── */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">課題別 評価スコア分布（直近50回）</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -618,7 +361,7 @@ export default function DashboardPage() {
                   <div style={{ flex: '0 0 30%', minWidth: 0, fontSize: '0.72rem', fontWeight: 700, color: 'rgba(199,210,254,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {taskText}
                   </div>
-                  <div style={{ flex: '0 0 55%', minWidth: 0, height: 10, borderRadius: 5, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', display: 'flex', flexDirection: 'row' }}>
+                  <div style={{ flex: '0 0 55%', minWidth: 0, height: 10, borderRadius: 5, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', display: 'flex' }}>
                     {totalCount > 0
                       ? ([5,4,3,2,1] as const).map(score => {
                           const pct = (dist[score] / totalCount) * 100;
@@ -636,7 +379,7 @@ export default function DashboardPage() {
                     <div style={{ flex: '0 0 30%', minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4 }}>
                       <span style={{ fontSize: '0.58rem', fontWeight: 800, color: 'rgba(167,139,250,0.5)', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 4, padding: '1px 5px' }}>剣友評価</span>
                     </div>
-                    <div style={{ flex: '0 0 55%', minWidth: 0, height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(99,102,241,0.08)', display: 'flex', flexDirection: 'row' }}>
+                    <div style={{ flex: '0 0 55%', minWidth: 0, height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(99,102,241,0.08)', display: 'flex' }}>
                       {([5,4,3,2,1] as const).map(score => {
                         const pct = (peerDist[score] / peerTotalCount) * 100;
                         if (pct <= 0) return null;
@@ -694,7 +437,7 @@ function ChartSkeleton({ h }: { h: number }) {
 function DashboardSkeleton() {
   return (
     <div style={{ padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      {[28, 160, 80, 540, 200, 300].map((h, i) => (
+      {[28, 220, 80, 540, 200, 300].map((h, i) => (
         <div key={i} style={{
           height: h, borderRadius: 16,
           background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.08)',
