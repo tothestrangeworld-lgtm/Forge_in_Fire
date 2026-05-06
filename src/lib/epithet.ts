@@ -2,6 +2,8 @@
 // 百錬自得 - 二つ名（Epithet）判定ロジック
 // ★ Phase9: 称号システム刷新（3層構造・DBフラグ参照型レア度判定）
 // ★ Phase9.1: epithetDescription を返却値に追加（由来のインライントグル表示用）
+// ★ Phase9.1 bugfix: localeCompare によるソートを廃止し、SUBCATEGORY_ORDER 固定配列で
+//   Python の sort 結果と完全一致するソート順を保証する。
 //
 // 【3層構造】
 //   Layer 1 - 二つ名:       EpithetMaster (styleCombo) の Name / Rarity / Description を取得
@@ -11,11 +13,49 @@
 // 【設計方針】
 //   レア度の判定はコードで行わず、EpithetMaster の Rarity 列（N/R/SR）を
 //   そのまま参照する「データ駆動型設計」を採用。
-//   Description も同様にマスタから取得し、UIのトグル表示（由来説明）に使用する。
+//   TriggerKey の生成は Python の sort と完全一致する SUBCATEGORY_ORDER で行う。
 // =====================================================================
 
 import type { Technique, EpithetMasterEntry, TitleMasterEntry } from '@/types';
 import { titleForLevel } from '@/types';
+
+// =====================================================================
+// ★ Phase9.1 bugfix: SubCategory の固定ソート順
+//
+// Python の sorted() はコードポイント順（Unicode 順）でソートする。
+// JavaScript の localeCompare('ja') はロケール依存のため結果が異なる場合がある。
+// 以下の配列は Python: sorted(['二段打ち','出端技','基本','引き技','打ち落とし技',
+//   '払い技','抜き技','摺り上げ技','返し技']) の出力と完全一致。
+// TriggerValue（カンマ結合キー）の生成時に indexOf でこの順序を参照する。
+// =====================================================================
+const SUBCATEGORY_ORDER: ReadonlyArray<string> = [
+  '二段打ち',
+  '出端技',
+  '基本',
+  '引き技',
+  '打ち落とし技',
+  '払い技',
+  '抜き技',
+  '摺り上げ技',
+  '返し技',
+] as const;
+
+/**
+ * SUBCATEGORY_ORDER における indexOf を使ってサブカテゴリ名をソートする。
+ * マスタ未登録のカテゴリ（indexOf が -1）は末尾に回す。
+ */
+function sortBySubcategoryOrder(names: string[]): string[] {
+  return [...names].sort((a, b) => {
+    const ia = SUBCATEGORY_ORDER.indexOf(a);
+    const ib = SUBCATEGORY_ORDER.indexOf(b);
+    // 両方未登録なら文字列比較（フォールバック）
+    if (ia === -1 && ib === -1) return a < b ? -1 : a > b ? 1 : 0;
+    // 片方だけ未登録なら未登録側を末尾に
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+}
 
 // =====================================================================
 // EpithetResult 型
@@ -26,7 +66,7 @@ export interface EpithetResult {
   /**
    * マスタから取得したレア度フラグ。
    * UIの文字色判定に使用:
-   *   N  → #2B2B2B（墨黒）
+   *   N  → #A1A1AA（明るいグレー）
    *   R  → #2C4F7C（藍鉄色）
    *   SR → #8B2E2E（深紅）+ fontWeight:800 + letterSpacing:0.18em
    */
@@ -55,13 +95,6 @@ type BodyPart = typeof BODY_PARTS[number];
 
 /**
  * 部位ポイント → 称号サフィックス のしきい値テーブル（降順）
- * 要件:
- *   10000pt〜 → "の神髄"
- *    5000pt〜 → "免許皆伝"
- *    2000pt〜 → "一閃"
- *     500pt〜 → "の練達"
- *     100pt〜 → "修練者"
- *       0pt〜 → "の嗜み"
  */
 const PART_TITLE_THRESHOLDS: ReadonlyArray<{ readonly min: number; readonly suffix: string }> = [
   { min: 10000, suffix: 'の神髄'   },
@@ -72,7 +105,6 @@ const PART_TITLE_THRESHOLDS: ReadonlyArray<{ readonly min: number; readonly suff
   { min:     0, suffix: 'の嗜み'   },
 ] as const;
 
-/** 部位の累計ポイントに対応する称号サフィックスを返す */
 function resolvePartSuffix(totalPts: number): string {
   for (const { min, suffix } of PART_TITLE_THRESHOLDS) {
     if (totalPts >= min) return suffix;
@@ -101,8 +133,9 @@ const DEFAULT_EPITHET_DESCRIPTION = 'まだ見ぬ剣の道を歩む者';
  *
  * ① 二つ名 + レア度 + 説明文（styleCombo マスタ参照）
  *    1. techniques から subCategory ごとの累計ポイントを集計
- *    2. 降順ソート（同点時は localeCompare('ja') 五十音昇順）で上位3件を抽出
- *    3. 上位3件のサブカテゴリ名を五十音順でカンマ結合 → triggerKey
+ *    2. 降順ソート（同点時は SUBCATEGORY_ORDER の indexOf 順）で上位3件を抽出
+ *    3. 上位3件を SUBCATEGORY_ORDER の順序でソートしカンマ結合 → triggerKey
+ *       ※ Python の sorted() と完全一致させるため localeCompare は使用しない
  *    4. epithetMaster の category === 'styleCombo' かつ triggerValue === triggerKey で検索
  *    5. マスタの Name / Rarity / Description をそのまま返す
  *    6. 未登録: epithetName="未知なる", epithetRarity="N", epithetDescription=フォールバック
@@ -160,19 +193,27 @@ export function calcEpithet(
     subTotals[t.subCategory] = (subTotals[t.subCategory] ?? 0) + t.points;
   });
 
-  // 上位3つを抽出（降順・同点時は五十音昇順）
+  // 上位3つを抽出
+  // 主キー: ポイント降順
+  // 副キー（同点時）: SUBCATEGORY_ORDER における indexOf 昇順（未登録は末尾）
   const top3: string[] = Object.entries(subTotals)
     .sort(([nameA, ptsA], [nameB, ptsB]) => {
       if (ptsB !== ptsA) return ptsB - ptsA;
-      return nameA.localeCompare(nameB, 'ja');
+      // 同点時: SUBCATEGORY_ORDER の順で先のものを優先
+      const ia = SUBCATEGORY_ORDER.indexOf(nameA);
+      const ib = SUBCATEGORY_ORDER.indexOf(nameB);
+      if (ia === -1 && ib === -1) return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
     })
     .slice(0, 3)
     .map(([name]) => name);
 
-  // 検索キー: 上位3つを五十音昇順でカンマ結合
-  const triggerKey: string = [...top3]
-    .sort((a, b) => a.localeCompare(b, 'ja'))
-    .join(',');
+  // ★ Phase9.1 bugfix:
+  // 検索キー = 上位3つを SUBCATEGORY_ORDER 順でソートしてカンマ結合
+  // （Python の sorted() と完全一致させるため localeCompare を廃止）
+  const triggerKey: string = sortBySubcategoryOrder(top3).join(',');
 
   // EpithetMaster から検索（category は case-insensitive）
   const entry = epithetMaster.find(

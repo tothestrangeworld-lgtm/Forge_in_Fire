@@ -15,30 +15,37 @@
 // ★ Phase8 Step3-1: getDashboard に peerLogs を追加
 //   - peer_evaluations から target_id === userId の行を抽出
 //   - task_id を buildTaskTextMap で item_name に JOIN して返却
+// ★ Phase9: 称号システム刷新（EpithetMaster 列追加対応）
+//   - EpithetMaster シートの列構成を6列に更新:
+//     A=ID, B=Category, C=TriggerValue, D=Name, E=Rarity, F=Description
+// ★ Phase9.1 bugfix: getEpithetMasterData の列マッピング修正
+//   - rarity      = row[4]  (E列)
+//   - description = row[5]  (F列)
+//   - 旧実装では rarity と description が逆に割り当てられていたバグを修正
 // =====================================================================
 
-const SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
+var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
 
 // ユーザー固有シート（A列 = user_id）
 // SHEET_SETTINGS は廃止済み
-const SHEET_LOGS              = 'logs';               // user_id, date, task_id, score, xp_earned
-const SHEET_STATUS            = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
-const SHEET_XP_HIST           = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
-const SHEET_USER_TASKS        = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
-const SHEET_PEER_EVALS        = 'peer_evaluations';   // evaluator_id, target_id, task_id, date, score, xp_granted ★ Phase7: task_id 追加
-const SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Points, LastRating, last_quantity, last_quality, last_feedback ★ Phase8
-const SHEET_TECH_LOGS         = 'technique_logs';     // user_id, date, technique_id, quantity, quality, xp_earned, feedback ★ Phase8 新設
-const SHEET_USER_ACHIEVEMENTS = 'user_achievements';  // user_id, achievement_id, unlocked_at ★ Phase6
+var SHEET_LOGS              = 'logs';               // user_id, date, task_id, score, xp_earned
+var SHEET_STATUS            = 'user_status';        // user_id, total_xp, level, title, last_practice_date, last_decay_date, real_rank, motto, favorite_technique
+var SHEET_XP_HIST           = 'xp_history';         // user_id, date, type, amount, reason, total_xp_after, level, title
+var SHEET_USER_TASKS        = 'user_tasks';         // id, user_id, task_text, status, created_at, updated_at
+var SHEET_PEER_EVALS        = 'peer_evaluations';   // evaluator_id, target_id, task_id, date, score, xp_granted ★ Phase7: task_id 追加
+var SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Points, LastRating, last_quantity, last_quality, last_feedback ★ Phase8
+var SHEET_TECH_LOGS         = 'technique_logs';     // user_id, date, technique_id, quantity, quality, xp_earned, feedback ★ Phase8 新設
+var SHEET_USER_ACHIEVEMENTS = 'user_achievements';  // user_id, achievement_id, unlocked_at ★ Phase6
 
 // 全ユーザー共通マスタ（user_id なし）
-const SHEET_TECH_MASTER         = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name
-const SHEET_TITLE_MASTER        = 'title_master';
-const SHEET_EPITHET_MASTER      = 'EpithetMaster';
-const SHEET_USER_MASTER         = 'UserMaster';
-const SHEET_ACHIEVEMENT_MASTER  = 'achievement_master';  // achievement_id, name, condition_type, condition_value, description, hint, icon_type ★ Phase6
+var SHEET_TECH_MASTER         = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name
+var SHEET_TITLE_MASTER        = 'title_master';
+var SHEET_EPITHET_MASTER      = 'EpithetMaster';       // ID, Category, TriggerValue, Name, Rarity, Description ★ Phase9
+var SHEET_USER_MASTER         = 'UserMaster';
+var SHEET_ACHIEVEMENT_MASTER  = 'achievement_master';  // achievement_id, name, condition_type, condition_value, description, hint, icon_type ★ Phase6
 
 // システム用
-const SHEET_ERRORLOGS      = 'error_logs';
+var SHEET_ERRORLOGS      = 'error_logs';
 
 // =====================================================================
 // A. ユーティリティ
@@ -473,7 +480,6 @@ function getTasksData(ss, userId) {
   var sheet = getUserTasksSheet(ss);
   var rows  = sheet.getDataRange().getValues();
   // ★ user_tasks は A列=id(UUID)、B列=user_id のため r[1] でフィルタする
-  //   （filterRowsByUserId は A列フィルタなので使用不可）
   return rows.slice(1)
     .filter(function(r){ return String(r[1]) === String(userId); })
     .map(function(r){
@@ -507,9 +513,8 @@ function updateTasks(body) {
   var sheet = getUserTasksSheet(ss);
   var ts    = nowJstTs();
 
-  // 受け取ったタスクを分類
-  var tasksWithId = {};  // id -> text（テキスト変更なしの既存タスク）
-  var newTasks    = [];  // text のみ（新規 or テキスト変更）
+  var tasksWithId = {};  // id -> text
+  var newTasks    = [];  // text のみ
 
   tasks.forEach(function(t) {
     var text = (t.text || '').trim();
@@ -521,9 +526,8 @@ function updateTasks(body) {
     }
   });
 
-  var foundIds = {}; // シートで実際に発見した ID
+  var foundIds = {};
 
-  // ── Step 1: 既存行を走査し、維持/アーカイブを振り分け ──
   var rows = sheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
@@ -531,29 +535,24 @@ function updateTasks(body) {
     var rowId = String(r[0]);
 
     if (tasksWithId[rowId] !== undefined) {
-      // 受け取った ID と一致 → アクティブに戻す（テキストも更新）
       sheet.getRange(i + 1, 3).setValue(tasksWithId[rowId]);
       sheet.getRange(i + 1, 4).setValue('active');
       sheet.getRange(i + 1, 6).setValue(ts);
       foundIds[rowId] = true;
     } else if (String(r[3]) === 'active') {
-      // 送られてこなかった → アーカイブ
       sheet.getRange(i + 1, 4).setValue('archived');
       sheet.getRange(i + 1, 6).setValue(ts);
     }
   }
 
-  // ── Step 2: 新規行を追加 ──
   var newRows = [];
 
-  // ID 指定だがシートに存在しなかった（万一のフォールバック）
   Object.keys(tasksWithId).forEach(function(id) {
     if (!foundIds[id]) {
       newRows.push([id, userId, tasksWithId[id], 'active', ts, ts]);
     }
   });
 
-  // 完全な新規タスク（UUID を発行）
   newTasks.forEach(function(text) {
     newRows.push([Utilities.getUuid(), userId, text, 'active', ts, ts]);
   });
@@ -671,21 +670,6 @@ function getTechniques(params) {
  * updateTechniqueRating ★ Phase8 完全刷新
  *
  * body: { user_id, id (technique_id), quantity (1-5), quality (1-5) }
- *
- * ポイント計算:
- *   量基礎点: 1=10, 2=20, 3=30, 4=40, 5=50
- *   質倍率:   1=0.1, 2=0.5, 3=1.0, 4=2.0, 5=5.0
- *   獲得XP:   Math.ceil(量基礎点 × 質倍率)
- *
- * 四字熟語フィードバック: 量(1-5) × 質(1-5) の 25パターン
- *
- * 更新シート:
- *   user_techniques  - 7列: [user_id, technique_id, Points, LastRating, last_quantity, last_quality, last_feedback]
- *   technique_logs   - 7列: [user_id, date, technique_id, quantity, quality, xp_earned, feedback]
- *   user_status      - total_xp / level / title を更新
- *   xp_history       - 理由「技の稽古: [技名] ([四字熟語])」で記録
- *
- * レスポンス: { id, points, earnedPoints, feedback, total_xp, level }
  */
 function updateTechniqueRating(body) {
   var userId   = body.user_id;
@@ -700,7 +684,6 @@ function updateTechniqueRating(body) {
   if (isNaN(quality) || quality < 1 || quality > 5)
     return createError('quality は 1〜5 の整数で指定してください', 400);
 
-  // ── 1. 技名をマスタから取得 ──
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   var master      = getTechniqueMasterData(ss);
   var masterEntry = null;
@@ -713,48 +696,20 @@ function updateTechniqueRating(body) {
   }
   var techniqueName = masterEntry.name;
 
-  // ── 2. ポイント計算 ──
   var QUANTITY_BASE = { 1: 10, 2: 20, 3: 30, 4: 40, 5: 50 };
   var QUALITY_MULT  = { 1: 0.1, 2: 0.5, 3: 1.0, 4: 2.0, 5: 5.0 };
   var earnedPoints  = Math.ceil(QUANTITY_BASE[quantity] * QUALITY_MULT[quality]);
 
-  // ── 3. 四字熟語フィードバック（量 × 質 = 25パターン）──
-  // 行=量(1-5)、列=質(1-5)
-  // 量少/質低 → 地道な継続を促す語
-  // 量多/質低 → 空疎な努力を戒める語
-  // 量少/質高 → 少数精鋭を讃える語
-  // 量多/質高 → 最高の達成を讃える語
   var YOJI_MATRIX = {
-    '1_1': '点滴穿石',  // 少量・低品質 → 少しずつでも岩に穴を開ける
-    '1_2': '一念発起',  // 少量・やや低 → 志を立てた第一歩
-    '1_3': '虚心坦懐',  // 少量・中品質 → 先入観なく真摯に向き合う
-    '1_4': '明鏡止水',  // 少量・高品質 → 澄み切った境地での鋭い一本
-    '1_5': '一撃必殺',  // 少量・最高品質 → 少数でも完璧な技
-    '2_1': '試行錯誤',  // やや少・低品質 → 模索しながら前進
-    '2_2': '日進月歩',  // やや少・やや低 → 日々少しずつ進歩
-    '2_3': '一意専心',  // やや少・中品質 → 一つのことに専念
-    '2_4': '不撓不屈',  // やや少・高品質 → 折れない心で高い技を
-    '2_5': '電光石火',  // やや少・最高品質 → 閃光のような鋭さ
-    '3_1': '継続是力',  // 中量・低品質 → 継続すること自体が力
-    '3_2': '磨斧作針',  // 中量・やや低 → 根気よく磨き続ける
-    '3_3': '切磋琢磨',  // 中量・中品質 → バランス良く研磨する
-    '3_4': '剣禅一如',  // 中量・高品質 → 剣と禅が一つになった境地
-    '3_5': '勇猛精進',  // 中量・最高品質 → 勇ましく精力的に
-    '4_1': '積小成大',  // 多量・低品質 → 小さな積み重ねが大を成す
-    '4_2': '臥薪嘗胆',  // 多量・やや低 → 苦労を重ねてこそ実る
-    '4_3': '粒粒辛苦',  // 多量・中品質 → 一粒一粒の積み重ねの苦労
-    '4_4': '威風堂々',  // 多量・高品質 → 堂々たる風格
-    '4_5': '破竹之勢',  // 多量・最高品質 → 竹を割るような勢い
-    '5_1': '徒労無功',  // 最多・低品質 → 量だけでは功なし
-    '5_2': '七転八起',  // 最多・やや低 → 何度倒れても起き上がる
-    '5_3': '心技体一',  // 最多・中品質 → 心・技・体が一体化
-    '5_4': '鬼神之勇',  // 最多・高品質 → 鬼神のごとき勇気と技量
-    '5_5': '百錬自得',  // 最多・最高品質 → 百回鍛えて自ら体得する（アプリ名の本意）
+    '1_1': '点滴穿石',  '1_2': '一念発起',  '1_3': '虚心坦懐',  '1_4': '明鏡止水',  '1_5': '一撃必殺',
+    '2_1': '試行錯誤',  '2_2': '日進月歩',  '2_3': '一意専心',  '2_4': '不撓不屈',  '2_5': '電光石火',
+    '3_1': '継続是力',  '3_2': '磨斧作針',  '3_3': '切磋琢磨',  '3_4': '剣禅一如',  '3_5': '勇猛精進',
+    '4_1': '積小成大',  '4_2': '臥薪嘗胆',  '4_3': '粒粒辛苦',  '4_4': '威風堂々',  '4_5': '破竹之勢',
+    '5_1': '徒労無功',  '5_2': '七転八起',  '5_3': '心技体一',  '5_4': '鬼神之勇',  '5_5': '百錬自得',
   };
   var feedbackKey = quantity + '_' + quality;
-  var feedback    = YOJI_MATRIX[feedbackKey] || '切磋琢磨'; // フォールバック
+  var feedback    = YOJI_MATRIX[feedbackKey] || '切磋琢磨';
 
-  // ── 4. user_techniques シートを更新（7列）──
   var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
   if (!utSheet) {
     utSheet = ss.insertSheet(SHEET_USER_TECHNIQUES);
@@ -774,12 +729,10 @@ function updateTechniqueRating(body) {
 
   var newPoints;
   if (utRowIdx === -1) {
-    // 新規行: Points = earnedPoints
     newPoints = earnedPoints;
     utSheet.appendRow([userId, id, newPoints, quality, quantity, quality, feedback]);
     gasLog('INFO', 'updateTechniqueRating', 'INSERT user=' + userId + ' id=' + id + ' pts=' + newPoints + ' feedback=' + feedback);
   } else {
-    // 既存行: Points += earnedPoints、LastRating/量/質/feedback は最新値で上書き
     var currentPts = Number(utRows[utRowIdx][2]) || 0;
     newPoints      = currentPts + earnedPoints;
     var sheetRow   = utRowIdx + 1;
@@ -788,7 +741,6 @@ function updateTechniqueRating(body) {
       'UPDATE user=' + userId + ' id=' + id + ' ' + currentPts + '->' + newPoints + ' feedback=' + feedback);
   }
 
-  // ── 5. technique_logs シートへ履歴追記 ──
   var tlSheet = ss.getSheetByName(SHEET_TECH_LOGS);
   if (!tlSheet) {
     tlSheet = ss.insertSheet(SHEET_TECH_LOGS);
@@ -800,7 +752,6 @@ function updateTechniqueRating(body) {
   var ts = nowJstTs();
   tlSheet.appendRow([userId, ts, id, quantity, quality, earnedPoints, feedback]);
 
-  // ── 6. user_status の total_xp / level / title を更新 ──
   var statSheet = ss.getSheetByName(SHEET_STATUS);
   if (!statSheet) return createError('user_status シートが存在しません', 500);
 
@@ -823,7 +774,6 @@ function updateTechniqueRating(body) {
     statSheet.appendRow([userId, newXp, newLevel, newTitle, '', today, '', '', '']);
   }
 
-  // ── 7. xp_history へ記録 ──
   var reason = '技の稽古: ' + techniqueName + '（' + feedback + '）';
   writeXpHistory(ss, userId, 'gain', earnedPoints, reason, newXp, newLevel, newTitle);
 
@@ -866,10 +816,6 @@ function getPeerLevelMultiplier(level) {
 /**
  * evaluatePeer
  * ★ Phase7: items 配列（{ taskId, score }[]）を受け取り、課題単位で記録する。
- *
- * - (evaluator_id, target_id, task_id, 今日) の組み合わせが既存の場合はスキップ。
- * - 新規評価分のスコア合計 × 2 × 評価者レベル倍率 を対象者に XP として付与。
- * - レスポンス: { xp_granted, evaluator_level, multiplier, evaluated_tasks, skipped_tasks }
  */
 function evaluatePeer(body) {
   var evaluatorId = body.user_id;
@@ -885,17 +831,15 @@ function evaluatePeer(body) {
     return createError('items は空でない配列で指定してください', 400);
   }
 
-  // 各アイテムのバリデーション
   for (var v = 0; v < items.length; v++) {
     var sc = parseInt(items[v].score);
-    if (!items[v].taskId)           return createError('items[' + v + '].taskId は必須です', 400);
+    if (!items[v].taskId)               return createError('items[' + v + '].taskId は必須です', 400);
     if (isNaN(sc) || sc < 1 || sc > 5) return createError('items[' + v + '].score は 1〜5 の整数で指定してください', 400);
   }
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
-  // peer_evaluations シートを取得（なければ自動作成）
   var peSheet = ss.getSheetByName(SHEET_PEER_EVALS);
   if (!peSheet) {
     peSheet = ss.insertSheet(SHEET_PEER_EVALS);
@@ -905,7 +849,6 @@ function evaluatePeer(body) {
     gasLog('INFO', 'evaluatePeer', 'peer_evaluations シートを自動作成しました');
   }
 
-  // 今日の既評価 (evaluator_id, target_id, task_id) セットを構築
   var peRows = peSheet.getDataRange().getValues();
   var alreadyEvaluatedSet = {};
   for (var i = 1; i < peRows.length; i++) {
@@ -917,7 +860,6 @@ function evaluatePeer(body) {
     }
   }
 
-  // 評価者情報
   var statSheet = ss.getSheetByName(SHEET_STATUS);
   if (!statSheet) return createError('user_status シートが存在しません', 500);
 
@@ -925,7 +867,6 @@ function evaluatePeer(body) {
   var evalLevel = evalRows.length > 0 ? (parseInt(evalRows[0][2]) || 1) : 1;
   var mult      = getPeerLevelMultiplier(evalLevel);
 
-  // 評価者の表示名
   var umSheet  = ss.getSheetByName(SHEET_USER_MASTER);
   var evalName = String(evaluatorId);
   if (umSheet) {
@@ -938,9 +879,8 @@ function evaluatePeer(body) {
     }
   }
 
-  // 各課題を処理
-  var evaluatedTasks = [];  // 今回新たに評価した task_id
-  var skippedTasks   = [];  // 既評価のためスキップした task_id
+  var evaluatedTasks = [];
+  var skippedTasks   = [];
   var totalScoreSum  = 0;
   var ts             = nowJstTs();
 
@@ -950,22 +890,17 @@ function evaluatePeer(body) {
 
     if (alreadyEvaluatedSet[taskId]) {
       skippedTasks.push(taskId);
-      return; // スキップ
+      return;
     }
 
-    // peer_evaluations に記録（xp_granted は後で計算して一括付与するためここでは 0 を仮置き）
     peSheet.appendRow([evaluatorId, targetId, taskId, ts, score, 0]);
     evaluatedTasks.push(taskId);
     totalScoreSum += score;
   });
 
-  // XP付与（新規評価がない場合は 0）
-  // 計算式: (評価された各課題のスコアの合計) × 2 × 評価者レベル倍率
   var xpGranted = evaluatedTasks.length > 0 ? Math.ceil(totalScoreSum * 2 * mult) : 0;
 
   if (xpGranted > 0) {
-    // peer_evaluations の xp_granted 列を更新（追加した行に対して）
-    // パフォーマンスのため末尾から評価済み行数分を更新する
     var perItemXp = Math.ceil(xpGranted / evaluatedTasks.length);
     var peLastRow = peSheet.getLastRow();
     var updatedCount = 0;
@@ -979,7 +914,6 @@ function evaluatePeer(body) {
       }
     }
 
-    // 対象者の XP を更新
     var targetRows = filterRowsByUserId(statSheet, targetId);
     var hasTarget  = targetRows.length > 0;
     var currentXp  = hasTarget ? (parseInt(targetRows[0][1]) || 0) : 0;
@@ -1024,11 +958,7 @@ function evaluatePeer(body) {
 /**
  * getTodayEvaluations
  * ★ Phase7: 今日、自分（user_id）が指定ユーザー（target_id）を評価済みの
- * task_id 一覧を返す。ライバル画面のロード時に呼び出し、評価済み課題を disabled にするために使用。
- *
- * doGet action: 'getTodayEvaluations'
- * params: user_id（evaluatorId）, target_id
- * returns: { evaluated_task_ids: string[] }
+ * task_id 一覧を返す。
  */
 function getTodayEvaluations(params) {
   var evaluatorId = params.user_id;
@@ -1124,7 +1054,7 @@ function getDashboard(params) {
   // ── 6. title_master ──
   var titleMaster = getTitleMasterData(ss);
 
-  // ── 7. epithet_master ──
+  // ── 7. epithet_master（Phase9.1 bugfix: rarity/description 列マッピング修正済み）──
   var epithetMaster = getEpithetMasterData(ss);
 
   // ── 8. xp_history（直近90件） ──
@@ -1150,17 +1080,15 @@ function getDashboard(params) {
 
   // ── 10. peerLogs（他者から受けた評価ログ）★ Phase8 Step3-1 ──
   // peer_evaluations 列: evaluator_id(0), target_id(1), task_id(2), date(3), score(4), xp_granted(5)
-  // target_id === userId の行を抽出し、task_id を item_name（課題テキスト）に JOIN する。
   var peerLogs = [];
   var peSheet  = ss.getSheetByName(SHEET_PEER_EVALS);
   if (peSheet) {
     var peRows = peSheet.getDataRange().getValues();
     for (var i = 1; i < peRows.length; i++) {
       var pe = peRows[i];
-      // target_id（列1）が userId と一致する行のみ対象
       if (String(pe[1]) !== String(userId)) continue;
       var taskId   = String(pe[2] || '');
-      var itemName = taskMap[taskId] || taskId;  // buildTaskTextMap で解決済みの taskMap を再利用
+      var itemName = taskMap[taskId] || taskId;
       var dateStr  = pe[3] ? String(pe[3]).slice(0, 10) : '';
       var score    = parseInt(pe[4]) || 0;
       if (!dateStr || !itemName || score < 1) continue;
@@ -1220,29 +1148,61 @@ function calcTitleFromMaster(level, master) {
 
 // =====================================================================
 // L. 二つ名マスタ（共通）
+// ★ Phase9:   EpithetMaster を6列構成に拡張
+//             A=ID, B=Category, C=TriggerValue, D=Name, E=Rarity, F=Description
+// ★ Phase9.1 bugfix: getEpithetMasterData の列マッピングを修正
+//   - 旧実装: description = row[4] ← 誤り（これは Rarity 列）
+//   - 新実装: rarity      = row[4]  ← 正しい（E列）
+//             description = row[5]  ← 正しい（F列）
 // =====================================================================
 
+/**
+ * EpithetMaster シートを読み込み、全行をオブジェクト配列で返す。
+ *
+ * シート列構成（Phase9〜）:
+ *   A列 (row[0]): ID
+ *   B列 (row[1]): Category
+ *   C列 (row[2]): TriggerValue
+ *   D列 (row[3]): Name
+ *   E列 (row[4]): Rarity         ← N / R / SR
+ *   F列 (row[5]): Description    ← 二つ名の由来説明文
+ *
+ * シートが存在しない場合は自動作成（6列ヘッダー）し、デフォルトサンプルを投入する。
+ * サンプルデータは旧5列形式（Description なし）で、Rarity は空文字列として投入される。
+ * フロントエンドは rarity が空の場合 'N' にフォールバックするため動作に影響しない。
+ */
 function getEpithetMasterData(ss) {
   var sheet = ss.getSheetByName(SHEET_EPITHET_MASTER);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_EPITHET_MASTER);
-    sheet.appendRow(['ID','Category','TriggerValue','Name','Description']);
-    sheet.getRange(1,1,1,5).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    // ★ Phase9: ヘッダーを6列に更新（旧5列 → ID,Category,TriggerValue,Name,Rarity,Description）
+    sheet.appendRow(['ID', 'Category', 'TriggerValue', 'Name', 'Rarity', 'Description']);
+    sheet.getRange(1,1,1,6).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
     sheet.setFrozenRows(1);
+    // サンプルデータ（Rarity・Description は空欄。実運用時はスプレッドシートで直接入力する）
     var def = [
-      [1,'status','初期','見習い','まだ技の記録がない剣士'],
-      [2,'actionType','仕掛け技','怒涛の','仕掛け技のポイントが7割以上'],
-      [3,'actionType','応じ技','後の先を極めし','応じ技のポイントが7割以上'],
-      [4,'subCategory','出端技','出端の','出端技のポイントが最も高い'],
-      [5,'subCategory','基本','基本を極めし','基本技のポイントが最も高い'],
-      [6,'balance','バランス','万能の','どの技にも偏りがない'],
+      ['E001', 'styleCombo', '基本,出端技,払い技', '常道の',  'N', '基本を重んじ、出端と払いで攻める剣士'],
+      ['E002', 'styleCombo', '出端技,払い技,返し技', '機知の', 'R', '出端と払いと返しを巧みに組み合わせる剣士'],
+      ['E003', 'styleCombo', '抜き技,返し技,摺り上げ技', '神速の', 'SR', '応じ技の三大技を極めた剣士に与えられる称号'],
     ];
-    sheet.getRange(2,1,def.length,5).setValues(def);
+    sheet.getRange(2, 1, def.length, 6).setValues(def);
+    gasLog('INFO', 'getEpithetMasterData', 'EpithetMaster シートを自動作成しました（Phase9 6列）');
   }
+
   return sheet.getDataRange().getValues().slice(1)
-    .filter(function(r){ return r[0]!==''&&r[2]!==''&&r[3]!==''; })
+    .filter(function(r){ return r[0] !== '' && r[2] !== '' && r[3] !== ''; })
     .map(function(r){
-      return { id:String(r[0]), category:String(r[1]), triggerValue:String(r[2]), name:String(r[3]), description:String(r[4]||'') };
+      return {
+        id:           String(r[0]),
+        category:     String(r[1] || ''),
+        triggerValue: String(r[2] || ''),
+        name:         String(r[3] || ''),
+        // ★ Phase9.1 bugfix:
+        //   旧: description: String(r[4]||'')  ← E列を description として誤読していた
+        //   新: rarity を E列(row[4])、description を F列(row[5]) に正しくマッピング
+        rarity:       String(r[4] || ''),   // E列: Rarity（N / R / SR）
+        description:  String(r[5] || ''),   // F列: Description（由来説明文）
+      };
     });
 }
 
@@ -1378,9 +1338,6 @@ function getAchievementMasterSheet(ss) {
   return sheet;
 }
 
-/**
- * achievement_master の全件をオブジェクト配列で返す
- */
 function getAchievementMasterData(ss) {
   var sheet = getAchievementMasterSheet(ss);
   return sheet.getDataRange().getValues().slice(1)
@@ -1398,10 +1355,6 @@ function getAchievementMasterData(ss) {
     });
 }
 
-/**
- * user_achievements シートを取得（なければ自動作成）
- * 列: user_id(0), achievement_id(1), unlocked_at(2)
- */
 function getUserAchievementsSheet(ss) {
   var sheet = ss.getSheetByName(SHEET_USER_ACHIEVEMENTS);
   if (!sheet) {
@@ -1414,10 +1367,6 @@ function getUserAchievementsSheet(ss) {
   return sheet;
 }
 
-/**
- * getAchievements: ユーザーの全実績データを返す（マスタ + unlocked_at の JOIN済み）
- * doGet action: 'getAchievements'
- */
 function getAchievements(params) {
   var userId = params.user_id;
   if (!userId) return createError('user_id は必須です', 400);
@@ -1427,7 +1376,6 @@ function getAchievements(params) {
   var uaSheet = getUserAchievementsSheet(ss);
   var uaRows  = filterRowsByUserId(uaSheet, userId);
 
-  // 解除済み: { achievement_id -> unlocked_at } マップ
   var unlockedMap = {};
   uaRows.forEach(function(r){
     unlockedMap[String(r[1])] = r[2] ? String(r[2]).slice(0, 19) : '';
@@ -1450,9 +1398,6 @@ function getAchievements(params) {
   return createResponse(result);
 }
 
-/**
- * 連続稽古日数（現在のストリーク）を計算する。
- */
 function calcCurrentStreak(logSheet, userId, todayStr) {
   var rows = filterRowsByUserId(logSheet, userId);
 
@@ -1479,9 +1424,6 @@ function calcCurrentStreak(logSheet, userId, todayStr) {
   return streak;
 }
 
-/**
- * 累計稽古日数（ユニーク稽古日の総数）を計算する。
- */
 function calcTotalPractices(logSheet, userId, todayStr) {
   var rows    = filterRowsByUserId(logSheet, userId);
   var dateSet = {};
@@ -1493,10 +1435,6 @@ function calcTotalPractices(logSheet, userId, todayStr) {
   return Object.keys(dateSet).length;
 }
 
-/**
- * アチーブメント解除判定・記録。
- * saveLog の末尾から呼び出す。
- */
 function checkAndUnlockAchievements(ss, userId, date, logSheet) {
   var newlyUnlocked = [];
 

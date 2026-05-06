@@ -36,12 +36,19 @@ function xpForLevel(n: number): number {
 const SCORE_LABELS = ['', '少し取り組んでいる', '取り組んでいる', '概ね取り組んでいる', 'よく取り組んでいる', '非常によく取り組んでいる'] as const;
 
 // =====================================================================
-// ★ Phase9: レア度別カラー・スタイルヘルパー
+// ★ Phase9 / Phase9.1 UI fix: レア度別カラー・スタイルヘルパー
 // =====================================================================
+
+/**
+ * Rarity に応じた二つ名の文字色を返す。
+ *   N  → #A1A1AA（明るいグレー。ダークモード視認性向上）
+ *   R  → #2C4F7C（藍鉄色）
+ *   SR → #8B2E2E（深紅）
+ */
 function rarityTextColor(rarity: 'N' | 'R' | 'SR'): string {
   if (rarity === 'SR') return '#8B2E2E';
   if (rarity === 'R')  return '#2C4F7C';
-  return '#2B2B2B';
+  return '#A1A1AA'; // ★ Phase9.1 UI fix: #2B2B2B → #A1A1AA
 }
 
 function rarityExtraStyle(rarity: 'N' | 'R' | 'SR'): React.CSSProperties {
@@ -70,17 +77,18 @@ function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
+      {/* ★ Phase9.1 UI fix: フォントサイズを 1.25rem に統一 */}
       <button
         onClick={() => setOpen(v => !v)}
         style={{
           background: 'none', border: 'none', padding: 0,
           cursor: 'pointer', fontFamily: 'inherit',
-          fontSize: '1.3rem', fontWeight: 800, lineHeight: 1.2,
+          fontSize: '1.25rem',   // ★ 統一サイズ
+          fontWeight: 800, lineHeight: 1.2,
           color: rarityTextColor(epithet.epithetRarity),
           ...rarityExtraStyle(epithet.epithetRarity),
           borderBottom: `1.5px dotted ${rarityTextColor(epithet.epithetRarity)}`,
           display: 'inline-flex', alignItems: 'center', gap: 4,
-          letterSpacing: epithet.epithetRarity === 'SR' ? '0.18em' : '0.08em',
         }}
         aria-expanded={open}
         title="二つ名の由来を見る"
@@ -101,8 +109,7 @@ function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 50,
-          minWidth: 200,
-          maxWidth: 260,
+          minWidth: 200, maxWidth: 260,
           padding: '10px 14px',
           borderRadius: 12,
           background: accentBg,
@@ -115,20 +122,21 @@ function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
           <div style={{ position: 'absolute', top: -7, left: '50%', transform: 'translateX(-50%)', width: 12, height: 7, overflow: 'hidden' }}>
             <div style={{
               width: 10, height: 10,
-              background: accentBg,
-              border: `1px solid ${accentColor}`,
-              transform: 'rotate(45deg)',
-              transformOrigin: 'bottom left',
+              background: accentBg, border: `1px solid ${accentColor}`,
+              transform: 'rotate(45deg)', transformOrigin: 'bottom left',
               marginTop: 2, marginLeft: 1,
             }} />
           </div>
 
-          <p style={{ margin: '0 0 5px', fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.08em', color: rarityTextColor(epithet.epithetRarity), opacity: 0.8 }}>
-            【由来】
-          </p>
-          <p style={{ margin: 0, fontSize: '0.76rem', fontWeight: 700, color: '#ede9fe', lineHeight: 1.6, wordBreak: 'break-all' }}>
+          {/* ★ Phase9.1 UI fix: 【由来】ラベルを削除。説明文のみ表示 */}
+          <p style={{
+            margin: 0,
+            fontSize: '0.76rem', fontWeight: 700,
+            color: '#ede9fe', lineHeight: 1.6, wordBreak: 'break-all',
+          }}>
             {epithet.epithetDescription}
           </p>
+
           <button
             onClick={() => setOpen(false)}
             style={{
@@ -258,7 +266,6 @@ export default function RivalDashboardPage({
   const myUserId = getCurrentUserId();
   const isSelf   = myUserId === targetId;
 
-  // 課題別 評価スコア分布
   const scoreDistData = activeTasks.map(t => {
     const dist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let totalPts = 0, totalCount = 0;
@@ -273,14 +280,13 @@ export default function RivalDashboardPage({
   });
   const hasScoreData = scoreDistData.some(d => d.totalCount > 0);
 
-  // XP進捗
   const currentLevelXp = xpForLevel(status.level);
   const nextLevelXp    = xpForLevel(status.level + 1);
   const progressXp     = status.total_xp - currentLevelXp;
   const rangeXp        = nextLevelXp - currentLevelXp;
   const progressPct    = rangeXp > 0 ? Math.min(100, Math.round((progressXp / rangeXp) * 100)) : 100;
 
-  const hasSelectableItems = activeTasks.some(t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null);
+  const hasSelectableItems  = activeTasks.some(t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null);
   const hasUnevaluatedTasks = activeTasks.some(t => !evaluatedTaskIds.has(t.id));
   const allTasksEvaluated   = activeTasks.length > 0 && !hasUnevaluatedTasks;
 
@@ -323,7 +329,7 @@ export default function RivalDashboardPage({
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px 16px 0' }}>
 
         {/* =====================================================================
-            ステータスカード（★ Phase9: 3層称号レイアウトに刷新）
+            ステータスカード（★ Phase9: 3層称号レイアウト）
         ===================================================================== */}
         <div className="wa-card" style={{
           background: 'linear-gradient(135deg, rgba(30,27,75,0.9) 0%, rgba(49,46,129,0.7) 100%)',
@@ -333,8 +339,7 @@ export default function RivalDashboardPage({
           {/* 3層称号バナー */}
           {epithet && (
             <div style={{
-              marginBottom: 14,
-              padding: '12px 14px',
+              marginBottom: 14, padding: '12px 14px',
               background: 'rgba(109,40,217,0.12)',
               border: '1px solid rgba(109,40,217,0.28)',
               borderRadius: 12,
@@ -342,20 +347,15 @@ export default function RivalDashboardPage({
               {/* 1行目：[Lv.XX] [レベル称号] */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <span style={{
-                  display: 'inline-block',
-                  fontSize: '0.6rem', fontWeight: 800,
+                  display: 'inline-block', fontSize: '0.6rem', fontWeight: 800,
                   padding: '0.18rem 0.5rem', borderRadius: 999,
-                  background: lvColor, color: '#fff',
-                  boxShadow: `0 0 6px ${lvColor}66`,
+                  background: lvColor, color: '#fff', boxShadow: `0 0 6px ${lvColor}66`,
                   whiteSpace: 'nowrap', flexShrink: 0,
-                }}>
-                  Lv.{level}
-                </span>
+                }}>Lv.{level}</span>
                 <span style={{
                   fontSize: '1rem', fontWeight: 800,
                   background: `linear-gradient(135deg, #ede9fe, ${lvColor})`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                   lineHeight: 1.2,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
@@ -363,15 +363,19 @@ export default function RivalDashboardPage({
                 </span>
               </div>
 
-              {/* 2行目："二つ名"（タップで由来トグル） + ユーザー名 */}
-              {/* ★ Phase9.1: EpithetNameButton コンポーネントを使用 */}
+              {/* 2行目："二つ名"（タップで由来トグル）+ ユーザー名 */}
+              {/* ★ Phase9.1: EpithetNameButton + ユーザー名 1.25rem 統一 */}
               <div style={{
                 display: 'flex', alignItems: 'baseline',
                 gap: 8, marginBottom: 6, flexWrap: 'wrap',
                 position: 'relative',
               }}>
                 <EpithetNameButton epithet={epithet} />
-                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'rgba(237,233,254,0.9)', whiteSpace: 'nowrap' }}>
+                {/* ★ Phase9.1 UI fix: ユーザー名フォントサイズ 1.25rem に統一 */}
+                <span style={{
+                  fontSize: '1.25rem', fontWeight: 800,
+                  color: 'rgba(237,233,254,0.9)', whiteSpace: 'nowrap',
+                }}>
                   {targetName}
                 </span>
               </div>
@@ -387,8 +391,7 @@ export default function RivalDashboardPage({
                     padding: '0.1rem 0.4rem', borderRadius: 999,
                     background: 'rgba(109,40,217,0.15)',
                     border: '1px solid rgba(167,139,250,0.3)',
-                    color: 'rgba(196,181,253,0.8)',
-                    whiteSpace: 'nowrap',
+                    color: 'rgba(196,181,253,0.8)', whiteSpace: 'nowrap',
                   }}>
                     {status.real_rank}
                   </span>
@@ -397,7 +400,7 @@ export default function RivalDashboardPage({
             </div>
           )}
 
-          {/* Lv + XP バー（旧来のサークル表示から洗練されたバー表示へ） */}
+          {/* Lv + XP バー */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 12 }}>
             <div style={{
               width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
@@ -415,8 +418,7 @@ export default function RivalDashboardPage({
               </div>
               <div style={{ height: 6, borderRadius: 6, background: 'rgba(109,40,217,0.2)', overflow: 'hidden' }}>
                 <div style={{
-                  height: '100%', borderRadius: 6,
-                  width: `${progressPct}%`,
+                  height: '100%', borderRadius: 6, width: `${progressPct}%`,
                   background: `linear-gradient(90deg, ${lvColor}, #a78bfa)`,
                   transition: 'width 0.6s ease',
                 }} />
@@ -430,12 +432,9 @@ export default function RivalDashboardPage({
             </div>
           </div>
 
-          {/* 最終稽古日 */}
           {status.last_practice_date && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'rgba(109,40,217,0.1)', borderRadius: 8 }}>
-              <span style={{ fontSize: 11, color: '#7c6fad' }}>
-                最終稽古：{status.last_practice_date}
-              </span>
+              <span style={{ fontSize: 11, color: '#7c6fad' }}>最終稽古：{status.last_practice_date}</span>
             </div>
           )}
         </div>
@@ -470,7 +469,6 @@ export default function RivalDashboardPage({
             </p>
           )}
 
-          {/* 課題リスト */}
           {activeTasks.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {activeTasks.map((task, idx) => {
@@ -644,7 +642,7 @@ export default function RivalDashboardPage({
         )}
 
         {/* =====================================================================
-            4. 課題別 評価スコア分布（直近50回）
+            4. 課題別 評価スコア分布
         ===================================================================== */}
         {mounted && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
