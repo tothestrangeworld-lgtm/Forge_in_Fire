@@ -225,7 +225,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 得意技バッジ ──────────────────────────────────────────── */}
-      {favTechName && (
+{/*       {favTechName && (
         <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -240,7 +240,7 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
+ */}
       {/* ── HUDカウンター群 ───────────────────────────────────────── */}
       <div className="hud-card hud-scanline animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">STATS</span>

@@ -201,9 +201,17 @@ export default function RivalDashboardPage({
                 border: '1px solid rgba(99,102,241,0.18)',
                 display: 'flex', alignItems: 'center', gap: 6,
               }}>
-                <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'rgba(129,140,248,0.45)', letterSpacing: '0.04em' }}>最終稽古:</span>
+                <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'rgba(129,140,248,0.45)', letterSpacing: '0.04em' }}>
+                  最終稽古:
+                </span>
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(199,210,254,0.8)' }}>
-                  {status.last_practice_date}
+                  {status.last_practice_date 
+                    ? new Date(status.last_practice_date).toLocaleDateString('ja-JP', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit'
+                      }).replace(/\//g, '/') 
+                    : '---'}
                 </span>
               </div>
             )}
