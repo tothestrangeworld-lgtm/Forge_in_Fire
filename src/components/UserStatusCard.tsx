@@ -5,9 +5,9 @@
 //
 // レイアウト:
 //   1行目: "{二つ名}" [氏名]          （1.25rem・レア度カラー）
-//   2行目: Lv.[XX] [レベル称号] [実績バッジ]（small）
-//   3行目: 信条: [motto]              （small・未設定時は非表示）
-//   4行目: 部位称号: [xxx] リアル段位: [xxx]（small）
+//   2行目: 信条: [motto]              （small・未設定時は非表示）
+//   3行目: 部位称号: [xxx] リアル段位: [xxx]（small）
+//   4行目: Lv.[XX] [レベル称号] [実績バッジ]（small）
 //   5行目: TOTAL XP: [number]         （medium）
 //   6行目: [XPプログレスバー]
 //   7行目: 次のLv.[XX]まで [残XP] xp  （small・称号名は非表示）
@@ -222,7 +222,45 @@ export function UserStatusCard({
         </span>
       </div>
 
-      {/* ── 2行目: Lv.[XX] [レベル称号] [実績バッジ] ───────────── */}
+      {/* ── 2行目: 信条 (motto) — 未設定時は非表示 ──────────────── */}
+      {motto?.trim() && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+          <span style={LABEL_STYLE}>信条:</span>
+          <span style={{
+            fontSize: '0.75rem', fontWeight: 800,
+            color: 'rgba(199,210,254,0.85)',
+            letterSpacing: '0.06em',
+            textShadow: '0 0 10px rgba(99,102,241,0.3)',
+          }}>
+            {motto}
+          </span>
+        </div>
+      )}
+
+      {/* ── 3行目: 部位称号 / リアル段位 ──────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+          <span style={LABEL_STYLE}>部位称号:</span>
+          <span style={{ ...VALUE_STYLE, color: 'rgba(167,139,250,0.85)' }}>
+            {epithet.favoritePartTitle}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+          <span style={LABEL_STYLE}>リアル段位:</span>
+          <span style={{
+            ...VALUE_STYLE,
+            display: 'inline-block',
+            padding: '0.1rem 0.4rem', borderRadius: 999,
+            background: 'rgba(99,102,241,0.12)',
+            border: '1px solid rgba(129,140,248,0.25)',
+            fontSize: '0.65rem',
+          }}>
+            {realRankLabel}
+          </span>
+        </div>
+      </div>
+
+      {/* ── 4行目: Lv.[XX] [レベル称号] [実績バッジ] ───────────── */}
       <div style={{
         display: 'flex', alignItems: 'center',
         gap: 8, flexWrap: 'wrap',
@@ -269,44 +307,6 @@ export function UserStatusCard({
             </span>
           </a>
         )}
-      </div>
-
-      {/* ── 3行目: 信条 (motto) — 未設定時は非表示 ──────────────── */}
-      {motto?.trim() && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-          <span style={LABEL_STYLE}>信条:</span>
-          <span style={{
-            fontSize: '0.75rem', fontWeight: 800,
-            color: 'rgba(199,210,254,0.85)',
-            letterSpacing: '0.06em',
-            textShadow: '0 0 10px rgba(99,102,241,0.3)',
-          }}>
-            {motto}
-          </span>
-        </div>
-      )}
-
-      {/* ── 4行目: 部位称号 / リアル段位 ──────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={LABEL_STYLE}>部位称号:</span>
-          <span style={{ ...VALUE_STYLE, color: 'rgba(167,139,250,0.85)' }}>
-            {epithet.favoritePartTitle}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={LABEL_STYLE}>リアル段位:</span>
-          <span style={{
-            ...VALUE_STYLE,
-            display: 'inline-block',
-            padding: '0.1rem 0.4rem', borderRadius: 999,
-            background: 'rgba(99,102,241,0.12)',
-            border: '1px solid rgba(129,140,248,0.25)',
-            fontSize: '0.65rem',
-          }}>
-            {realRankLabel}
-          </span>
-        </div>
       </div>
 
       {/* ── 区切り線 ────────────────────────────────────────────── */}
