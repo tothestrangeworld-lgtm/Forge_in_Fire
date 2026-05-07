@@ -1,13 +1,13 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（Phase 6.2 立ち昇る炎リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（Phase 6.3 静謐な炎リビジョン）
 //
-// ★ Phase 6.2 の変更点:
-//   - 炎を「下から立ち昇る」演出に刷新（縦長楕円 × 複数パーティクル）
-//   - feTurbulence の歪み強化 + 動きの周期を多重化
-//   - 上方向へのフェード + 上昇トランスレーションで立ち昇り感を表現
-//   - 得意技ノードは炎エフェクトを削除し、星バッジのみで表現
+// ★ Phase 6.3 の変更点:
+//   - パーティクル群を廃止し、単一の縦長楕円で静かに揺らめく構成に
+//   - 歪み量を控えめに調整（メラメラ感は残しつつ過剰な動きを抑制）
+//   - キャンバスサイズを縮小し、ノードに寄り添う控えめな炎に
+//   - 得意技は星バッジのみ（炎なし）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -85,10 +85,10 @@ const FLAME_MAXED: BpTheme['flame'] = { hot: '#fffbeb', mid: '#fbbf24', cool: '#
 // 共有フィルタ ID
 // =====================================================================
 const SHARED_FILTER_IDS = {
-  low:   'flame-rise-low',
-  mid:   'flame-rise-mid',
-  high:  'flame-rise-high',
-  ultra: 'flame-rise-ultra',
+  low:   'flame-soft-low',
+  mid:   'flame-soft-mid',
+  high:  'flame-soft-high',
+  ultra: 'flame-soft-ultra',
 };
 
 function pickFilterId(intensity: number): string {
@@ -125,7 +125,7 @@ const MinimalHandles = memo(() => (
 MinimalHandles.displayName = 'MinimalHandles';
 
 // =====================================================================
-// 共有フィルタ定義（立ち昇る炎用に歪み強化）
+// 共有フィルタ定義（控えめな揺らぎ）
 // =====================================================================
 const SharedFlameFilters = memo(() => (
   <svg
@@ -134,48 +134,40 @@ const SharedFlameFilters = memo(() => (
     aria-hidden="true"
   >
     <defs>
-      {/* 低強度：穏やかな立ち昇り */}
-      <filter id={SHARED_FILTER_IDS.low} x="-50%" y="-80%" width="200%" height="260%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.04" numOctaves="2" seed="3" result="n">
+      {/* 低強度：ほのかな揺らぎ */}
+      <filter id={SHARED_FILTER_IDS.low} x="-30%" y="-40%" width="160%" height="180%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.04" numOctaves="1" seed="3" result="n">
           <animate attributeName="baseFrequency"
-            dur="6s" values="0.018 0.04; 0.028 0.07; 0.018 0.04" repeatCount="indefinite" />
-          <animate attributeName="seed"
-            dur="8s" values="3; 13; 23; 3" repeatCount="indefinite" />
+            dur="7s" values="0.02 0.04; 0.025 0.05; 0.02 0.04" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="8" xChannelSelector="R" yChannelSelector="G" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* 中強度 */}
-      <filter id={SHARED_FILTER_IDS.mid} x="-60%" y="-90%" width="220%" height="280%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.05" numOctaves="2" seed="7" result="n">
+      {/* 中強度：穏やかなメラメラ */}
+      <filter id={SHARED_FILTER_IDS.mid} x="-35%" y="-50%" width="170%" height="200%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.022 0.045" numOctaves="1" seed="7" result="n">
           <animate attributeName="baseFrequency"
-            dur="5s" values="0.02 0.05; 0.032 0.085; 0.02 0.05" repeatCount="indefinite" />
-          <animate attributeName="seed"
-            dur="7s" values="7; 17; 27; 7" repeatCount="indefinite" />
+            dur="6s" values="0.022 0.045; 0.028 0.058; 0.022 0.045" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* 高強度：激しく立ち昇る */}
-      <filter id={SHARED_FILTER_IDS.high} x="-70%" y="-100%" width="240%" height="300%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.022 0.06" numOctaves="2" seed="13" result="n">
+      {/* 高強度：はっきりとしたメラメラ */}
+      <filter id={SHARED_FILTER_IDS.high} x="-40%" y="-60%" width="180%" height="220%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.024 0.05" numOctaves="1" seed="13" result="n">
           <animate attributeName="baseFrequency"
-            dur="4s" values="0.022 0.06; 0.038 0.1; 0.022 0.06" repeatCount="indefinite" />
-          <animate attributeName="seed"
-            dur="6s" values="13; 23; 33; 13" repeatCount="indefinite" />
+            dur="5s" values="0.024 0.05; 0.032 0.065; 0.024 0.05" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="22" xChannelSelector="R" yChannelSelector="G" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="10" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* 最大強度：荒れ狂う炎 */}
-      <filter id={SHARED_FILTER_IDS.ultra} x="-80%" y="-110%" width="260%" height="320%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.024 0.07" numOctaves="2" seed="19" result="n">
+      {/* 最大強度：力強くも上品なメラメラ */}
+      <filter id={SHARED_FILTER_IDS.ultra} x="-45%" y="-65%" width="190%" height="230%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.026 0.055" numOctaves="1" seed="19" result="n">
           <animate attributeName="baseFrequency"
-            dur="3.5s" values="0.024 0.07; 0.045 0.115; 0.024 0.07" repeatCount="indefinite" />
-          <animate attributeName="seed"
-            dur="5s" values="19; 29; 39; 19" repeatCount="indefinite" />
+            dur="4.5s" values="0.026 0.055; 0.036 0.072; 0.026 0.055" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="30" xChannelSelector="R" yChannelSelector="G" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="12" xChannelSelector="R" yChannelSelector="G" />
       </filter>
     </defs>
   </svg>
@@ -183,7 +175,7 @@ const SharedFlameFilters = memo(() => (
 SharedFlameFilters.displayName = 'SharedFlameFilters';
 
 // =====================================================================
-// 立ち昇る炎コンポーネント
+// 静謐な炎コンポーネント
 // =====================================================================
 interface FlameAuraProps {
   size:      number;
@@ -198,32 +190,28 @@ const FlameAura = memo(function FlameAura({
 }: FlameAuraProps) {
   if (intensity < FLAME_MIN_INTENSITY) return null;
 
-  // 縦長キャンバス（炎は上方向に伸びる）
-  const padX = size * 0.7 * scale;
-  const padTop    = size * 1.4 * scale; // 上方向に大きく確保
-  const padBottom = size * 0.4 * scale;
+  // ノードに寄り添う控えめなキャンバス
+  const padX      = size * 0.45 * scale;
+  const padTop    = size * 0.6  * scale; // 上方向に少しだけ
+  const padBottom = size * 0.3  * scale;
   const w = size + padX * 2;
   const h = size + padTop + padBottom;
 
-  // 炎の中心位置
   const cx = w / 2;
-  const baseY = size / 2 + padTop; // 炎の根元（ノード中心）
+  const baseY = size / 2 + padTop;
 
-  // 炎の縦横サイズ（縦長）
-  const flameWidth  = size * (0.55 + intensity * 0.3) * scale;
-  const flameHeight = size * (1.0 + intensity * 1.4) * scale;
+  // 縦長すぎないバランスの取れた楕円
+  const flameWidth  = size * (0.6 + intensity * 0.2) * scale;
+  const flameHeight = size * (0.75 + intensity * 0.5) * scale;
 
-  const gradId    = `fg-${uid}`;
-  const innerId   = `fg-inner-${uid}`;
-  const filterId  = pickFilterId(intensity);
-  const opacity   = Math.min(0.5 + intensity * 0.45, 0.92);
+  const gradId   = `fg-${uid}`;
+  const innerId  = `fg-inner-${uid}`;
+  const filterId = pickFilterId(intensity);
+  const opacity  = Math.min(0.4 + intensity * 0.4, 0.82);
 
-  // パーティクル数（強度に応じて）
-  const particles = intensity >= 0.6 ? 3 : intensity >= 0.3 ? 2 : 1;
-
-  // 立ち昇りアニメーション周期
-  const riseDur    = 2.0 + (1 - intensity) * 1.5;
-  const breatheDur = 2.4 + (1 - intensity) * 1.2;
+  // ゆったりとした呼吸
+  const breatheDur = 3.5 + (1 - intensity) * 1.5;
+  const flickerDur = 2.2 + (1 - intensity) * 1.0;
 
   return (
     <svg
@@ -241,26 +229,26 @@ const FlameAura = memo(function FlameAura({
       aria-hidden="true"
     >
       <defs>
-        {/* 外側の炎グラデ：根元が熱く、上にいくほど冷えて消える */}
-        <radialGradient id={gradId} cx="50%" cy="85%" r="65%" fx="50%" fy="90%">
-          <stop offset="0%"   stopColor={flame.hot}  stopOpacity="0.95" />
-          <stop offset="30%"  stopColor={flame.mid}  stopOpacity="0.75" />
-          <stop offset="65%"  stopColor={flame.cool} stopOpacity="0.35" />
+        {/* 外側の炎：根元から穏やかに広がる */}
+        <radialGradient id={gradId} cx="50%" cy="75%" r="60%" fx="50%" fy="80%">
+          <stop offset="0%"   stopColor={flame.hot}  stopOpacity="0.85" />
+          <stop offset="35%"  stopColor={flame.mid}  stopOpacity="0.6" />
+          <stop offset="75%"  stopColor={flame.cool} stopOpacity="0.2" />
           <stop offset="100%" stopColor={flame.cool} stopOpacity="0" />
         </radialGradient>
 
-        {/* 内側の白熱コア */}
-        <radialGradient id={innerId} cx="50%" cy="80%" r="50%">
-          <stop offset="0%"   stopColor={flame.hot} stopOpacity="0.9" />
-          <stop offset="50%"  stopColor={flame.mid} stopOpacity="0.5" />
+        {/* 内側の灯心 */}
+        <radialGradient id={innerId} cx="50%" cy="70%" r="45%">
+          <stop offset="0%"   stopColor={flame.hot} stopOpacity="0.75" />
+          <stop offset="60%"  stopColor={flame.mid} stopOpacity="0.35" />
           <stop offset="100%" stopColor={flame.mid} stopOpacity="0" />
         </radialGradient>
       </defs>
 
       <g filter={`url(#${filterId})`} opacity={opacity}>
-        {/* 外側の大きな炎 */}
+        {/* 外側の炎：ゆったり呼吸 */}
         <g
-          className="flame-rise-outer"
+          className="flame-soft-breathe"
           style={{
             transformOrigin: `${cx}px ${baseY}px`,
             animationDuration: `${breatheDur}s`,
@@ -268,52 +256,25 @@ const FlameAura = memo(function FlameAura({
         >
           <ellipse
             cx={cx}
-            cy={baseY - flameHeight * 0.35}
+            cy={baseY - flameHeight * 0.2}
             rx={flameWidth}
-            ry={flameHeight * 0.7}
+            ry={flameHeight * 0.65}
             fill={`url(#${gradId})`}
           />
         </g>
 
-        {/* 立ち昇るパーティクル群 */}
-        {Array.from({ length: particles }).map((_, i) => {
-          const offsetX = (i - (particles - 1) / 2) * (flameWidth * 0.45);
-          const delay   = (i * riseDur) / particles;
-          const pSize   = flameWidth * (0.45 + i * 0.05);
-
-          return (
-            <g
-              key={i}
-              className="flame-rise-particle"
-              style={{
-                transformOrigin: `${cx + offsetX}px ${baseY}px`,
-                animationDuration: `${riseDur}s`,
-                animationDelay: `-${delay}s`,
-              }}
-            >
-              <ellipse
-                cx={cx + offsetX}
-                cy={baseY}
-                rx={pSize}
-                ry={pSize * 1.6}
-                fill={`url(#${innerId})`}
-              />
-            </g>
-          );
-        })}
-
-        {/* 中心の白熱コア */}
+        {/* 中心の灯心：少し速く瞬く */}
         <g
-          className="flame-core-flicker"
+          className="flame-soft-flicker"
           style={{
             transformOrigin: `${cx}px ${baseY}px`,
-            animationDuration: `${breatheDur * 0.6}s`,
+            animationDuration: `${flickerDur}s`,
           }}
         >
           <ellipse
             cx={cx}
-            cy={baseY - flameHeight * 0.15}
-            rx={flameWidth * 0.45}
+            cy={baseY - flameHeight * 0.1}
+            rx={flameWidth * 0.5}
             ry={flameHeight * 0.4}
             fill={`url(#${innerId})`}
           />
@@ -340,7 +301,7 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none', zIndex: 2,
     }}>
-      <FlameAura size={s} intensity={0.7} flame={DEFAULT_THEME.flame} uid="core" scale={0.9} />
+      <FlameAura size={s} intensity={0.6} flame={DEFAULT_THEME.flame} uid="core" scale={0.85} />
       <div style={{ position: 'relative', zIndex: 2 }}>
         <MinimalHandles />
         技
@@ -378,7 +339,7 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
   const textColor = isMaxed ? '#fde68a' : bpText;
   const ptColor   = isMaxed ? '#fde68a' : `rgba(${rgb},0.75)`;
 
-  const flameIntensity = Math.max(0.45, Math.min(d.norm + 0.2, 1.0));
+  const flameIntensity = Math.max(0.4, Math.min(d.norm + 0.15, 1.0));
 
   return (
     <div style={{
@@ -417,7 +378,6 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
   const theme = getBpTheme(t.bodyPart);
   const { rgb, dark, text: bpText } = theme;
 
-  // 得意技は炎なし、それ以外は通常の炎
   const flame = isMaxed ? FLAME_MAXED : theme.flame;
 
   let bg: string, borderColor: string, textColor: string;
@@ -441,7 +401,7 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
     borderColor = `rgba(${rgb},0.10)`; textColor = `rgba(${rgb},0.25)`;
   }
 
-  const flameIntensity = isMaxed ? 0.95 : norm;
+  const flameIntensity = isMaxed ? 0.9 : norm;
   // 得意技は炎を出さない
   const showFlame = !isSignature && flameIntensity >= FLAME_MIN_INTENSITY;
 
@@ -673,74 +633,41 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 // CSS キーフレーム
 // =====================================================================
 const KEYFRAMES = `
-  /* 外側の炎：ゆらぎながら呼吸 */
-  @keyframes flame-rise-outer {
+  /* 外側の炎：ゆったりとした呼吸 */
+  @keyframes flame-soft-breathe {
     0%, 100% {
-      transform: translateY(0) scale(0.95, 0.92);
-      opacity: 0.85;
-    }
-    25% {
-      transform: translateY(-3px) scale(1.05, 1.08);
-      opacity: 1;
+      transform: scale(0.96, 0.97);
+      opacity: 0.88;
     }
     50% {
-      transform: translateY(-1px) scale(0.98, 1.05);
-      opacity: 0.9;
-    }
-    75% {
-      transform: translateY(-4px) scale(1.03, 1.1);
+      transform: scale(1.03, 1.04);
       opacity: 1;
     }
   }
-  .flame-rise-outer {
-    animation-name: flame-rise-outer;
+  .flame-soft-breathe {
+    animation-name: flame-soft-breathe;
     animation-timing-function: ease-in-out;
     animation-iteration-count: infinite;
     will-change: transform, opacity;
   }
 
-  /* パーティクル：下から上へ立ち昇る */
-  @keyframes flame-rise-particle {
-    0% {
-      transform: translateY(10%) scale(0.6, 0.5);
-      opacity: 0;
-    }
-    20% {
-      opacity: 0.9;
-    }
-    60% {
-      transform: translateY(-50%) scale(0.85, 1.1);
-      opacity: 0.7;
-    }
-    100% {
-      transform: translateY(-95%) scale(0.3, 1.3);
-      opacity: 0;
-    }
-  }
-  .flame-rise-particle {
-    animation-name: flame-rise-particle;
-    animation-timing-function: ease-out;
-    animation-iteration-count: infinite;
-    will-change: transform, opacity;
-  }
-
-  /* 中心コア：素早く瞬く */
-  @keyframes flame-core-flicker {
+  /* 内側の灯心：少し速くやさしく瞬く */
+  @keyframes flame-soft-flicker {
     0%, 100% {
-      transform: scale(0.9, 0.95);
+      transform: scale(0.94, 0.96);
       opacity: 0.85;
     }
     33% {
-      transform: scale(1.1, 1.15);
+      transform: scale(1.05, 1.03);
       opacity: 1;
     }
     66% {
-      transform: scale(0.95, 1.05);
+      transform: scale(0.98, 1.02);
       opacity: 0.9;
     }
   }
-  .flame-core-flicker {
-    animation-name: flame-core-flicker;
+  .flame-soft-flicker {
+    animation-name: flame-soft-flicker;
     animation-timing-function: ease-in-out;
     animation-iteration-count: infinite;
     will-change: transform, opacity;
@@ -765,14 +692,13 @@ const KEYFRAMES = `
   .signature-star-badge {
     animation:
       signature-star-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both,
-      signature-star-twinkle 2s ease-in-out infinite 0.6s;
+      signature-star-twinkle 2.4s ease-in-out infinite 0.6s;
   }
 
   /* OS設定でアニメ抑制 */
   @media (prefers-reduced-motion: reduce) {
-    .flame-rise-outer,
-    .flame-rise-particle,
-    .flame-core-flicker,
+    .flame-soft-breathe,
+    .flame-soft-flicker,
     .signature-star-badge {
       animation: none !important;
     }
