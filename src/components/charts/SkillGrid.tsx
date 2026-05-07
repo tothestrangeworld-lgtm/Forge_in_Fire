@@ -1,14 +1,11 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（Phase 6.4 階調炎リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（Phase 6.5 炎質感向上リビジョン）
 //
-// ★ Phase 6.4 の変更点:
-//   - 得意技は色を通常と同じにし、★バッジのみで判別
-//   - TECH_SCORE_CAP = 1000 / BP_SCORE_CAP = 5000 に変更
-//   - 炎の大きさを 5 段階の閾値（Tier）で階層化
-//     Tier0: 0-50pt(なし) / Tier1: 50-200 / Tier2: 200-500
-//     Tier3: 500-1000 / Tier4: 1000+ (MAX)
+// ★ Phase 6.5 の変更点:
+//   - 炎の色を部位カラーに寄せる（白いハイライトを抑制し透明度UP）
+//   - 立ち昇る火の粉（spark）エフェクトを追加（Tierに応じて0〜4個）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -43,37 +40,39 @@ const CORE_NODE_SIZE = 64;
 // =====================================================================
 // 炎の階層（Tier）定義
 // =====================================================================
-//   ポイントを「離散的な階層」に変換することで、
-//   発火するアニメーションのバリエーションを限定し、
-//   GPU/CPU負荷を抑制する。
-// =====================================================================
 type FlameTier = 0 | 1 | 2 | 3 | 4;
 
-/** ポイント→Tier 変換 */
 function pointsToTier(points: number): FlameTier {
-  if (points >= 1000) return 4;  // MAX
-  if (points >= 500)  return 3;  // 上級
-  if (points >= 200)  return 2;  // 中級
-  if (points >= 50)   return 1;  // 初級
-  return 0;                       // 未習得
+  if (points >= 1000) return 4;
+  if (points >= 500)  return 3;
+  if (points >= 200)  return 2;
+  if (points >= 50)   return 1;
+  return 0;
 }
 
-/** Tier→炎スケール */
 const TIER_SCALE: Record<FlameTier, number> = {
-  0: 0,      // 描画なし
+  0: 0,
   1: 0.55,
   2: 0.80,
   3: 1.00,
   4: 1.20,
 };
 
-/** Tier→不透明度 */
 const TIER_OPACITY: Record<FlameTier, number> = {
   0: 0,
-  1: 0.55,
-  2: 0.72,
-  3: 0.85,
-  4: 0.92,
+  1: 0.75,
+  2: 0.85,
+  3: 0.92,
+  4: 1.0,
+};
+
+/** Tier→火の粉の数 */
+const TIER_SPARKS: Record<FlameTier, number> = {
+  0: 0,
+  1: 1,
+  2: 2,
+  3: 3,
+  4: 4,
 };
 
 // =====================================================================
@@ -89,35 +88,35 @@ interface BpTheme {
 const BP_THEMES: Record<string, BpTheme> = {
   '面':   {
     rgb: '248,113,113', dark: '#7f1d1d', text: '#fecaca',
-    flame: { hot: '#fff5f5', mid: '#f87171', cool: '#7f1d1d' },
+    flame: { hot: '#fecaca', mid: '#ef4444', cool: '#7f1d1d' },
   },
   '小手': {
     rgb: '253,224,71', dark: '#713f12', text: '#fef9c3',
-    flame: { hot: '#fffbeb', mid: '#fde047', cool: '#78350f' },
+    flame: { hot: '#fef08a', mid: '#facc15', cool: '#854d0e' },
   },
   '胴':   {
     rgb: '56,189,248', dark: '#0c4a6e', text: '#bae6fd',
-    flame: { hot: '#f0f9ff', mid: '#38bdf8', cool: '#0c4a6e' },
+    flame: { hot: '#bae6fd', mid: '#0ea5e9', cool: '#0c4a6e' },
   },
   '突き': {
     rgb: '167,139,250', dark: '#4c1d95', text: '#ede9fe',
-    flame: { hot: '#faf5ff', mid: '#a78bfa', cool: '#4c1d95' },
+    flame: { hot: '#ddd6fe', mid: '#8b5cf6', cool: '#4c1d95' },
   },
 };
 
 const DEFAULT_THEME: BpTheme = {
   rgb: '99,102,241', dark: '#1e1b4b', text: '#c7d2fe',
-  flame: { hot: '#eef2ff', mid: '#818cf8', cool: '#1e1b4b' },
+  flame: { hot: '#c7d2fe', mid: '#6366f1', cool: '#1e1b4b' },
 };
 
 function getBpTheme(bodyPart: string): BpTheme {
   return BP_THEMES[bodyPart] ?? DEFAULT_THEME;
 }
 
-const FLAME_MAXED: BpTheme['flame'] = { hot: '#fffbeb', mid: '#fbbf24', cool: '#78350f' };
+const FLAME_MAXED: BpTheme['flame'] = { hot: '#fef08a', mid: '#f59e0b', cool: '#78350f' };
 
 // =====================================================================
-// 共有フィルタ ID（Tier別）
+// 共有フィルタ ID
 // =====================================================================
 const SHARED_FILTER_IDS: Record<FlameTier, string> = {
   0: '',
@@ -154,7 +153,7 @@ const MinimalHandles = memo(() => (
 MinimalHandles.displayName = 'MinimalHandles';
 
 // =====================================================================
-// 共有フィルタ定義（Tier別に控えめな揺らぎ）
+// 共有フィルタ定義
 // =====================================================================
 const SharedFlameFilters = memo(() => (
   <svg
@@ -163,7 +162,6 @@ const SharedFlameFilters = memo(() => (
     aria-hidden="true"
   >
     <defs>
-      {/* Tier1：ほのかな揺らぎ */}
       <filter id={SHARED_FILTER_IDS[1]} x="-30%" y="-40%" width="160%" height="180%">
         <feTurbulence type="fractalNoise" baseFrequency="0.02 0.04" numOctaves="1" seed="3" result="n">
           <animate attributeName="baseFrequency"
@@ -172,7 +170,6 @@ const SharedFlameFilters = memo(() => (
         <feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* Tier2：穏やかなメラメラ */}
       <filter id={SHARED_FILTER_IDS[2]} x="-35%" y="-50%" width="170%" height="200%">
         <feTurbulence type="fractalNoise" baseFrequency="0.022 0.045" numOctaves="1" seed="7" result="n">
           <animate attributeName="baseFrequency"
@@ -181,7 +178,6 @@ const SharedFlameFilters = memo(() => (
         <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* Tier3：はっきりとしたメラメラ */}
       <filter id={SHARED_FILTER_IDS[3]} x="-40%" y="-60%" width="180%" height="220%">
         <feTurbulence type="fractalNoise" baseFrequency="0.024 0.05" numOctaves="1" seed="13" result="n">
           <animate attributeName="baseFrequency"
@@ -190,7 +186,6 @@ const SharedFlameFilters = memo(() => (
         <feDisplacementMap in="SourceGraphic" in2="n" scale="10" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* Tier4：力強くも上品なメラメラ */}
       <filter id={SHARED_FILTER_IDS[4]} x="-45%" y="-65%" width="190%" height="230%">
         <feTurbulence type="fractalNoise" baseFrequency="0.026 0.055" numOctaves="1" seed="19" result="n">
           <animate attributeName="baseFrequency"
@@ -204,6 +199,84 @@ const SharedFlameFilters = memo(() => (
 SharedFlameFilters.displayName = 'SharedFlameFilters';
 
 // =====================================================================
+// 火の粉（Spark）コンポーネント
+// =====================================================================
+interface SparksProps {
+  size:   number;
+  count:  number;
+  flame:  BpTheme['flame'];
+  uid:    string;
+  scale:  number;
+}
+
+const Sparks = memo(function Sparks({ size, count, flame, uid, scale }: SparksProps) {
+  if (count === 0) return null;
+
+  // 火の粉が立ち昇るキャンバス（炎より縦長）
+  const padX      = size * 0.7  * scale;
+  const padTop    = size * 1.2  * scale;
+  const padBottom = size * 0.2  * scale;
+  const w = size + padX * 2;
+  const h = size + padTop + padBottom;
+
+  const cx = w / 2;
+  const baseY = size / 2 + padTop;
+
+  // 火の粉のサイズ
+  const sparkR = Math.max(1.2, size * 0.045 * scale);
+
+  return (
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      style={{
+        position: 'absolute',
+        top: -padTop,
+        left: -padX,
+        pointerEvents: 'none',
+        zIndex: 1,
+        overflow: 'visible',
+      }}
+      aria-hidden="true"
+    >
+      {Array.from({ length: count }).map((_, i) => {
+        // 個体差をつける
+        const offsetX  = ((i * 7919) % 100 / 100 - 0.5) * size * 0.5 * scale;
+        const dur      = 1.8 + ((i * 1597) % 100) / 100 * 1.2;
+        const delay    = -((i * 991) % 100) / 100 * dur;
+        const driftX   = (((i * 4271) % 100) / 100 - 0.5) * 12 * scale;
+        const color    = i % 2 === 0 ? flame.hot : flame.mid;
+
+        return (
+          <g
+            key={`${uid}-spark-${i}`}
+            className="flame-spark"
+            style={{
+              transformOrigin: `${cx}px ${baseY}px`,
+              animationDuration: `${dur}s`,
+              animationDelay: `${delay}s`,
+              ['--drift-x' as string]: `${driftX}px`,
+            }}
+          >
+            <circle
+              cx={cx + offsetX}
+              cy={baseY}
+              r={sparkR}
+              fill={color}
+              opacity="0.95"
+              style={{
+                filter: `drop-shadow(0 0 ${sparkR * 1.5}px ${color})`,
+              }}
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
+});
+
+// =====================================================================
 // 静謐な炎コンポーネント（Tier駆動）
 // =====================================================================
 interface FlameAuraProps {
@@ -211,7 +284,6 @@ interface FlameAuraProps {
   tier:      FlameTier;
   flame:     BpTheme['flame'];
   uid:       string;
-  /** 部位ノード等で、追加で炎全体を拡縮したい場合 */
   baseScale?: number;
 }
 
@@ -224,7 +296,6 @@ const FlameAura = memo(function FlameAura({
   const tierOpacity = TIER_OPACITY[tier];
   const totalScale = tierScale * baseScale;
 
-  // ノードに寄り添う控えめなキャンバス
   const padX      = size * 0.45 * totalScale;
   const padTop    = size * 0.6  * totalScale;
   const padBottom = size * 0.3  * totalScale;
@@ -234,7 +305,6 @@ const FlameAura = memo(function FlameAura({
   const cx = w / 2;
   const baseY = size / 2 + padTop;
 
-  // Tierに応じたサイズ
   const flameWidth  = size * (0.5 + tierScale * 0.35);
   const flameHeight = size * (0.6 + tierScale * 0.7);
 
@@ -242,7 +312,6 @@ const FlameAura = memo(function FlameAura({
   const innerId  = `fg-inner-${uid}`;
   const filterId = SHARED_FILTER_IDS[tier];
 
-  // Tierに応じたアニメ周期（強いほど少し速い）
   const breatheDur = 5.0 - tier * 0.4;
   const flickerDur = 3.0 - tier * 0.2;
 
@@ -262,18 +331,25 @@ const FlameAura = memo(function FlameAura({
       aria-hidden="true"
     >
       <defs>
-        {/* 外側の炎 */}
-        <radialGradient id={gradId} cx="50%" cy="75%" r="60%" fx="50%" fy="80%">
+        {/*
+          外側の炎：部位カラー（mid）を支配的に
+          - 中心の白(hot)領域を縮小（10%まで）
+          - midカラー領域を拡大（10〜60%）
+          - 不透明度全体を強化
+        */}
+        <radialGradient id={gradId} cx="50%" cy="78%" r="60%" fx="50%" fy="82%">
           <stop offset="0%"   stopColor={flame.hot}  stopOpacity="0.85" />
-          <stop offset="35%"  stopColor={flame.mid}  stopOpacity="0.6" />
-          <stop offset="75%"  stopColor={flame.cool} stopOpacity="0.2" />
+          <stop offset="15%"  stopColor={flame.mid}  stopOpacity="0.92" />
+          <stop offset="55%"  stopColor={flame.mid}  stopOpacity="0.7" />
+          <stop offset="85%"  stopColor={flame.cool} stopOpacity="0.25" />
           <stop offset="100%" stopColor={flame.cool} stopOpacity="0" />
         </radialGradient>
 
-        {/* 内側の灯心 */}
-        <radialGradient id={innerId} cx="50%" cy="70%" r="45%">
-          <stop offset="0%"   stopColor={flame.hot} stopOpacity="0.75" />
-          <stop offset="60%"  stopColor={flame.mid} stopOpacity="0.35" />
+        {/* 内側の灯心：白を控えめに、midカラーをしっかり見せる */}
+        <radialGradient id={innerId} cx="50%" cy="72%" r="45%">
+          <stop offset="0%"   stopColor={flame.hot} stopOpacity="0.8" />
+          <stop offset="35%"  stopColor={flame.mid} stopOpacity="0.7" />
+          <stop offset="80%"  stopColor={flame.mid} stopOpacity="0.25" />
           <stop offset="100%" stopColor={flame.mid} stopOpacity="0" />
         </radialGradient>
       </defs>
@@ -333,6 +409,7 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
       position: 'relative', userSelect: 'none', zIndex: 2,
     }}>
       <FlameAura size={s} tier={3} flame={DEFAULT_THEME.flame} uid="core" baseScale={0.85} />
+      <Sparks size={s} count={3} flame={DEFAULT_THEME.flame} uid="core" scale={0.85} />
       <div style={{ position: 'relative', zIndex: 2 }}>
         <MinimalHandles />
         技
@@ -385,6 +462,7 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
       position: 'relative', userSelect: 'none',
     }}>
       <FlameAura size={s} tier={d.tier} flame={flame} uid={`bp-${id}`} baseScale={1.0} />
+      <Sparks size={s} count={TIER_SPARKS[d.tier]} flame={flame} uid={`bp-${id}`} scale={1.0} />
       <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <MinimalHandles />
         <span style={{ fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em', color: textColor }}>
@@ -419,7 +497,6 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
 
   const flame = isMaxed ? FLAME_MAXED : theme.flame;
 
-  // 得意技は色を通常技と同じに（★マークだけで識別）
   let bg: string, borderColor: string, textColor: string;
   if (isMaxed) {
     bg = 'linear-gradient(135deg, #78350f, #b45309)';
@@ -448,10 +525,10 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
       position: 'relative', userSelect: 'none',
     }}>
       <FlameAura size={s} tier={tier} flame={flame} uid={`tech-${id}`} baseScale={1.0} />
+      <Sparks size={s} count={TIER_SPARKS[tier]} flame={flame} uid={`tech-${id}`} scale={1.0} />
       <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <MinimalHandles />
 
-        {/* 得意技：星バッジ（色は通常と同じ・★だけで識別） */}
         {isSignature && (
           <span
             className="signature-star-badge"
@@ -591,7 +668,6 @@ function buildGraph(
     const hs       = BP_NODE_SIZE / 2;
     const bpId     = `bp-${bi}`;
 
-    // 部位ノードの炎Tierも閾値設計：BP_SCORE_CAP=5000 を 5段階に
     let bpTier: FlameTier;
     if (totalPts >= 5000)      bpTier = 4;
     else if (totalPts >= 2500) bpTier = 3;
@@ -670,7 +746,7 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 // =====================================================================
 const KEYFRAMES = `
   @keyframes flame-soft-breathe {
-    0%, 100% { transform: scale(0.96, 0.97); opacity: 0.88; }
+    0%, 100% { transform: scale(0.96, 0.97); opacity: 0.92; }
     50%      { transform: scale(1.03, 1.04); opacity: 1; }
   }
   .flame-soft-breathe {
@@ -681,13 +757,39 @@ const KEYFRAMES = `
   }
 
   @keyframes flame-soft-flicker {
-    0%, 100% { transform: scale(0.94, 0.96); opacity: 0.85; }
+    0%, 100% { transform: scale(0.94, 0.96); opacity: 0.88; }
     33%      { transform: scale(1.05, 1.03); opacity: 1; }
-    66%      { transform: scale(0.98, 1.02); opacity: 0.9; }
+    66%      { transform: scale(0.98, 1.02); opacity: 0.94; }
   }
   .flame-soft-flicker {
     animation-name: flame-soft-flicker;
     animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    will-change: transform, opacity;
+  }
+
+  /* 火の粉：下から上へ立ち昇り、上方で消える */
+  @keyframes flame-spark-rise {
+    0% {
+      transform: translate(0, 10%) scale(0.4);
+      opacity: 0;
+    }
+    15% {
+      transform: translate(calc(var(--drift-x) * 0.2), -20%) scale(1);
+      opacity: 1;
+    }
+    60% {
+      transform: translate(calc(var(--drift-x) * 0.7), -65%) scale(0.85);
+      opacity: 0.9;
+    }
+    100% {
+      transform: translate(var(--drift-x), -110%) scale(0.2);
+      opacity: 0;
+    }
+  }
+  .flame-spark {
+    animation-name: flame-spark-rise;
+    animation-timing-function: ease-out;
     animation-iteration-count: infinite;
     will-change: transform, opacity;
   }
@@ -716,9 +818,11 @@ const KEYFRAMES = `
   @media (prefers-reduced-motion: reduce) {
     .flame-soft-breathe,
     .flame-soft-flicker,
+    .flame-spark,
     .signature-star-badge {
       animation: none !important;
     }
+    .flame-spark { opacity: 0 !important; }
     svg animate { display: none; }
   }
 
@@ -774,7 +878,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
       <style>{KEYFRAMES}</style>
       <SharedFlameFilters />
 
-      {/* 得意技バナー */}
       {signatureTech && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
@@ -800,7 +903,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         </div>
       )}
 
-      {/* MAXカウンター */}
       {maxedCount > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
@@ -813,7 +915,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         </div>
       )}
 
-      {/* フィルターボタン */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
         {FILTER_BUTTONS.map(({ key, label }) => {
           const active = filter === key;
@@ -833,7 +934,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         })}
       </div>
 
-      {/* スキルグリッド本体 */}
       <div style={{
         width: '100%', height: 480, borderRadius: 16, overflow: 'hidden',
         background: 'linear-gradient(135deg, #050412 0%, #080717 50%, #0a0918 100%)',
@@ -853,7 +953,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         </ReactFlow>
       </div>
 
-      {/* 凡例 */}
       <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap', padding: '0 2px' }}>
         {[
           { color: 'rgba(248,113,113,0.85)', label: '面' },
