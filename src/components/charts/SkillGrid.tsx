@@ -1,15 +1,14 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（Phase 6.6 鋭い灯火リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（Phase 6.7 静謐な灯火リビジョン）
 //
-// ★ Phase 6.6 の変更点:
-//   【仕様A】ノード中心を透明化、輪郭を舐めるギザギザ炎
-//     - radialGradient を「内側透明・外側発色」のドーナツ型に変更
-//     - feComposite でアルファ閾値を効かせ、靄ではなく炎の輪郭を強調
-//   【仕様B】火の粉に瞬き（twinkle）アニメを合成
-//     - 上昇アニメと瞬きアニメをカンマ区切りで重ねる
-//   【仕様C】BodyPartネオン発光復活＋集計強化＋Core最強化
+// ★ Phase 6.7 の変更点:
+//   ① 歪みの徹底抑制：feDisplacementMap の scale を 1/3〜1/5 に
+//   ② 完全同系色化：FLAME_MAXED 廃止、部位色そのもので白熱表現
+//   ③ ネオングロウを控えめに（SVGオーラを主役に）
+//   ④ 火の粉数・速度・彩度を控えめに
+//   ⑤ 中心透明・成長連動・瞬きアニメは維持
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -64,22 +63,26 @@ const TIER_SCALE: Record<FlameTier, number> = {
 
 const TIER_OPACITY: Record<FlameTier, number> = {
   0: 0,
-  1: 0.78,
-  2: 0.88,
-  3: 0.95,
-  4: 1.0,
+  1: 0.65,
+  2: 0.78,
+  3: 0.88,
+  4: 0.95,
 };
 
+// 火の粉数を控えめに（仕様④）
 const TIER_SPARKS: Record<FlameTier, number> = {
   0: 0,
-  1: 1,
-  2: 2,
-  3: 3,
-  4: 4,
+  1: 0,
+  2: 0,
+  3: 1,
+  4: 2,
 };
 
 // =====================================================================
-// 部位カラーテーマ
+// 部位カラーテーマ（完全同系色化）
+//   flame.hot:  最も白熱した部位色（高輝度）
+//   flame.mid:  ノード本体と同じ彩度の部位色
+//   flame.cool: 暗部の部位色
 // =====================================================================
 interface BpTheme {
   rgb:   string;
@@ -91,43 +94,48 @@ interface BpTheme {
 const BP_THEMES: Record<string, BpTheme> = {
   '面':   {
     rgb: '248,113,113', dark: '#7f1d1d', text: '#fecaca',
-    flame: { hot: '#fecaca', mid: '#ef4444', cool: '#7f1d1d' },
+    // 深紅 → 鮮烈な赤（白熱）
+    flame: { hot: '#fee2e2', mid: '#f87171', cool: '#7f1d1d' },
   },
   '小手': {
     rgb: '253,224,71', dark: '#713f12', text: '#fef9c3',
-    flame: { hot: '#fef08a', mid: '#facc15', cool: '#854d0e' },
+    // 黄 → 白熱した黄
+    flame: { hot: '#fef9c3', mid: '#fde047', cool: '#713f12' },
   },
   '胴':   {
     rgb: '56,189,248', dark: '#0c4a6e', text: '#bae6fd',
-    flame: { hot: '#bae6fd', mid: '#0ea5e9', cool: '#0c4a6e' },
+    // 藍 → 輝く藍
+    flame: { hot: '#e0f2fe', mid: '#38bdf8', cool: '#0c4a6e' },
   },
   '突き': {
     rgb: '167,139,250', dark: '#4c1d95', text: '#ede9fe',
-    flame: { hot: '#ddd6fe', mid: '#8b5cf6', cool: '#4c1d95' },
+    // 紫 → 白熱した紫
+    flame: { hot: '#ede9fe', mid: '#a78bfa', cool: '#4c1d95' },
   },
 };
 
 const DEFAULT_THEME: BpTheme = {
   rgb: '99,102,241', dark: '#1e1b4b', text: '#c7d2fe',
-  flame: { hot: '#c7d2fe', mid: '#6366f1', cool: '#1e1b4b' },
+  // 中心の藍色（インディゴ）系
+  flame: { hot: '#e0e7ff', mid: '#818cf8', cool: '#1e1b4b' },
 };
 
 function getBpTheme(bodyPart: string): BpTheme {
   return BP_THEMES[bodyPart] ?? DEFAULT_THEME;
 }
 
-const FLAME_MAXED: BpTheme['flame'] = { hot: '#fef08a', mid: '#f59e0b', cool: '#78350f' };
-const FLAME_CORE:  BpTheme['flame'] = { hot: '#fef08a', mid: '#f97316', cool: '#7c2d12' };
+// 中心ノード用：DEFAULT_THEME と同じ藍系
+const FLAME_CORE: BpTheme['flame'] = DEFAULT_THEME.flame;
 
 // =====================================================================
 // 共有フィルタ ID
 // =====================================================================
 const SHARED_FILTER_IDS: Record<FlameTier, string> = {
   0: '',
-  1: 'flame-edge-tier1',
-  2: 'flame-edge-tier2',
-  3: 'flame-edge-tier3',
-  4: 'flame-edge-tier4',
+  1: 'flame-quiet-tier1',
+  2: 'flame-quiet-tier2',
+  3: 'flame-quiet-tier3',
+  4: 'flame-quiet-tier4',
 };
 
 // =====================================================================
@@ -157,9 +165,8 @@ const MinimalHandles = memo(() => (
 MinimalHandles.displayName = 'MinimalHandles';
 
 // =====================================================================
-// 共有フィルタ定義
-//   feComposite を使ってアルファ閾値を効かせ、
-//   モヤモヤではなく「炎のギザギザした輪郭」を作る
+// 共有フィルタ定義（歪み徹底抑制版）
+//   行灯（あんどん）のように、ごくわずかに揺らぐ
 // =====================================================================
 const SharedFlameFilters = memo(() => (
   <svg
@@ -168,61 +175,40 @@ const SharedFlameFilters = memo(() => (
     aria-hidden="true"
   >
     <defs>
-      {/* Tier1：ほのかな揺らぎ */}
+      {/* Tier1：ほぼ揺れない */}
       <filter id={SHARED_FILTER_IDS[1]} x="-30%" y="-40%" width="160%" height="180%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.025 0.05" numOctaves="2" seed="3" result="n">
+        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.035" numOctaves="1" seed="3" result="n">
           <animate attributeName="baseFrequency"
-            dur="6s" values="0.025 0.05; 0.032 0.065; 0.025 0.05" repeatCount="indefinite" />
+            dur="9s" values="0.018 0.035; 0.022 0.045; 0.018 0.035" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G" result="disp" />
-        {/* アルファコントラスト強化 */}
-        <feColorMatrix in="disp" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 1.4 -0.15" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="2" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* Tier2：穏やかなメラメラ */}
+      {/* Tier2：かすかな揺らぎ */}
       <filter id={SHARED_FILTER_IDS[2]} x="-35%" y="-50%" width="170%" height="200%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.028 0.055" numOctaves="2" seed="7" result="n">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.04" numOctaves="1" seed="7" result="n">
           <animate attributeName="baseFrequency"
-            dur="5s" values="0.028 0.055; 0.038 0.075; 0.028 0.055" repeatCount="indefinite" />
+            dur="8s" values="0.02 0.04; 0.024 0.05; 0.02 0.04" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="10" xChannelSelector="R" yChannelSelector="G" result="disp" />
-        <feColorMatrix in="disp" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 1.5 -0.18" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="3" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* Tier3：はっきりとしたメラメラ */}
+      {/* Tier3：穏やかな揺らぎ */}
       <filter id={SHARED_FILTER_IDS[3]} x="-40%" y="-60%" width="180%" height="220%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.03 0.06" numOctaves="2" seed="13" result="n">
+        <feTurbulence type="fractalNoise" baseFrequency="0.022 0.045" numOctaves="1" seed="13" result="n">
           <animate attributeName="baseFrequency"
-            dur="4.5s" values="0.03 0.06; 0.042 0.082; 0.03 0.06" repeatCount="indefinite" />
+            dur="7s" values="0.022 0.045; 0.027 0.055; 0.022 0.045" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G" result="disp" />
-        <feColorMatrix in="disp" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 1.6 -0.2" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" />
       </filter>
 
-      {/* Tier4：力強くも上品なメラメラ */}
+      {/* Tier4：はっきりとした、しかし穏やかな揺らぎ */}
       <filter id={SHARED_FILTER_IDS[4]} x="-45%" y="-65%" width="190%" height="230%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.032 0.065" numOctaves="2" seed="19" result="n">
+        <feTurbulence type="fractalNoise" baseFrequency="0.024 0.05" numOctaves="1" seed="19" result="n">
           <animate attributeName="baseFrequency"
-            dur="4s" values="0.032 0.065; 0.045 0.088; 0.032 0.065" repeatCount="indefinite" />
+            dur="6s" values="0.024 0.05; 0.03 0.06; 0.024 0.05" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="18" xChannelSelector="R" yChannelSelector="G" result="disp" />
-        <feColorMatrix in="disp" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 1.7 -0.22" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" />
       </filter>
     </defs>
   </svg>
@@ -230,8 +216,7 @@ const SharedFlameFilters = memo(() => (
 SharedFlameFilters.displayName = 'SharedFlameFilters';
 
 // =====================================================================
-// 火の粉（Spark）コンポーネント
-//   上昇アニメ + 瞬きアニメを合成
+// 火の粉（Spark）コンポーネント（控えめ版）
 // =====================================================================
 interface SparksProps {
   size:   number;
@@ -244,8 +229,8 @@ interface SparksProps {
 const Sparks = memo(function Sparks({ size, count, flame, uid, scale }: SparksProps) {
   if (count === 0) return null;
 
-  const padX      = size * 0.7  * scale;
-  const padTop    = size * 1.3  * scale;
+  const padX      = size * 0.55 * scale;
+  const padTop    = size * 1.0  * scale;
   const padBottom = size * 0.2  * scale;
   const w = size + padX * 2;
   const h = size + padTop + padBottom;
@@ -253,7 +238,7 @@ const Sparks = memo(function Sparks({ size, count, flame, uid, scale }: SparksPr
   const cx = w / 2;
   const baseY = size / 2 + padTop;
 
-  const sparkR = Math.max(1.3, size * 0.05 * scale);
+  const sparkR = Math.max(1.0, size * 0.04 * scale);
 
   return (
     <svg
@@ -271,16 +256,19 @@ const Sparks = memo(function Sparks({ size, count, flame, uid, scale }: SparksPr
       aria-hidden="true"
     >
       {Array.from({ length: count }).map((_, i) => {
-        const offsetX  = ((i * 7919) % 100 / 100 - 0.5) * size * 0.55 * scale;
-        const riseDur  = 1.6 + ((i * 1597) % 100) / 100 * 1.2;
+        const offsetX  = ((i * 7919) % 100 / 100 - 0.5) * size * 0.4 * scale;
+        // 上昇は遅めに
+        const riseDur  = 3.5 + ((i * 1597) % 100) / 100 * 1.5;
         const riseDelay = -((i * 991) % 100) / 100 * riseDur;
-        const driftX   = (((i * 4271) % 100) / 100 - 0.5) * 14 * scale;
-        const twinkleDur = 0.25 + ((i * 547) % 100) / 100 * 0.35;
+        const driftX   = (((i * 4271) % 100) / 100 - 0.5) * 8 * scale;
+        // 瞬きも遅めに
+        const twinkleDur = 0.6 + ((i * 547) % 100) / 100 * 0.5;
         const twinkleDelay = -((i * 313) % 100) / 100 * twinkleDur;
-        const color    = i % 2 === 0 ? flame.hot : flame.mid;
+
+        // 火の粉の色は炎本体と同系色（midカラー基準）
+        const color = flame.mid;
 
         return (
-          // 上昇アニメ用の外側ラッパ
           <g
             key={`${uid}-spark-${i}`}
             className="flame-spark-rise"
@@ -291,7 +279,6 @@ const Sparks = memo(function Sparks({ size, count, flame, uid, scale }: SparksPr
               ['--drift-x' as string]: `${driftX}px`,
             }}
           >
-            {/* 瞬きアニメ用の内側ラッパ */}
             <g
               className="flame-spark-twinkle"
               style={{
@@ -306,7 +293,7 @@ const Sparks = memo(function Sparks({ size, count, flame, uid, scale }: SparksPr
                 r={sparkR}
                 fill={color}
                 style={{
-                  filter: `drop-shadow(0 0 ${sparkR * 2}px ${color})`,
+                  filter: `drop-shadow(0 0 ${sparkR * 1.5}px ${color})`,
                 }}
               />
             </g>
@@ -318,7 +305,7 @@ const Sparks = memo(function Sparks({ size, count, flame, uid, scale }: SparksPr
 });
 
 // =====================================================================
-// 鋭い灯火コンポーネント（中心透明・輪郭で燃える）
+// 静謐な灯火コンポーネント（中心透明・輪郭でほのかに燃える）
 // =====================================================================
 interface FlameAuraProps {
   size:      number;
@@ -337,21 +324,20 @@ const FlameAura = memo(function FlameAura({
   const tierOpacity = TIER_OPACITY[tier];
   const totalScale = tierScale * baseScale;
 
-  // 炎は輪郭から外側に広がるため、上下左右ともにパディング確保
-  const pad = size * 0.55 * totalScale;
+  const pad = size * 0.5 * totalScale;
   const w = size + pad * 2;
   const h = size + pad * 2;
 
   const cx = w / 2;
   const cy = h / 2;
 
-  // 炎が広がる外周半径（ノード半径より大きく）
-  const outerR = size / 2 * (1.0 + tierScale * 0.55);
+  const outerR = size / 2 * (1.0 + tierScale * 0.5);
 
   const gradId   = `fg-${uid}`;
   const filterId = SHARED_FILTER_IDS[tier];
 
-  const breatheDur = 5.0 - tier * 0.4;
+  // 呼吸はゆったりと
+  const breatheDur = 6.5 - tier * 0.4;
 
   return (
     <svg
@@ -370,32 +356,29 @@ const FlameAura = memo(function FlameAura({
     >
       <defs>
         {/*
-          【仕様A】ドーナツ型グラデーション
-          内側 0〜45%：完全透明 → ノード中心の文字を遮らない
-          50〜65%：炎の本体（部位カラー mid）
-          70〜85%：徐々にフェード（cool）
-          90〜100%：完全透明
+          中心は完全透明（テキスト視認性確保）
+          輪郭付近で部位カラーがやさしく発色する
+          グラデーションのコントラストは控えめに
         */}
         <radialGradient id={gradId} cx="50%" cy="50%" r="50%">
           <stop offset="0%"   stopColor={flame.mid} stopOpacity="0" />
-          <stop offset="40%"  stopColor={flame.mid} stopOpacity="0" />
-          <stop offset="50%"  stopColor={flame.hot} stopOpacity="0.85" />
-          <stop offset="60%"  stopColor={flame.mid} stopOpacity="1" />
-          <stop offset="75%"  stopColor={flame.mid} stopOpacity="0.7" />
-          <stop offset="88%"  stopColor={flame.cool} stopOpacity="0.3" />
+          <stop offset="42%"  stopColor={flame.mid} stopOpacity="0" />
+          <stop offset="52%"  stopColor={flame.hot} stopOpacity="0.55" />
+          <stop offset="62%"  stopColor={flame.mid} stopOpacity="0.85" />
+          <stop offset="78%"  stopColor={flame.mid} stopOpacity="0.55" />
+          <stop offset="90%"  stopColor={flame.cool} stopOpacity="0.22" />
           <stop offset="100%" stopColor={flame.cool} stopOpacity="0" />
         </radialGradient>
       </defs>
 
       <g filter={`url(#${filterId})`} opacity={tierOpacity}>
         <g
-          className="flame-edge-breathe"
+          className="flame-quiet-breathe"
           style={{
             transformOrigin: `${cx}px ${cy}px`,
             animationDuration: `${breatheDur}s`,
           }}
         >
-          {/* 大きな円。グラデのドーナツ部分だけが見える */}
           <circle
             cx={cx}
             cy={cy}
@@ -409,7 +392,7 @@ const FlameAura = memo(function FlameAura({
 });
 
 // =====================================================================
-// CORE ノード（最強クラスの炎）
+// CORE ノード（中心：藍色の静謐な灯火）
 // =====================================================================
 const CoreNode = memo(function CoreNode(_: NodeProps) {
   const s = CORE_NODE_SIZE;
@@ -417,21 +400,21 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
     <div style={{
       width: s, height: s, borderRadius: '50%',
       background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%)',
-      border: '2px solid rgba(251,191,36,0.85)',
+      border: '2px solid rgba(129,140,248,0.65)',
       boxShadow: [
-        '0 0 14px 5px rgba(249,115,22,0.55)',
-        '0 0 0 1px rgba(251,191,36,0.55)',
-        'inset 0 0 14px rgba(99,102,241,0.3)',
+        '0 0 10px 3px rgba(99,102,241,0.45)',
+        '0 0 0 1px rgba(129,140,248,0.35)',
+        'inset 0 0 12px rgba(99,102,241,0.25)',
       ].join(', '),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fef9c3', fontSize: 15, fontWeight: 800,
+      color: '#e0e7ff', fontSize: 15, fontWeight: 800,
       letterSpacing: '0.1em',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none', zIndex: 2,
     }}>
-      {/* 仕様C：固定で最強Tier=4 + Core専用配色 */}
-      <FlameAura size={s} tier={4} flame={FLAME_CORE} uid="core" baseScale={1.05} />
-      <Sparks size={s} count={4} flame={FLAME_CORE} uid="core" scale={1.05} />
+      {/* 中心ノードは固定で最強Tier=4 + 藍系オーラ */}
+      <FlameAura size={s} tier={4} flame={FLAME_CORE} uid="core" baseScale={1.0} />
+      <Sparks size={s} count={2} flame={FLAME_CORE} uid="core" scale={1.0} />
       <div style={{ position: 'relative', zIndex: 2 }}>
         <MinimalHandles />
         技
@@ -441,7 +424,7 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
 });
 
 // =====================================================================
-// BodyPart ノード（ネオン発光 + 集計炎）
+// BodyPart ノード（控えめネオン芯 + 静謐な灯火）
 // =====================================================================
 interface BodyPartData {
   label:       string;
@@ -457,36 +440,31 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
   const theme = getBpTheme(d.label);
   const { rgb, dark, text: bpText } = theme;
 
-  const flame = isMaxed ? FLAME_MAXED : theme.flame;
+  // MAX時も部位の同系色（白熱版）を使用
+  const flame = theme.flame;
 
   const bg = isMaxed
-    ? 'linear-gradient(135deg, #78350f, #b45309, #d97706)'
+    ? `linear-gradient(135deg, ${dark}, rgba(${rgb},0.5))`
     : d.norm > 0.5
-    ? `linear-gradient(135deg, ${dark}, rgba(${rgb},0.4))`
+    ? `linear-gradient(135deg, ${dark}, rgba(${rgb},0.35))`
     : `linear-gradient(135deg, #0a0814, ${dark})`;
 
   const borderColor = isMaxed
-    ? 'rgba(251,191,36,0.85)'
+    ? `rgba(${rgb},0.85)`
     : d.norm > 0.5
-    ? `rgba(${rgb},0.8)`
-    : `rgba(${rgb},0.5)`;
+    ? `rgba(${rgb},0.65)`
+    : `rgba(${rgb},0.4)`;
 
-  // 【仕様C-1】ネオン発光復活：normに連動して光量UP
-  const glowIntensity = Math.max(0.35, d.norm); // 最低限光らせる
-  const neonGlow = isMaxed
-    ? [
-        '0 0 14px 4px rgba(251,191,36,0.7)',
-        '0 0 0 1.5px rgba(251,191,36,0.55)',
-        `inset 0 0 10px rgba(251,191,36,0.35)`,
-      ].join(', ')
-    : [
-        `0 0 ${8 + glowIntensity * 10}px ${2 + glowIntensity * 3}px rgba(${rgb},${(0.45 + glowIntensity * 0.35).toFixed(2)})`,
-        `0 0 0 1px rgba(${rgb},${(0.4 + glowIntensity * 0.3).toFixed(2)})`,
-        `inset 0 0 8px rgba(${rgb},${(0.2 + glowIntensity * 0.2).toFixed(2)})`,
-      ].join(', ');
+  // ネオン発光：控えめに（SVG灯火を主役にする）
+  const glowIntensity = Math.max(0.25, d.norm);
+  const neonGlow = [
+    `0 0 ${5 + glowIntensity * 6}px ${1 + glowIntensity * 1.5}px rgba(${rgb},${(0.28 + glowIntensity * 0.22).toFixed(2)})`,
+    `0 0 0 1px rgba(${rgb},${(0.3 + glowIntensity * 0.2).toFixed(2)})`,
+    `inset 0 0 6px rgba(${rgb},${(0.15 + glowIntensity * 0.15).toFixed(2)})`,
+  ].join(', ');
 
-  const textColor = isMaxed ? '#fde68a' : bpText;
-  const ptColor   = isMaxed ? '#fde68a' : `rgba(${rgb},0.85)`;
+  const textColor = isMaxed ? `rgba(${rgb},1)` : bpText;
+  const ptColor   = `rgba(${rgb},0.85)`;
 
   return (
     <div style={{
@@ -505,14 +483,14 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
         <span style={{
           fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em',
           color: textColor,
-          textShadow: '0 0 4px rgba(0,0,0,0.7)',
+          textShadow: '0 0 4px rgba(0,0,0,0.75)',
         }}>
           {d.label}
         </span>
         {d.totalPoints > 0 && (
           <span style={{
             fontSize: 8, opacity: 0.85, marginTop: 1, color: ptColor,
-            textShadow: '0 0 3px rgba(0,0,0,0.7)',
+            textShadow: '0 0 3px rgba(0,0,0,0.75)',
           }}>
             {d.totalPoints}pt
           </span>
@@ -523,7 +501,7 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
 });
 
 // =====================================================================
-// Technique ノード
+// Technique ノード（部位同系色の灯火）
 // =====================================================================
 interface TechData {
   technique:   Technique;
@@ -539,27 +517,28 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
   const theme = getBpTheme(t.bodyPart);
   const { rgb, dark, text: bpText } = theme;
 
-  const flame = isMaxed ? FLAME_MAXED : theme.flame;
+  // MAX時も部位同系色で白熱
+  const flame = theme.flame;
 
   let bg: string, borderColor: string, textColor: string;
   let neonGlow: string = 'none';
 
   if (isMaxed) {
-    bg = 'linear-gradient(135deg, #78350f, #b45309)';
-    borderColor = 'rgba(251,191,36,0.75)'; textColor = '#fde68a';
-    neonGlow = '0 0 10px 3px rgba(251,191,36,0.6), 0 0 0 1px rgba(251,191,36,0.4)';
+    bg = `linear-gradient(135deg, ${dark}, rgba(${rgb},0.5))`;
+    borderColor = `rgba(${rgb},0.85)`; textColor = bpText;
+    neonGlow = `0 0 7px 2px rgba(${rgb},0.45), 0 0 0 1px rgba(${rgb},0.45)`;
   } else if (tier >= 3) {
-    bg = `linear-gradient(135deg, ${dark}, rgba(${rgb},0.42))`;
-    borderColor = `rgba(${rgb},0.75)`; textColor = bpText;
-    neonGlow = `0 0 8px 2px rgba(${rgb},0.5), 0 0 0 1px rgba(${rgb},0.4)`;
+    bg = `linear-gradient(135deg, ${dark}, rgba(${rgb},0.4))`;
+    borderColor = `rgba(${rgb},0.7)`; textColor = bpText;
+    neonGlow = `0 0 6px 1.5px rgba(${rgb},0.35), 0 0 0 1px rgba(${rgb},0.35)`;
   } else if (tier >= 2) {
     bg = `linear-gradient(135deg, #070514, ${dark})`;
-    borderColor = `rgba(${rgb},0.55)`; textColor = bpText;
-    neonGlow = `0 0 6px 1.5px rgba(${rgb},0.35)`;
+    borderColor = `rgba(${rgb},0.5)`; textColor = bpText;
+    neonGlow = `0 0 4px 1px rgba(${rgb},0.25)`;
   } else if (tier >= 1) {
     bg = `linear-gradient(135deg, #06050f, #0d0b1a)`;
-    borderColor = `rgba(${rgb},0.3)`; textColor = `rgba(${rgb},0.7)`;
-    neonGlow = `0 0 4px 1px rgba(${rgb},0.22)`;
+    borderColor = `rgba(${rgb},0.28)`; textColor = `rgba(${rgb},0.7)`;
+    neonGlow = `0 0 3px 1px rgba(${rgb},0.18)`;
   } else {
     bg = '#06050f';
     borderColor = `rgba(${rgb},0.12)`; textColor = `rgba(${rgb},0.3)`;
@@ -620,9 +599,9 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
           <span style={{
             position: 'absolute', top: -3, right: -1,
             fontSize: 6, lineHeight: 1,
-            background: 'linear-gradient(135deg, #b45309, #fbbf24)',
+            background: `linear-gradient(135deg, ${dark}, rgba(${rgb},1))`,
             borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800,
-            boxShadow: '0 0 4px rgba(251,191,36,0.7)',
+            boxShadow: `0 0 4px rgba(${rgb},0.7)`,
           }}>MAX</span>
         )}
       </div>
@@ -656,7 +635,7 @@ function sanitizeTechniques(raw: Technique[]): Technique[] {
 }
 
 // =====================================================================
-// 部位合計ポイント→Tier 変換（仕様C-2の集計連動）
+// 部位合計ポイント→Tier 変換
 // =====================================================================
 function bpTotalPointsToTier(totalPoints: number): FlameTier {
   if (totalPoints >= 5000) return 4;
@@ -681,7 +660,6 @@ function buildGraph(
 
   const techniques = sanitizeTechniques(rawTechniques);
 
-  // 1. 部位ごとに技をグループ化＋合計ポイント算出
   const byBodyPart: Record<string, Technique[]> = {};
   techniques.forEach(t => {
     const bp = t.bodyPart || '未分類';
@@ -689,7 +667,7 @@ function buildGraph(
     byBodyPart[bp].push(t);
   });
 
-  // 各部位の合計ポイントを事前計算（仕様C-2）
+  // 各部位の合計ポイント
   const bpTotalPoints: Record<string, number> = {};
   Object.keys(byBodyPart).forEach(bp => {
     bpTotalPoints[bp] = byBodyPart[bp].reduce(
@@ -698,13 +676,11 @@ function buildGraph(
     );
   });
 
-  // 部位を合計ポイント降順でソート
   const bodyParts = Object.keys(byBodyPart).sort(
     (a, b) => bpTotalPoints[b] - bpTotalPoints[a]
   );
   bodyParts.forEach(bp => byBodyPart[bp].sort((a, b) => (b.points ?? 0) - (a.points ?? 0)));
 
-  // 2. 全技を最大 OUTER_SLOTS 件に制限
   const allTechs: Array<{ tech: Technique; bpKey: string }> = [];
   outer: for (const bp of bodyParts) {
     for (const tech of byBodyPart[bp]) {
@@ -715,11 +691,9 @@ function buildGraph(
 
   const R_MID = R_OUTER * R_MID_RATIO;
 
-  // 3. CORE ノード
   const half = CORE_NODE_SIZE / 2;
   nodes.push({ id: 'core', type: 'coreNode', position: { x: -half, y: -half }, data: {} });
 
-  // 4. 技ノードを外周に配置
   const techAngles: Record<string, number> = {};
   allTechs.forEach(({ tech }, i) => {
     const angle = (2 * Math.PI / OUTER_SLOTS) * i - Math.PI / 2;
@@ -739,12 +713,10 @@ function buildGraph(
     });
   });
 
-  // 5. 部位ノードを配置（合計ポイント連動Tier）
   bodyParts.forEach((bp, bi) => {
     const techs = byBodyPart[bp].filter(t => techAngles[t.id] !== undefined);
     if (techs.length === 0) return;
 
-    // 仕様C-2：表示中の技だけでなく、その部位の全技合計を使う
     const totalPts = bpTotalPoints[bp];
     const bpNorm   = Math.min(totalPts / BP_SCORE_CAP, 1.0);
     const bpTier   = bpTotalPointsToTier(totalPts);
@@ -762,9 +734,8 @@ function buildGraph(
     });
 
     const { rgb: bpRgb } = getBpTheme(bp);
-    const bpEdgeColor = bpNorm >= 1.0
-      ? '#fbbf24'
-      : `rgba(${bpRgb},${(0.5 + bpNorm * 0.4).toFixed(2)})`;
+    // エッジも部位同系色（オレンジ/ゴールドではなく）
+    const bpEdgeColor = `rgba(${bpRgb},${(0.4 + bpNorm * 0.45).toFixed(2)})`;
     edges.push({
       id: `e-core-${bpId}`, source: 'core', target: bpId, type: 'straight',
       style: {
@@ -777,11 +748,8 @@ function buildGraph(
     techs.forEach(tech => {
       const techId      = `tech-${tech.id}`;
       const norm        = Math.min((tech.points ?? 0) / TECH_SCORE_CAP, 1.0);
-      const isMaxed     = (tech.points ?? 0) >= TECH_SCORE_CAP;
       const { rgb }     = getBpTheme(tech.bodyPart);
-      const edgeColor   = isMaxed
-        ? '#d97706'
-        : `rgba(${rgb},${(0.35 + norm * 0.55).toFixed(2)})`;
+      const edgeColor   = `rgba(${rgb},${(0.35 + norm * 0.55).toFixed(2)})`;
 
       edges.push({
         id: `e-${bpId}-${techId}`, source: bpId, target: techId, type: 'straight',
@@ -821,34 +789,34 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 // CSS キーフレーム
 // =====================================================================
 const KEYFRAMES = `
-  /* 炎本体：呼吸（拡大縮小） */
-  @keyframes flame-edge-breathe {
-    0%, 100% { transform: scale(0.94); opacity: 0.9; }
-    50%      { transform: scale(1.06); opacity: 1; }
+  /* 静謐な灯火：ゆったりとした呼吸 */
+  @keyframes flame-quiet-breathe {
+    0%, 100% { transform: scale(0.97); opacity: 0.92; }
+    50%      { transform: scale(1.03); opacity: 1; }
   }
-  .flame-edge-breathe {
-    animation-name: flame-edge-breathe;
+  .flame-quiet-breathe {
+    animation-name: flame-quiet-breathe;
     animation-timing-function: ease-in-out;
     animation-iteration-count: infinite;
     will-change: transform, opacity;
   }
 
-  /* 火の粉：上昇アニメ */
+  /* 火の粉：ゆっくり立ち昇る */
   @keyframes flame-spark-rise {
     0% {
-      transform: translate(0, 10%);
+      transform: translate(0, 5%);
       opacity: 0;
     }
-    12% {
-      transform: translate(calc(var(--drift-x) * 0.15), -15%);
-      opacity: 1;
-    }
-    65% {
-      transform: translate(calc(var(--drift-x) * 0.7), -65%);
+    20% {
+      transform: translate(calc(var(--drift-x) * 0.2), -15%);
       opacity: 0.85;
     }
+    70% {
+      transform: translate(calc(var(--drift-x) * 0.7), -65%);
+      opacity: 0.55;
+    }
     100% {
-      transform: translate(var(--drift-x), -115%);
+      transform: translate(var(--drift-x), -110%);
       opacity: 0;
     }
   }
@@ -859,15 +827,12 @@ const KEYFRAMES = `
     will-change: transform, opacity;
   }
 
-  /* 火の粉：瞬きアニメ（仕様B） */
+  /* 火の粉：穏やかな瞬き（彩度抑制） */
   @keyframes spark-twinkle {
-    0%   { transform: scale(0.4); opacity: 0.3; }
-    20%  { transform: scale(1.6); opacity: 1; }
-    35%  { transform: scale(0.8); opacity: 0.6; }
-    50%  { transform: scale(1.4); opacity: 1; }
-    70%  { transform: scale(0.5); opacity: 0.4; }
-    85%  { transform: scale(1.2); opacity: 0.95; }
-    100% { transform: scale(0.7); opacity: 0.7; }
+    0%   { transform: scale(0.7); opacity: 0.55; }
+    35%  { transform: scale(1.15); opacity: 0.95; }
+    65%  { transform: scale(0.85); opacity: 0.7; }
+    100% { transform: scale(1.0); opacity: 0.85; }
   }
   .flame-spark-twinkle {
     animation-name: spark-twinkle;
@@ -898,7 +863,7 @@ const KEYFRAMES = `
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .flame-edge-breathe,
+    .flame-quiet-breathe,
     .flame-spark-rise,
     .flame-spark-twinkle,
     .signature-star-badge {
@@ -964,8 +929,8 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
           padding: '6px 14px', borderRadius: 10,
-          background: 'linear-gradient(90deg, rgba(120,53,15,0.32), rgba(120,53,15,0.12))',
-          border: '1px solid rgba(253,224,71,0.4)',
+          background: 'linear-gradient(90deg, rgba(30,27,75,0.5), rgba(30,27,75,0.18))',
+          border: '1px solid rgba(253,224,71,0.35)',
         }}>
           <span
             className="signature-star-badge"
@@ -989,11 +954,11 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
           padding: '4px 12px', borderRadius: 8,
-          background: 'rgba(120,53,15,0.15)', border: '1px solid rgba(251,191,36,0.2)', width: 'fit-content',
+          background: 'rgba(30,27,75,0.3)', border: '1px solid rgba(129,140,248,0.25)', width: 'fit-content',
         }}>
           <span style={{ fontSize: 11 }}>🏆</span>
-          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.65)', letterSpacing: '0.08em' }}>MAX到達: {maxedCount}技</span>
-          <span style={{ fontSize: '0.62rem', color: 'rgba(251,191,36,0.38)', marginLeft: 2 }}>({TECH_SCORE_CAP}pt以上)</span>
+          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(199,210,254,0.75)', letterSpacing: '0.08em' }}>MAX到達: {maxedCount}技</span>
+          <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.45)', marginLeft: 2 }}>({TECH_SCORE_CAP}pt以上)</span>
         </div>
       )}
 
@@ -1051,10 +1016,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ fontSize: 10, color: '#fde047' }}>★</span>
           <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.55)', fontWeight: 600 }}>得意技</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24', flexShrink: 0, boxShadow: `0 0 5px 1px #fbbf24` }} />
-          <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.55)', fontWeight: 600 }}>MAX</span>
         </div>
       </div>
     </div>
