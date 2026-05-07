@@ -325,9 +325,13 @@ export default function DashboardPage() {
       </div>
 
       {/* ── XP推移 ─────────────────────────────────────────────── */}
+      {/*
+       * ★ Phase9.5: XpHistoryEntry から title が削除されたため、
+       * XPTimelineChart に titleMaster を渡して Tooltip 内で動的に称号を導出する。
+       */}
       <div className="hud-card animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
         <span className="section-title">XP推移</span>
-        <XPTimelineChart xpHistory={xpHistory} compact={true} />
+        <XPTimelineChart xpHistory={xpHistory} compact={true} titleMaster={tm} />
       </div>
 
       {/* ── 課題別 評価スコア分布 ─────────────────────────────── */}

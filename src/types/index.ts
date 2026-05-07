@@ -22,6 +22,10 @@
 // ★ Phase9.1: 二つ名の由来説明文を追加
 //   - EpithetMasterEntry に description フィールドを追加（GAS列: F列）
 //   - EpithetResult に epithetDescription フィールドを追加
+// ★ Phase9.5: DB最適化 - title カラム排除（正規化）
+//   - UserStatus から title プロパティを削除
+//   - XpHistoryEntry から title プロパティを削除
+//   - 称号は level + titleMaster から動的に calcTitleFromMaster() で導出する
 // =====================================================================
 
 export interface LogEntry {
@@ -34,7 +38,7 @@ export interface LogEntry {
 export interface UserStatus {
   total_xp:            number;
   level:               number;
-  title:               string;
+  // ★ Phase9.5: title を削除。称号は titleForLevel(level, titleMaster) で動的導出する
   last_practice_date?: string | null;
   real_rank?:          string;
   motto?:              string;
@@ -76,6 +80,7 @@ export interface TechniqueMasterEntry {
 
 // =====================================================================
 // xp_history シートの1行
+// ★ Phase9.5: title カラムを削除（DB正規化）
 // =====================================================================
 export interface XpHistoryEntry {
   date:           string;
@@ -84,7 +89,7 @@ export interface XpHistoryEntry {
   reason:         string;
   total_xp_after: number;
   level:          number;
-  title:          string;
+  // ★ Phase9.5: title を削除。表示時は titleForLevel(level, titleMaster) で動的導出する
 }
 
 // =====================================================================
@@ -144,12 +149,12 @@ export interface SaveLogPayload {
 // =====================================================================
 // SaveLogResponse
 // ★ Phase6: newAchievements フィールドを追加
+// ★ Phase9.5: title を削除
 // =====================================================================
 export interface SaveLogResponse {
   xp_earned:        number;
   total_xp:         number;
   level:            number;
-  title:            string;
   newAchievements?: Achievement[];
 }
 

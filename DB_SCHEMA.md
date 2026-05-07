@@ -9,17 +9,23 @@
 
 ### `user_status`
 
+★ Phase9.5: `title` 列を物理削除。称号は `level` + `title_master` からフロントで動的導出する。
+
 | 列 | カラム名 | 型 | 内容 |
 |---|---|---|---|
 | A | user_id | string | ユーザーID |
 | B | total_xp | number | 累積XP |
 | C | level | number | レベル（1〜99） |
-| D | title | string | 称号 |
-| E | last_practice_date | string | 最終稽古日（YYYY-MM-DD） |
-| F | last_decay_date | string | 最終減衰適用日（YYYY-MM-DD） |
-| G | real_rank | string | リアル段位（例: 初段） |
-| H | motto | string | 座右の銘 |
-| I | favorite_technique | string | 得意技ID（例: T001） |
+| D | last_practice_date | string | 最終稽古日（YYYY-MM-DD） |
+| E | last_decay_date | string | 最終減衰適用日（YYYY-MM-DD） |
+| F | real_rank | string | リアル段位（例: 初段） |
+| G | motto | string | 座右の銘 |
+| H | favorite_technique | string | 得意技ID（例: T001） |
+
+> **Phase9.5 移行メモ:**
+> 旧スキーマにあった D列（title）を削除し、D列以降を1つ左に詰めた。
+> title は `title_master` と `level` から `titleForLevel()` で常に動的計算する。
+> スプレッドシート上でも D列（title）を手動で列削除してから再デプロイすること。
 
 ---
 
@@ -74,6 +80,8 @@
 
 ### `xp_history`（XP増減履歴）
 
+★ Phase9.5: `title` 列を物理削除。称号は `level` + `title_master` からフロントで動的導出する。
+
 | 列 | カラム名 | 型 | 内容 |
 |---|---|---|---|
 | A | user_id | string | ユーザーID |
@@ -83,7 +91,12 @@
 | E | reason | string | 理由テキスト |
 | F | total_xp_after | number | 適用後のXP（グラフY軸） |
 | G | level | number | 適用後のレベル |
-| H | title | string | 適用後の称号 |
+
+> **Phase9.5 移行メモ:**
+> 旧スキーマにあった H列（title）を削除した。計7列構成。
+> `writeXpHistory()` の引数からも `title` を除去済み。
+> フロント側の `XPTimelineChart` は `titleForLevel(level, titleMaster)` で Tooltip に称号を動的表示する。
+> スプレッドシート上でも H列（title）を手動で列削除してから再デプロイすること。
 
 ---
 
@@ -141,6 +154,12 @@
 |---|---|---|---|
 | A | level | number | 称号獲得レベル |
 | B | title | string | 称号名（例: 初段） |
+
+> **Phase9.5 設計方針:**
+> `user_status` と `xp_history` から物理的に `title` 列を削除したことで、
+> このシートが「唯一の称号真実源（Single Source of Truth）」となった。
+> `title_master` を編集するだけで全ユーザーの称号表示が一括更新される。
+> 過去の xp_history レコードに紐づく称号も、再計算によって常に最新のマスタと一致する。
 
 ---
 
@@ -242,6 +261,8 @@
 - `logs.task_id` は UUID で格納し、読み取り時に `user_tasks` と JOIN して `item_name` を復元する。
 - フロントエンドには常に `item_name`（テキスト）で返すため、チャートや表示ロジックは変更不要。
 - `user_techniques` は `technique_master` と JOIN して bodyPart / actionType / subCategory / name を付加して返す。
+- **★ Phase9.5:** `user_status.title` と `xp_history.title` を廃止。称号の唯一の真実源は `title_master` のみ。
+  フロントおよび GAS レスポンスで称号を表示する場合は必ず `titleForLevel(level, titleMaster)` で動的計算する。
 
 ### 冪等性・アーカイブ方針
 
@@ -256,3 +277,20 @@
   - `rarity` は `undefined` → フロントが `'N'`（Normal）にフォールバック
   - `description` は `undefined` → フロントが `'まだ見ぬ剣の道を歩む者'` にフォールバック
   - エラーは発生せず、UI は墨黒の二つ名として正常に表示される。
+
+### ★ Phase9.5 スプレッドシート移行手順
+
+1. **`user_status` シートの D列（旧 title）を右クリック → 列を削除**
+   - 旧: A(user_id), B(total_xp), C(level), **D(title)**, E(last_practice_date), ...
+   - 新: A(user_id), B(total_xp), C(level), D(last_practice_date), E(last_decay_date), ...
+
+2. **`xp_history` シートの H列（旧 title）を右クリック → 列を削除**
+   - 旧: ..., F(total_xp_after), G(level), **H(title)**
+   - 新: ..., F(total_xp_after), G(level)
+
+3. **GAS を新バージョンとしてデプロイ**（本ドキュメントと同時更新の `Code.gs` を反映）
+
+4. **動作確認:**
+   - getDashboard レスポンスに `status.title` が含まれていないこと
+   - xpHistory 各エントリに `title` が含まれていないこと
+   - XP推移チャートの Tooltip に称号が正しく動的表示されること

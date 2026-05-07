@@ -11,6 +11,10 @@
 //   5行目: TOTAL XP: [number]         （medium）
 //   6行目: [XPプログレスバー]
 //   7行目: 次のLv.[XX]まで [残XP] xp  （small・称号名は非表示）
+//
+// ★ Phase9.5: UserStatus から title が削除されたが、このコンポーネントは
+//   もともと status.title を参照せず epithet.levelTitle を使用しているため、
+//   コード変更は不要。型互換性の確認のみ。
 // =====================================================================
 'use client';
 
@@ -61,7 +65,7 @@ function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
           fontSize: '1.25rem', lineHeight: 1.2,
           color: rarityTextColor(epithet.epithetRarity),
           ...rarityExtraStyle(epithet.epithetRarity),
-          borderBottom: `1.5px dotted ${rarityTextColor(epithet.epithetRarity)}`,
+//          borderBottom: `1.5px dotted ${rarityTextColor(epithet.epithetRarity)}`,
           display: 'inline-flex', alignItems: 'center', gap: 4,
         }}
         aria-expanded={open}
@@ -170,6 +174,10 @@ export interface UserStatusCardProps {
 
 // =====================================================================
 // UserStatusCard 本体
+// ★ Phase9.5: このコンポーネントはもともと status.title を使わず
+//   epithet.levelTitle（calcEpithet() 内で titleForLevel() で計算済み）を
+//   表示しているため、Phase9.5 の変更による修正箇所はゼロ。
+//   型定義から UserStatus.title が消えても Props に影響なし。
 // =====================================================================
 export function UserStatusCard({
   userName,
@@ -231,7 +239,7 @@ export function UserStatusCard({
         }}>
           Lv.{level}
         </span>
-        {/* レベル称号 */}
+        {/* レベル称号 — epithet.levelTitle は calcEpithet() 内で titleForLevel() から動的計算済み */}
         <span style={{
           fontSize: '0.78rem', fontWeight: 800,
           background: `linear-gradient(135deg, #e0e7ff, ${lvColor})`,

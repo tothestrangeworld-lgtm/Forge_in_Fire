@@ -5,7 +5,8 @@ import {
   AreaChart, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import type { XpHistoryEntry } from '@/types';
+import type { XpHistoryEntry, TitleMasterEntry } from '@/types';
+import { titleForLevel } from '@/types';
 
 // =====================================================================
 // XPTimelineChart（改修2）
@@ -14,11 +15,16 @@ import type { XpHistoryEntry } from '@/types';
 //   - type="stepAfter" でステップライン（階段状）に変更
 //   - ネオングラデーション塗りつぶしで「積み上がるオーラ」を表現
 //   - xp_history（イベントソーシング）を正データソースとして使用
+// ★ Phase9.5: XpHistoryEntry から title が削除されたため、
+//   ToolTip の称号表示を titleForLevel(level, titleMaster) で動的導出するよう変更。
+//   titleMaster を optional Props として受け取る。
 // =====================================================================
 
 interface Props {
-  xpHistory?: XpHistoryEntry[];
-  compact?:   boolean;
+  xpHistory?:   XpHistoryEntry[];
+  compact?:     boolean;
+  /** ★ Phase9.5: 称号の動的導出に使用。未指定時はフォールバック称号テーブルを使用。 */
+  titleMaster?: TitleMasterEntry[];
 }
 
 function toDisplayDate(dateStr: string): string {
@@ -54,6 +60,8 @@ interface PayloadItem {
     reason?: string;
     level?:  number;
     amount?: number;
+    /** ★ Phase9.5: 動的に計算した称号名 */
+    titleLabel?: string;
   };
   value?: number;
 }
@@ -68,7 +76,7 @@ function CustomTooltip({
   if (!active || !payload?.length) return null;
   const item   = payload[0];
   const xp     = item.value ?? 0;
-  const { type, reason, level, amount } = item.payload ?? {};
+  const { type, reason, level, amount, titleLabel } = item.payload ?? {};
   const typeLabel = TYPE_LABEL[type ?? ''] ?? type ?? '';
   const sign      = (amount ?? 0) >= 0 ? '+' : '';
   const amtColor  = (amount ?? 0) >= 0 ? '#34d399' : '#f87171';
@@ -94,8 +102,12 @@ function CustomTooltip({
       <div style={{ color: '#e0e7ff', fontWeight: 800 }}>
         累積 {xp.toLocaleString()} XP
       </div>
-      {level && (
-        <div style={{ color: 'rgba(129,140,248,0.7)' }}>Lv {level}</div>
+      {level !== undefined && level > 0 && (
+        <div style={{ color: 'rgba(129,140,248,0.7)' }}>
+          Lv {level}
+          {/* ★ Phase9.5: 動的導出した称号を表示 */}
+          {titleLabel ? ` ・ ${titleLabel}` : ''}
+        </div>
       )}
       {reason && (
         <div style={{ color: 'rgba(99,102,241,0.7)', fontSize: 10, marginTop: 2 }}>{reason}</div>
@@ -139,7 +151,7 @@ function CustomDot({ cx, cy, payload }: DotProps) {
   );
 }
 
-export default function XPTimelineChart({ xpHistory = [], compact = false }: Props) {
+export default function XPTimelineChart({ xpHistory = [], compact = false, titleMaster }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
@@ -167,7 +179,9 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
     type:           e.type,
     reason:         e.reason,
     level:          e.level,
-    title:          e.title,
+    // ★ Phase9.5: title フィールドが XpHistoryEntry から削除されたため
+    //   titleForLevel() で動的に称号ラベルを計算してチャートデータに埋め込む
+    titleLabel:     titleForLevel(e.level, titleMaster),
   }));
 
   // グラデーション ID（複数インスタンスの衝突防止）
@@ -228,7 +242,7 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
             }}
           />
 
-          {/* ★ type="stepAfter" でステップライン（階段状）に変更 */}
+          {/* ★ type="stepAfter" でステップライン（階段状） */}
           <Area
             type="stepAfter"
             dataKey="total_xp_after"
@@ -242,7 +256,7 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
               stroke: 'rgba(167,139,250,0.4)',
               strokeWidth: 4,
             }}
-            style={{ filter: 'drop-shadow(0 0 4px rgba(167,139,250,0.5))' }}
+            style={{ filter: 'drop-shadow(0 0 4px rgba(167,139,150,0.5))' }}
           />
         </AreaChart>
       </ResponsiveContainer>

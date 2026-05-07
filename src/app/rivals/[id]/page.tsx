@@ -205,12 +205,12 @@ export default function RivalDashboardPage({
                   最終稽古:
                 </span>
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(199,210,254,0.8)' }}>
-                  {status.last_practice_date 
+                  {status.last_practice_date
                     ? new Date(status.last_practice_date).toLocaleDateString('ja-JP', {
                         year: 'numeric',
                         month: '2-digit',
                         day: '2-digit'
-                      }).replace(/\//g, '/') 
+                      }).replace(/\//g, '/')
                     : '---'}
                 </span>
               </div>
@@ -406,13 +406,17 @@ export default function RivalDashboardPage({
         )}
 
         {/* ── 3. XP推移チャート ──────────────────────────────── */}
+        {/*
+         * ★ Phase9.5: XpHistoryEntry から title が削除されたため、
+         * titleMaster を渡して Tooltip 内で動的に称号を導出する。
+         */}
         {mounted && xpHistory && xpHistory.length > 0 && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
               <TrendingUp style={{ width: 15, height: 15, color: '#a78bfa' }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>XP推移</span>
             </div>
-            <XPTimelineChart xpHistory={xpHistory} compact />
+            <XPTimelineChart xpHistory={xpHistory} compact titleMaster={tm} />
           </div>
         )}
 
