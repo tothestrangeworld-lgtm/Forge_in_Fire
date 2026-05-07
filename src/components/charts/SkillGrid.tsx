@@ -597,6 +597,7 @@ interface LightningEdgeData {
   bright:   string;  // 高輝度カラー（中央層用）
   width:    number;
   baseOpacity: number;
+  [key: string]: unknown;  // ← この1行を追加
 }
 
 const LightningEdge = memo(function LightningEdge({
