@@ -1,22 +1,19 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（Phase 5.1 軽量化リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（Phase 6.1 軽量化リビジョン）
 //
-// ★ クラッシュ対策（Phase 5.1）:
-//   【原因】clip-path + filter: drop-shadow() の多重スタックが
-//           ズーム時に GPU コンポジットレイヤーを大量生成しメモリ枯渇。
-//           さらに filter アニメーションが毎フレーム全ノードを再描画。
-//   【対策】
-//   - filter: drop-shadow → box-shadow に全置換（GPU 負荷 1/5 以下）
-//   - clip-path 六角形 → border-radius: 50% の円形（レイヤー生成ゼロ）
-//   - ノードサイズ固定・習熟度は発光（box-shadow 強度）のみで表現
-//   - エッジアニメーション（animated: true）廃止
-//   - 外周スロット 24 固定・半径をコンパクト化
-//   - maxZoom を 2.5 に制限（過剰ズームによるピクセル過多を防止）
+// ★ Phase 6.1 の最適化:
+//   ① feTurbulence フィルタを全ノードで共有（30個 → 5個に削減）
+//   ② 低習熟ノード（norm < 0.15）は炎を描画しない
+//   ④ 炎SVGを単一円+単一グラデに簡略化
+//   ⑤ 円の呼吸を SVG <animate> → CSS transform に置換（GPU加速）
+//   ⑨ feTurbulence の numOctaves を 2 → 1 に削減
+//   ⑩ React.memo で再レンダリング抑制
+//   ③ prefers-reduced-motion 対応
 // =====================================================================
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -35,48 +32,73 @@ import type { Technique } from '@/types';
 // =====================================================================
 // 定数
 // =====================================================================
-
-/** 技スコアの視覚的上限 */
 const TECH_SCORE_CAP = 10000;
-/** 部位スコア合計の視覚的上限 */
-const BP_SCORE_CAP = 50000;
-/** 外周スロット数（固定） */
-const OUTER_SLOTS = 24;
-/** 外周半径（px）*/
-const R_OUTER = 200;
-/** 部位ノードを配置する中間半径の割合 */
-const R_MID_RATIO = 0.46;
+const BP_SCORE_CAP   = 50000;
+const OUTER_SLOTS    = 24;
+const R_OUTER        = 200;
+const R_MID_RATIO    = 0.46;
 
-// ノードサイズ固定
 const TECH_NODE_SIZE = 42;
 const BP_NODE_SIZE   = 56;
 const CORE_NODE_SIZE = 64;
 
+/** この閾値以下の習熟度では炎を描画しない（軽量化②） */
+const FLAME_MIN_INTENSITY = 0.15;
+
 // =====================================================================
-// 系統カラーテーマ（部位別イメージカラー）
-// =====================================================================
-//   面  : ローズレッド  — 攻めの気魄を象徴する赤
-//   小手: コーラルイエロー — 鋭い手先の技を象徴する黄
-//   胴  : サイアンブルー — 流れるような体捌きを象徴する青
-//   突き: ライトバイオレット — 一点集中の精神を象徴する紫
-//   ※ MAXゴールド / シグネチャー深紅 はそれぞれ上書き優先
+// 部位カラーテーマ
 // =====================================================================
 interface BpTheme {
-  rgb:   string;  // "R,G,B" → rgba(${rgb}, alpha) として使用
-  dark:  string;  // グラデーションの暗い側 (hex)
-  text:  string;  // メインテキスト色
+  rgb:    string;
+  dark:   string;
+  text:   string;
+  flame:  { hot: string; mid: string; cool: string };
 }
 
 const BP_THEMES: Record<string, BpTheme> = {
-  '面':   { rgb: '248,113,113', dark: '#7f1d1d', text: '#fecaca' },
-  '小手':  { rgb: '253,224,71',  dark: '#713f12', text: '#fef9c3' },
-  '胴':   { rgb: '56,189,248',  dark: '#0c4a6e', text: '#bae6fd' },
-  '突き':  { rgb: '167,139,250', dark: '#4c1d95', text: '#ede9fe' },
+  '面':   {
+    rgb: '248,113,113', dark: '#7f1d1d', text: '#fecaca',
+    flame: { hot: '#fff5f5', mid: '#f87171', cool: '#7f1d1d' },
+  },
+  '小手': {
+    rgb: '253,224,71', dark: '#713f12', text: '#fef9c3',
+    flame: { hot: '#fffbeb', mid: '#fde047', cool: '#78350f' },
+  },
+  '胴':   {
+    rgb: '56,189,248', dark: '#0c4a6e', text: '#bae6fd',
+    flame: { hot: '#f0f9ff', mid: '#38bdf8', cool: '#0c4a6e' },
+  },
+  '突き': {
+    rgb: '167,139,250', dark: '#4c1d95', text: '#ede9fe',
+    flame: { hot: '#faf5ff', mid: '#a78bfa', cool: '#4c1d95' },
+  },
 };
 
-/** 部位名からテーマを取得（未定義はインディゴ） */
+const DEFAULT_THEME: BpTheme = {
+  rgb: '99,102,241', dark: '#1e1b4b', text: '#c7d2fe',
+  flame: { hot: '#eef2ff', mid: '#818cf8', cool: '#1e1b4b' },
+};
+
 function getBpTheme(bodyPart: string): BpTheme {
-  return BP_THEMES[bodyPart] ?? { rgb: '99,102,241', dark: '#1e1b4b', text: '#c7d2fe' };
+  return BP_THEMES[bodyPart] ?? DEFAULT_THEME;
+}
+
+const FLAME_MAXED:     BpTheme['flame'] = { hot: '#fffbeb', mid: '#fbbf24', cool: '#78350f' };
+const FLAME_SIGNATURE: BpTheme['flame'] = { hot: '#fff1f2', mid: '#f43f5e', cool: '#4c0519' };
+
+// 共有フィルタ ID（強度別に5レベル用意）
+const SHARED_FILTER_IDS = {
+  low:    'flame-filter-low',
+  mid:    'flame-filter-mid',
+  high:   'flame-filter-high',
+  ultra:  'flame-filter-ultra',
+};
+
+function pickFilterId(intensity: number): string {
+  if (intensity >= 0.85) return SHARED_FILTER_IDS.ultra;
+  if (intensity >= 0.6)  return SHARED_FILTER_IDS.high;
+  if (intensity >= 0.35) return SHARED_FILTER_IDS.mid;
+  return SHARED_FILTER_IDS.low;
 }
 
 // =====================================================================
@@ -88,7 +110,7 @@ interface Props {
 }
 
 // =====================================================================
-// ハンドル（不可視・最小限）
+// ハンドル
 // =====================================================================
 const CENTER_HANDLE: React.CSSProperties = {
   opacity: 0, width: 1, height: 1,
@@ -97,53 +119,142 @@ const CENTER_HANDLE: React.CSSProperties = {
   border: 'none', background: 'transparent', pointerEvents: 'none',
 };
 
-const MinimalHandles = () => (
+const MinimalHandles = memo(() => (
   <>
     <Handle type="source" position={Position.Top}    id="s" style={CENTER_HANDLE} />
     <Handle type="target" position={Position.Bottom} id="t" style={CENTER_HANDLE} />
   </>
-);
+));
+MinimalHandles.displayName = 'MinimalHandles';
 
 // =====================================================================
-// 発光スタイル生成（box-shadow のみ・filter 不使用）
+// 共有フィルタ定義（ページ内に1度だけ配置）
 // =====================================================================
-function techGlow(norm: number, isSignature: boolean, isMaxed: boolean, bodyPart: string): string {
-  if (isSignature) {
-    return [
-      `0 0 ${6 + norm * 8}px ${2 + norm * 3}px rgba(244,63,94,0.75)`,
-      '0 0 0 2px rgba(244,63,94,0.55)',
-    ].join(', ');
-  }
-  if (isMaxed) {
-    return [
-      `0 0 ${6 + norm * 8}px ${2 + norm * 3}px rgba(251,191,36,0.70)`,
-      '0 0 0 1.5px rgba(251,191,36,0.45)',
-    ].join(', ');
-  }
-  const { rgb } = getBpTheme(bodyPart);
-  if (norm > 0.6) return [
-    `0 0 ${4 + norm * 7}px ${1 + norm * 3}px rgba(${rgb},0.72)`,
-    `0 0 0 1px rgba(${rgb},0.45)`,
-  ].join(', ');
-  if (norm > 0.2) return `0 0 ${3 + norm * 5}px 1px rgba(${rgb},0.52)`;
-  if (norm > 0)   return `0 0 4px 1px rgba(${rgb},0.28)`;
-  return 'none';
+const SharedFlameFilters = memo(() => (
+  <svg
+    width="0"
+    height="0"
+    style={{ position: 'absolute', pointerEvents: 'none' }}
+    aria-hidden="true"
+  >
+    <defs>
+      {/* 低強度 */}
+      <filter id={SHARED_FILTER_IDS.low} x="-30%" y="-30%" width="160%" height="160%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.05" numOctaves="1" seed="3" result="n">
+          <animate attributeName="baseFrequency"
+            dur="5s" values="0.02 0.05; 0.025 0.06; 0.02 0.05" repeatCount="indefinite" />
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+
+      {/* 中強度 */}
+      <filter id={SHARED_FILTER_IDS.mid} x="-40%" y="-40%" width="180%" height="180%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.022 0.055" numOctaves="1" seed="7" result="n">
+          <animate attributeName="baseFrequency"
+            dur="4s" values="0.022 0.055; 0.03 0.07; 0.022 0.055" repeatCount="indefinite" />
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+
+      {/* 高強度 */}
+      <filter id={SHARED_FILTER_IDS.high} x="-50%" y="-50%" width="200%" height="200%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.024 0.06" numOctaves="1" seed="13" result="n">
+          <animate attributeName="baseFrequency"
+            dur="3.5s" values="0.024 0.06; 0.034 0.08; 0.024 0.06" repeatCount="indefinite" />
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+
+      {/* 最大強度（シグネチャー/MAX用） */}
+      <filter id={SHARED_FILTER_IDS.ultra} x="-60%" y="-60%" width="220%" height="220%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.026 0.065" numOctaves="1" seed="19" result="n">
+          <animate attributeName="baseFrequency"
+            dur="3s" values="0.026 0.065; 0.04 0.09; 0.026 0.065" repeatCount="indefinite" />
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="18" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
+  </svg>
+));
+SharedFlameFilters.displayName = 'SharedFlameFilters';
+
+// =====================================================================
+// 揺らぐ炎コンポーネント（軽量版）
+// =====================================================================
+interface FlameAuraProps {
+  size:      number;
+  intensity: number;
+  flame:     BpTheme['flame'];
+  uid:       string;
+  scale?:    number;
 }
 
-function bpGlow(norm: number, bodyPart: string): string {
-  if (norm >= 1.0) return '0 0 14px 5px rgba(251,191,36,0.65), 0 0 0 2px rgba(251,191,36,0.4)';
-  const { rgb } = getBpTheme(bodyPart);
-  if (norm > 0.5) return [
-    `0 0 ${8 + norm * 8}px ${2 + norm * 2}px rgba(${rgb},0.60)`,
-    `0 0 0 1px rgba(${rgb},0.35)`,
-  ].join(', ');
-  return `0 0 6px 1px rgba(${rgb},0.30)`;
-}
+const FlameAura = memo(function FlameAura({
+  size, intensity, flame, uid, scale = 1.0,
+}: FlameAuraProps) {
+  if (intensity < FLAME_MIN_INTENSITY) return null;
+
+  const pad = size * 0.6 * scale;
+  const w   = size + pad * 2;
+  const h   = size + pad * 2;
+  const flameR = size * (0.5 + intensity * 0.55) * scale;
+
+  const gradId    = `fg-${uid}`;
+  const filterId  = pickFilterId(intensity);
+  const opacity   = Math.min(0.4 + intensity * 0.5, 0.9);
+
+  // 呼吸アニメーションの速度（強度が高いほど速い）
+  const breatheDur = 2.4 + (1 - intensity) * 1.2;
+
+  return (
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      style={{
+        position: 'absolute',
+        top: -pad,
+        left: -pad,
+        pointerEvents: 'none',
+        zIndex: 0,
+        overflow: 'visible',
+      }}
+      aria-hidden="true"
+    >
+      <defs>
+        <radialGradient id={gradId} cx="50%" cy="55%" r="55%">
+          <stop offset="0%"   stopColor={flame.hot}  stopOpacity="0.9" />
+          <stop offset="45%"  stopColor={flame.mid}  stopOpacity="0.65" />
+          <stop offset="85%"  stopColor={flame.cool} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={flame.cool} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      {/* 単一円 + 共有フィルタ + CSS呼吸アニメ */}
+      <g
+        className="flame-breathe"
+        style={{
+          transformOrigin: `${w / 2}px ${h / 2}px`,
+          animationDuration: `${breatheDur}s`,
+        }}
+      >
+        <circle
+          cx={w / 2}
+          cy={h / 2}
+          r={flameR}
+          fill={`url(#${gradId})`}
+          filter={`url(#${filterId})`}
+          opacity={opacity}
+        />
+      </g>
+    </svg>
+  );
+});
 
 // =====================================================================
-// カスタムノード① CORE
+// CORE ノード
 // =====================================================================
-function CoreNode(_: NodeProps) {
+const CoreNode = memo(function CoreNode(_: NodeProps) {
   const s = CORE_NODE_SIZE;
   return (
     <div style={{
@@ -155,24 +266,36 @@ function CoreNode(_: NodeProps) {
       color: '#e0e7ff', fontSize: 15, fontWeight: 800,
       letterSpacing: '0.1em',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
-      position: 'relative', userSelect: 'none',
+      position: 'relative', userSelect: 'none', zIndex: 2,
     }}>
-      <MinimalHandles />
-      技
+      <FlameAura
+        size={s}
+        intensity={0.65}
+        flame={DEFAULT_THEME.flame}
+        uid="core"
+        scale={0.85}
+      />
+      <div style={{ position: 'relative', zIndex: 2 }}>
+        <MinimalHandles />
+        技
+      </div>
     </div>
   );
-}
+});
 
 // =====================================================================
-// カスタムノード② BodyPart
+// BodyPart ノード
 // =====================================================================
 interface BodyPartData { label: string; totalPoints: number; norm: number; }
 
-function BodyPartNode({ data }: NodeProps) {
+const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
   const d = data as unknown as BodyPartData;
   const s = BP_NODE_SIZE;
   const isMaxed = d.norm >= 1.0;
-  const { rgb, dark, text: bpText } = getBpTheme(d.label);
+  const theme = getBpTheme(d.label);
+  const { rgb, dark, text: bpText } = theme;
+
+  const flame = isMaxed ? FLAME_MAXED : theme.flame;
 
   const bg = isMaxed
     ? 'linear-gradient(135deg, #78350f, #b45309, #d97706)'
@@ -189,40 +312,55 @@ function BodyPartNode({ data }: NodeProps) {
   const textColor = isMaxed ? '#fde68a' : bpText;
   const ptColor   = isMaxed ? '#fde68a' : `rgba(${rgb},0.75)`;
 
+  // 部位ノードは存在感のため最低 0.4 確保
+  const flameIntensity = Math.max(0.4, Math.min(d.norm + 0.15, 1.0));
+
   return (
     <div style={{
       width: s, height: s, borderRadius: '50%',
       background: bg, border: `1.5px solid ${borderColor}`,
-      boxShadow: bpGlow(d.norm, d.label),
-      animation: isMaxed ? 'bp-maxed-pulse 2.4s ease-in-out infinite' : undefined,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       color: '#e0e7ff', textAlign: 'center',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
-      <MinimalHandles />
-      <span style={{ fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em', color: textColor }}>
-        {d.label}
-      </span>
-      {d.totalPoints > 0 && (
-        <span style={{ fontSize: 8, opacity: 0.75, marginTop: 1, color: ptColor }}>
-          {d.totalPoints}pt
+      <FlameAura
+        size={s}
+        intensity={flameIntensity}
+        flame={flame}
+        uid={`bp-${id}`}
+        scale={1.0}
+      />
+      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <MinimalHandles />
+        <span style={{ fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em', color: textColor }}>
+          {d.label}
         </span>
-      )}
+        {d.totalPoints > 0 && (
+          <span style={{ fontSize: 8, opacity: 0.75, marginTop: 1, color: ptColor }}>
+            {d.totalPoints}pt
+          </span>
+        )}
+      </div>
     </div>
   );
-}
+});
 
 // =====================================================================
-// カスタムノード③ Technique
+// Technique ノード
 // =====================================================================
 interface TechData { technique: Technique; norm: number; isSignature: boolean; isMaxed: boolean; }
 
-function TechniqueNode({ data }: NodeProps) {
+const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
   const { technique: t, norm, isSignature, isMaxed } = data as unknown as TechData;
   if (!t?.id) return null;
   const s = TECH_NODE_SIZE;
-  const { rgb, dark, text: bpText } = getBpTheme(t.bodyPart);
+  const theme = getBpTheme(t.bodyPart);
+  const { rgb, dark, text: bpText } = theme;
+
+  const flame = isSignature ? FLAME_SIGNATURE
+              : isMaxed     ? FLAME_MAXED
+              : theme.flame;
 
   let bg: string, borderColor: string, textColor: string;
   if (isSignature) {
@@ -232,67 +370,90 @@ function TechniqueNode({ data }: NodeProps) {
     bg = 'linear-gradient(135deg, #78350f, #b45309)';
     borderColor = 'rgba(251,191,36,0.65)'; textColor = '#fde68a';
   } else if (norm > 0.6) {
-    // 高習熟：系統色でしっかり発色
     bg = `linear-gradient(135deg, ${dark}, rgba(${rgb},0.38))`;
     borderColor = `rgba(${rgb},0.68)`; textColor = bpText;
   } else if (norm > 0.2) {
-    // 中習熟：系統色を暗く抑えめに
     bg = `linear-gradient(135deg, #070514, ${dark})`;
     borderColor = `rgba(${rgb},0.42)`; textColor = bpText;
   } else if (norm > 0) {
-    // 低習熟：かすかに系統色が滲む
     bg = `linear-gradient(135deg, #06050f, #0d0b1a)`;
     borderColor = `rgba(${rgb},0.22)`; textColor = `rgba(${rgb},0.55)`;
   } else {
-    // 未練習：ほぼ消灯
     bg = '#06050f';
     borderColor = `rgba(${rgb},0.10)`; textColor = `rgba(${rgb},0.25)`;
   }
 
-  const animation = isSignature
-    ? 'signature-pulse 2.6s ease-in-out infinite'
-    : isMaxed ? 'maxed-pulse 2.9s ease-in-out infinite' : undefined;
+  const flameIntensity = isSignature ? 1.0
+                       : isMaxed     ? 0.92
+                       : norm;
 
   return (
     <div style={{
       width: s, height: s, borderRadius: '50%',
       background: bg, border: `1.5px solid ${borderColor}`,
-      boxShadow: techGlow(norm, isSignature, isMaxed, t.bodyPart),
-      animation,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       color: textColor, textAlign: 'center',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
-      <MinimalHandles />
-      <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1.25, wordBreak: 'break-all', maxWidth: s * 0.82, letterSpacing: '0.02em' }}>
-        {t.name}
-      </span>
-      {(t.points ?? 0) > 0 && (
-        <span style={{ fontSize: 7, opacity: 0.75, marginTop: 1 }}>{t.points}pt</span>
+      {flameIntensity >= FLAME_MIN_INTENSITY && (
+        <FlameAura
+          size={s}
+          intensity={flameIntensity}
+          flame={flame}
+          uid={`tech-${id}`}
+          scale={1.0}
+        />
       )}
-      {isSignature && (
+      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <MinimalHandles />
+
+        {/* 得意技：星バッジ */}
+        {isSignature && (
+          <span
+            className="signature-star-badge"
+            style={{
+              position: 'absolute',
+              left: -s * 0.32,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              fontSize: 14,
+              lineHeight: 1,
+              color: '#fde047',
+              fontWeight: 900,
+              zIndex: 3,
+              pointerEvents: 'none',
+              textShadow: '0 0 4px rgba(0,0,0,0.6)',
+            }}
+            aria-label="得意技"
+          >
+            ★
+          </span>
+        )}
+
         <span style={{
-          position: 'absolute', top: -3, right: -1,
-          fontSize: 8, lineHeight: 1,
-          background: 'linear-gradient(135deg, #9f1239, #f43f5e)',
-          borderRadius: '50%', width: 13, height: 13,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 0 5px rgba(244,63,94,0.8)', color: '#fff', fontWeight: 800,
-        }}>★</span>
-      )}
-      {isMaxed && !isSignature && (
-        <span style={{
-          position: 'absolute', top: -3, right: -1,
-          fontSize: 6, lineHeight: 1,
-          background: 'linear-gradient(135deg, #b45309, #fbbf24)',
-          borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800,
-          boxShadow: '0 0 4px rgba(251,191,36,0.7)',
-        }}>MAX</span>
-      )}
+          fontSize: 8, fontWeight: 700, lineHeight: 1.25,
+          wordBreak: 'break-all', maxWidth: s * 0.82, letterSpacing: '0.02em',
+        }}>
+          {t.name}
+        </span>
+        {(t.points ?? 0) > 0 && (
+          <span style={{ fontSize: 7, opacity: 0.75, marginTop: 1 }}>{t.points}pt</span>
+        )}
+
+        {isMaxed && !isSignature && (
+          <span style={{
+            position: 'absolute', top: -3, right: -1,
+            fontSize: 6, lineHeight: 1,
+            background: 'linear-gradient(135deg, #b45309, #fbbf24)',
+            borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800,
+            boxShadow: '0 0 4px rgba(251,191,36,0.7)',
+          }}>MAX</span>
+        )}
+      </div>
     </div>
   );
-}
+});
 
 // =====================================================================
 // ノード種別登録
@@ -320,7 +481,7 @@ function sanitizeTechniques(raw: Technique[]): Technique[] {
 }
 
 // =====================================================================
-// グラフ生成（放射状等間隔・固定24スロット）
+// グラフ生成
 // =====================================================================
 type TechActionMap = Record<string, string>;
 
@@ -334,7 +495,6 @@ function buildGraph(
 
   const techniques = sanitizeTechniques(rawTechniques);
 
-  // 1. BodyPart ごとにグループ化（合計ポイント降順）
   const byBodyPart: Record<string, Technique[]> = {};
   techniques.forEach(t => {
     const bp = t.bodyPart || '未分類';
@@ -347,7 +507,6 @@ function buildGraph(
   );
   bodyParts.forEach(bp => byBodyPart[bp].sort((a, b) => (b.points ?? 0) - (a.points ?? 0)));
 
-  // 2. 全技を最大 OUTER_SLOTS 件に制限して展開
   const allTechs: Array<{ tech: Technique; bpKey: string }> = [];
   outer: for (const bp of bodyParts) {
     for (const tech of byBodyPart[bp]) {
@@ -358,11 +517,9 @@ function buildGraph(
 
   const R_MID = R_OUTER * R_MID_RATIO;
 
-  // 3. CORE ノード
   const half = CORE_NODE_SIZE / 2;
   nodes.push({ id: 'core', type: 'coreNode', position: { x: -half, y: -half }, data: {} });
 
-  // 4. 技ノードを外周固定スロット上に配置
   const techAngles: Record<string, number> = {};
   allTechs.forEach(({ tech }, i) => {
     const angle = (2 * Math.PI / OUTER_SLOTS) * i - Math.PI / 2;
@@ -382,7 +539,6 @@ function buildGraph(
     });
   });
 
-  // 5. 部位ノード（円形平均・R_MID）とエッジ
   bodyParts.forEach((bp, bi) => {
     const techs = byBodyPart[bp].filter(t => techAngles[t.id] !== undefined);
     if (techs.length === 0) return;
@@ -392,7 +548,6 @@ function buildGraph(
     const hs       = BP_NODE_SIZE / 2;
     const bpId     = `bp-${bi}`;
 
-    // 円形平均で部位の代表角度を算出
     const sinSum   = techs.reduce((s, t) => s + Math.sin(techAngles[t.id]), 0);
     const cosSum   = techs.reduce((s, t) => s + Math.cos(techAngles[t.id]), 0);
     const avgAngle = Math.atan2(sinSum, cosSum);
@@ -403,7 +558,6 @@ function buildGraph(
       data: { label: bp, totalPoints: totalPts, norm: bpNorm } as unknown as Record<string, unknown>,
     });
 
-    // CORE → BP（部位の系統色でほんのり光る）
     const { rgb: bpRgb } = getBpTheme(bp);
     const bpEdgeColor = bpNorm >= 1.0
       ? '#fbbf24'
@@ -417,7 +571,6 @@ function buildGraph(
       },
     });
 
-    // BP → 技（系統色 + 習熟度・シグネチャー上書き）
     techs.forEach(tech => {
       const techId      = `tech-${tech.id}`;
       const norm        = Math.min((tech.points ?? 0) / TECH_SCORE_CAP, 1.0);
@@ -465,21 +618,50 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 }
 
 // =====================================================================
-// CSS キーフレーム（box-shadow のみ・filter アニメーション不使用）
+// CSS キーフレーム
 // =====================================================================
 const KEYFRAMES = `
-  @keyframes signature-pulse {
-    0%,100% { box-shadow: 0 0 8px 3px rgba(244,63,94,0.65), 0 0 0 2px rgba(244,63,94,0.45); }
-    50%      { box-shadow: 0 0 18px 7px rgba(244,63,94,0.85), 0 0 0 2px rgba(244,63,94,0.65); }
+  /* 炎の呼吸（CSS transform でGPU加速） */
+  @keyframes flame-breathe {
+    0%, 100% { transform: scale(0.92); }
+    50%      { transform: scale(1.08); }
   }
-  @keyframes maxed-pulse {
-    0%,100% { box-shadow: 0 0 7px 2px rgba(251,191,36,0.60), 0 0 0 1.5px rgba(251,191,36,0.40); }
-    50%      { box-shadow: 0 0 16px 5px rgba(251,191,36,0.80), 0 0 0 2px rgba(251,191,36,0.55); }
+  .flame-breathe {
+    animation-name: flame-breathe;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    will-change: transform;
   }
-  @keyframes bp-maxed-pulse {
-    0%,100% { box-shadow: 0 0 10px 3px rgba(251,191,36,0.55), 0 0 0 2px rgba(251,191,36,0.35); }
-    50%      { box-shadow: 0 0 20px 7px rgba(251,191,36,0.75), 0 0 0 2px rgba(251,191,36,0.55); }
+
+  /* 得意技の星バッジ */
+  @keyframes signature-star-pop {
+    0%   { transform: translateY(-50%) scale(0); opacity: 0; }
+    60%  { transform: translateY(-50%) scale(1.3); opacity: 1; }
+    100% { transform: translateY(-50%) scale(1.0); opacity: 1; }
   }
+  @keyframes signature-star-twinkle {
+    0%,100% { color: #fde047; }
+    50%     { color: #fef9c3; }
+  }
+  .signature-star-badge {
+    animation:
+      signature-star-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+      signature-star-twinkle 2.2s ease-in-out infinite 0.55s;
+  }
+
+  /* OS設定でアニメ抑制を希望するユーザー向け */
+  @media (prefers-reduced-motion: reduce) {
+    .flame-breathe,
+    .signature-star-badge {
+      animation: none !important;
+    }
+    svg animate {
+      /* SMILアニメも停止 */
+      display: none;
+    }
+  }
+
+  /* React Flow コントロール */
   .react-flow__controls-button {
     background: rgba(15,14,42,0.95) !important;
     border-color: rgba(99,102,241,0.25) !important;
@@ -509,7 +691,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
     [rawNodes, rawEdges, filter, techActionMap],
   );
 
-  const safeTechniques = sanitizeTechniques(techniques);
+  const safeTechniques = useMemo(() => sanitizeTechniques(techniques), [techniques]);
 
   if (!safeTechniques.length) {
     return (
@@ -531,17 +713,32 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
     <div style={{ width: '100%' }}>
       <style>{KEYFRAMES}</style>
 
+      {/* 共有フィルタ（ページ内に1度だけ） */}
+      <SharedFlameFilters />
+
       {/* 得意技バナー */}
       {signatureTech && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
           padding: '6px 14px', borderRadius: 10,
           background: 'linear-gradient(90deg, rgba(76,5,25,0.38), rgba(76,5,25,0.14))',
-          border: '1px solid rgba(244,63,94,0.4)', boxShadow: '0 0 12px rgba(244,63,94,0.12)',
+          border: '1px solid rgba(244,63,94,0.4)',
         }}>
-          <span style={{ fontSize: 12 }}>★</span>
+          <span
+            className="signature-star-badge"
+            style={{
+              fontSize: 16,
+              color: '#fde047',
+              fontWeight: 900,
+              lineHeight: 1,
+              display: 'inline-block',
+              transform: 'translateY(0)',
+            }}
+          >★</span>
           <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'rgba(244,63,94,0.8)', letterSpacing: '0.1em' }}>得意技</span>
-          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#fecdd3', letterSpacing: '0.05em' }}>{signatureTech.name}</span>
+          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#fecdd3', letterSpacing: '0.05em' }}>
+            {signatureTech.name}
+          </span>
           <span style={{ marginLeft: 'auto', fontSize: '0.68rem', color: 'rgba(244,63,94,0.5)' }}>{signatureTech.points}pt</span>
         </div>
       )}
@@ -587,7 +784,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
       }}>
         <ReactFlow
           nodes={nodes} edges={edges} nodeTypes={NODE_TYPES}
-          fitView fitViewOptions={{ padding: 0.18, maxZoom: 0.9 }}
+          fitView fitViewOptions={{ padding: 0.22, maxZoom: 0.9 }}
           nodesDraggable={false} nodesConnectable={false}
           elementsSelectable={false} zoomOnDoubleClick={false}
           panOnDrag zoomOnScroll zoomOnPinch
@@ -601,7 +798,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
 
       {/* 凡例 */}
       <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap', padding: '0 2px' }}>
-        {/* 系統カラー */}
         {[
           { color: 'rgba(248,113,113,0.85)', label: '面' },
           { color: 'rgba(253,224,71,0.85)',  label: '小手' },
@@ -613,9 +809,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
             <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.55)', fontWeight: 600 }}>{label}</span>
           </div>
         ))}
-        {/* セパレーター */}
         <div style={{ width: 1, background: 'rgba(99,102,241,0.2)', margin: '0 2px' }} />
-        {/* 状態カラー */}
         {[
           { color: '#f43f5e', label: '得意技' },
           { color: '#fbbf24', label: 'MAX' },
