@@ -13,6 +13,9 @@
 //   - 保存後: techniques SWR をローカル更新 + dashboard SWR を再検証
 //   - YojiToast: 四字熟語フィードバックを画面左下にトースト表示
 //   - TechCard: 星評価廃止 → 量/質ステッパー + リアルタイム獲得XPプレビュー
+// ★ Phase9.5: SaveLogResponse から title が削除されたため、
+//   setResult の title を titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster)
+//   で動的導出するよう変更。
 // =====================================================================
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
@@ -38,6 +41,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { Achievement, Technique, UserTask } from '@/types';
+// ★ Phase9.5: titleForLevel / calcLevelFromXp を追加（res.title の動的導出に使用）
+import { titleForLevel, calcLevelFromXp } from '@/types';
 import {
   saveLog,
   updateTechniqueRating,
@@ -554,6 +559,8 @@ export default function RecordPage() {
 // ★ SWR: fetchDashboard の手動フェッチを useDashboardSWR に置き換え
 // ★ SWR修正: useDashboardSWR が { dashboard, techniques } を返すため
 //            data を swrData として受け取り、swrData.dashboard を参照する
+// ★ Phase9.5: res.title が SaveLogResponse から削除されたため、
+//   titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster) で動的導出
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
@@ -590,7 +597,12 @@ function PracticeTab() {
         // ★ Phase4: task_id（UUID）を送信。item_name は廃止。
         items: activeTasks.map(t => ({ task_id: t.id, score: scores[t.id] })),
       });
-      setResult({ xp: res.xp_earned, title: res.title });
+      // ★ Phase9.5: res.title は SaveLogResponse から削除済み。
+      //   titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster) で動的導出する。
+      setResult({
+        xp:    res.xp_earned,
+        title: titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster),
+      });
 
       // ★ Phase6 Step3: 新規解除実績があればトーストキューに積む
       if (res.newAchievements && res.newAchievements.length > 0) {
