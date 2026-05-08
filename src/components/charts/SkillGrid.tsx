@@ -1,7 +1,7 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第3弾：帯電一閃リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4弾：静寂リビジョン）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -9,9 +9,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  Handle,
-  Position,
-  BackgroundVariant,
   BaseEdge,
   getStraightPath,
   type Node,
@@ -38,7 +35,7 @@ const BP_NODE_SIZE   = 56;
 const CORE_NODE_SIZE = 64;
 
 // =====================================================================
-// 帯電階層
+// 習熟度階層
 // =====================================================================
 type LightningTier = 0 | 1 | 2 | 3 | 4;
 
@@ -57,22 +54,6 @@ function bpTotalPointsToTier(totalPoints: number): LightningTier {
   if (totalPoints >= 250)  return 1;
   return 0;
 }
-
-const TIER_OPACITY: Record<LightningTier, number> = {
-  0: 0,
-  1: 0.7,
-  2: 0.85,
-  3: 0.95,
-  4: 1.0,
-};
-
-const TIER_RING_COUNT: Record<LightningTier, number> = {
-  0: 0,
-  1: 1,
-  2: 1,
-  3: 1,
-  4: 2,
-};
 
 // =====================================================================
 // 部位カラーテーマ
@@ -113,225 +94,12 @@ function getBpTheme(bodyPart: string): BpTheme {
 }
 
 // =====================================================================
-// 共有 SVG フィルタ
-// =====================================================================
-const LIGHTNING_FILTER_IDS: Record<LightningTier, string> = {
-  0: '',
-  1: 'lightning-filter-tier1',
-  2: 'lightning-filter-tier2',
-  3: 'lightning-filter-tier3',
-  4: 'lightning-filter-tier4',
-};
-
-const SharedLightningFilters = memo(() => (
-  <svg
-    width="0" height="0"
-    style={{ position: 'absolute', pointerEvents: 'none' }}
-    aria-hidden="true"
-  >
-    <defs>
-      <filter id={LIGHTNING_FILTER_IDS[1]} x="-50%" y="-50%" width="200%" height="200%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.09 0.13" numOctaves="2" seed="3" result="n">
-          <animate attributeName="seed"
-            dur="3.7s" values="3;13;23;3" repeatCount="indefinite" />
-        </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" result="d" />
-        <feColorMatrix in="d" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 4 -1.2" />
-      </filter>
-
-      <filter id={LIGHTNING_FILTER_IDS[2]} x="-55%" y="-55%" width="210%" height="210%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.1 0.14" numOctaves="2" seed="7" result="n">
-          <animate attributeName="seed"
-            dur="3.1s" values="7;17;27;7" repeatCount="indefinite" />
-        </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="8" xChannelSelector="R" yChannelSelector="G" result="d" />
-        <feColorMatrix in="d" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 5 -1.6" />
-      </filter>
-
-      <filter id={LIGHTNING_FILTER_IDS[3]} x="-60%" y="-60%" width="220%" height="220%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.11 0.16" numOctaves="2" seed="13" result="n">
-          <animate attributeName="seed"
-            dur="2.9s" values="13;23;33;13" repeatCount="indefinite" />
-        </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="11" xChannelSelector="R" yChannelSelector="G" result="d" />
-        <feColorMatrix in="d" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 6 -2" />
-      </filter>
-
-      <filter id={LIGHTNING_FILTER_IDS[4]} x="-65%" y="-65%" width="230%" height="230%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.12 0.18" numOctaves="2" seed="19" result="n">
-          <animate attributeName="seed"
-            dur="2.3s" values="19;29;41;19" repeatCount="indefinite" />
-        </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G" result="d" />
-        <feColorMatrix in="d" type="matrix"
-          values="1 0 0 0 0
-                  0 1 0 0 0
-                  0 0 1 0 0
-                  0 0 0 7 -2.4" />
-      </filter>
-    </defs>
-  </svg>
-));
-SharedLightningFilters.displayName = 'SharedLightningFilters';
-
-// =====================================================================
 // Props
 // =====================================================================
 interface Props {
   techniques:      Technique[];
   signatureTechId?: string;
 }
-
-// =====================================================================
-// ハンドル
-// =====================================================================
-const CENTER_HANDLE: React.CSSProperties = {
-  opacity: 0, width: 1, height: 1,
-  top: '50%', left: '50%',
-  transform: 'translate(-50%, -50%)',
-  border: 'none', background: 'transparent', pointerEvents: 'none',
-};
-
-const MinimalHandles = memo(() => (
-  <>
-    <Handle type="source" position={Position.Top}    id="s" style={CENTER_HANDLE} />
-    <Handle type="target" position={Position.Bottom} id="t" style={CENTER_HANDLE} />
-  </>
-));
-MinimalHandles.displayName = 'MinimalHandles';
-
-// =====================================================================
-// 帯電オーラ（間欠一閃版）
-// =====================================================================
-interface LightningAuraProps {
-  size:       number;
-  tier:       LightningTier;
-  plasma:     BpTheme['plasma'];
-  uid:        string;
-}
-
-// 間欠クラック明滅（普段は消灯、一瞬だけ鋭く光る）
-const FLICKER_CLASSES = [
-  'aura-crack-flash-a',
-  'aura-crack-flash-b',
-];
-
-// 超高速の素数秒旋回周期
-const SPIN_DURS = [0.7, 1.1, 1.3, 1.7, 1.9];
-
-/** 簡易な決定論的ハッシュ（djb2風） */
-function hashString(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-const LightningAura = memo(function LightningAura({
-  size, tier, plasma, uid,
-}: LightningAuraProps) {
-  if (tier === 0) return null;
-
-  const tierOpacity = TIER_OPACITY[tier];
-  const ringCount = TIER_RING_COUNT[tier];
-
-  const strokeMax = 3.5;
-  const glowPad = 8;
-  const pad = strokeMax + glowPad;
-  const w = size + pad * 2;
-  const h = size + pad * 2;
-
-  const cx = w / 2;
-  const cy = h / 2;
-
-  const ringR = size / 2;
-  const filterId = LIGHTNING_FILTER_IDS[tier];
-
-  // uid から決定論的に旋回パラメータを決定
-  const baseHash = hashString(uid);
-
-  return (
-    <svg
-      width={w}
-      height={h}
-      viewBox={`0 0 ${w} ${h}`}
-      style={{
-        position: 'absolute',
-        top: -pad,
-        left: -pad,
-        pointerEvents: 'none',
-        zIndex: 0,
-        overflow: 'visible',
-      }}
-      aria-hidden="true"
-    >
-      <g filter={`url(#${filterId})`} opacity={tierOpacity}>
-        {Array.from({ length: ringCount }).map((_, i) => {
-          const isMain = i === 0;
-          const stroke = isMain ? plasma.mid : plasma.core;
-          const strokeW = isMain ? (1.8 + tier * 0.35) : 1.4;
-          // ノード縁に密着させるため内側に食い込む
-          const r = ringR - (strokeW * 1.5);
-          const flickerClass = FLICKER_CLASSES[i % FLICKER_CLASSES.length];
-
-          // 衛星旋回：2〜3個の弧の断片
-          const dashArr = isMain
-            ? `10 120 25 180 5 150`
-            : `8 140 18 200 4 170`;
-
-          // 旋回パラメータ：素数秒 + 逆回転を半々
-          const ringHash = (baseHash + i * 7919) | 0;
-          const spinDur = SPIN_DURS[Math.abs(ringHash >> 3) % SPIN_DURS.length];
-          const reverse = ((ringHash >> 5) & 1) === 1;
-          const spinDelay = -((Math.abs(ringHash >> 9) % 100) / 100) * spinDur;
-          const dashOffsetSeed = Math.abs(ringHash >> 11) % 360;
-
-          return (
-            <g
-              key={`${uid}-ring-${i}`}
-              className="aura-spin"
-              style={{
-                transformOrigin: `${cx}px ${cy}px`,
-                animationDuration: `${spinDur}s`,
-                animationDelay: `${spinDelay}s`,
-                animationDirection: reverse ? 'reverse' : 'normal',
-              }}
-            >
-              <circle
-                className={flickerClass}
-                cx={cx}
-                cy={cy}
-                r={r}
-                fill="none"
-                stroke={stroke}
-                strokeWidth={strokeW}
-                strokeDasharray={dashArr}
-                strokeDashoffset={dashOffsetSeed}
-                strokeLinecap="round"
-                style={{
-                  filter: `drop-shadow(0 0 ${2 + tier * 0.6}px ${stroke})`,
-                }}
-              />
-            </g>
-          );
-        })}
-      </g>
-    </svg>
-  );
-});
 
 // =====================================================================
 // CORE ノード
@@ -356,11 +124,7 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
       position: 'relative', userSelect: 'none', zIndex: 2,
       textShadow: `0 0 6px ${plasma.core}`,
     }}>
-      <LightningAura size={s} tier={4} plasma={plasma} uid="core" />
-      <div style={{ position: 'relative', zIndex: 2 }}>
-        <MinimalHandles />
-        技
-      </div>
+      技
     </div>
   );
 });
@@ -372,7 +136,6 @@ interface BodyPartData {
   label:       string;
   totalPoints: number;
   norm:        number;
-  tier:        LightningTier;
 }
 
 const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
@@ -420,9 +183,7 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
-      <LightningAura size={s} tier={d.tier} plasma={plasma} uid={`bp-${id}`} />
-      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <MinimalHandles />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <span style={{
           fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em',
           color: textColor,
@@ -453,7 +214,7 @@ interface TechData {
   isMaxed:     boolean;
 }
 
-const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
+const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
   const { technique: t, tier, isSignature, isMaxed } = data as unknown as TechData;
   if (!t?.id) return null;
   const s = TECH_NODE_SIZE;
@@ -494,10 +255,7 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
-      <LightningAura size={s} tier={tier} plasma={plasma} uid={`tech-${id}`} />
-      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <MinimalHandles />
-
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {isSignature && (
           <span
             className="signature-star-badge"
@@ -514,7 +272,6 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
               pointerEvents: 'none',
               textShadow: '0 0 4px rgba(0,0,0,0.7), 0 0 6px rgba(253,224,71,0.65)',
             }}
-            aria-label="得意技"
           >
             ★
           </span>
@@ -549,74 +306,34 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
 });
 
 // =====================================================================
-// 雷光エッジ（一閃版：1〜2粒の独立エネルギー塊）
+// 静的な線（LightningEdge を改称・簡略化）
 // =====================================================================
-interface LightningEdgeData {
+interface StaticEdgeData {
   color:    string;
-  bright:   string;
   width:    number;
   baseOpacity: number;
-  [key: string]: unknown;
 }
 
-// 超高速の素数秒パルス周期
-const EDGE_PULSE_DURS = [1.3, 1.7, 2.3, 3.1, 3.7];
-const EDGE_PULSE_CLASSES = ['edge-pulse-a', 'edge-pulse-b', 'edge-pulse-c'];
-// 非対称なdashArrayパターン（1〜2粒の鋭い一閃）
-const EDGE_DASH_PATTERNS = [
-  '2 120 6 250 3 180',
-  '3 200 4 320',
-  '2 180 8 260 2 220',
-  '5 280 2 340',
-];
-
-const LightningEdge = memo(function LightningEdge({
+const StaticEdge = memo(function StaticEdge({
   sourceX, sourceY, targetX, targetY, data, id,
 }: EdgeProps) {
-  const d = (data ?? {}) as Partial<LightningEdgeData>;
+  const d = (data ?? {}) as Partial<StaticEdgeData>;
   const color  = d.color  ?? 'rgba(99,102,241,0.6)';
-  const bright = d.bright ?? '#c7d2fe';
   const width  = d.width  ?? 1.5;
-  const baseOpacity = d.baseOpacity ?? 0.55;
+  const opacity = d.baseOpacity ?? 0.55;
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
-  const { className, duration, delay, dashArray } = useMemo(() => {
-    const h = hashString(id);
-    const cls = EDGE_PULSE_CLASSES[h % EDGE_PULSE_CLASSES.length];
-    const dur = EDGE_PULSE_DURS[(h >> 3) % EDGE_PULSE_DURS.length];
-    const dly = -(((h >> 7) % 100) / 100) * dur;
-    const da  = EDGE_DASH_PATTERNS[(h >> 11) % EDGE_DASH_PATTERNS.length];
-    return { className: cls, duration: dur, delay: dly, dashArray: da };
-  }, [id]);
-
   return (
-    <>
-      <BaseEdge
-        id={id}
-        path={edgePath}
-        style={{
-          stroke: color,
-          strokeWidth: width * 0.6,
-          opacity: baseOpacity * 0.3,
-        }}
-      />
-      <path
-        d={edgePath}
-        fill="none"
-        stroke={bright}
-        strokeWidth={width * 1.1}
-        strokeDasharray={dashArray}
-        strokeLinecap="round"
-        opacity={0}
-        className={className}
-        style={{
-          animationDuration: `${duration}s`,
-          animationDelay: `${delay}s`,
-          filter: `url(#lightning-filter-tier2) drop-shadow(0 0 4px ${bright})`,
-        }}
-      />
-    </>
+    <BaseEdge
+      id={id}
+      path={edgePath}
+      style={{
+        stroke: color,
+        strokeWidth: width,
+        opacity: opacity,
+      }}
+    />
   );
 });
 
@@ -630,7 +347,7 @@ const NODE_TYPES: NodeTypes = {
 };
 
 const EDGE_TYPES: EdgeTypes = {
-  lightning: LightningEdge,
+  static: StaticEdge,
 };
 
 // =====================================================================
@@ -697,7 +414,6 @@ function buildGraph(
   }
 
   const R_MID = R_OUTER * R_MID_RATIO;
-
   const half = CORE_NODE_SIZE / 2;
   nodes.push({ id: 'core', type: 'coreNode', position: { x: -half, y: -half }, data: {} });
 
@@ -726,7 +442,6 @@ function buildGraph(
 
     const totalPts = bpTotalPoints[bp];
     const bpNorm   = Math.min(totalPts / BP_SCORE_CAP, 1.0);
-    const bpTier   = bpTotalPointsToTier(totalPts);
     const hs       = BP_NODE_SIZE / 2;
     const bpId     = `bp-${bi}`;
 
@@ -737,19 +452,17 @@ function buildGraph(
     nodes.push({
       id: bpId, type: 'bodyPartNode',
       position: { x: R_MID * Math.cos(avgAngle) - hs, y: R_MID * Math.sin(avgAngle) - hs },
-      data: { label: bp, totalPoints: totalPts, norm: bpNorm, tier: bpTier } as unknown as Record<string, unknown>,
+      data: { label: bp, totalPoints: totalPts, norm: bpNorm } as unknown as Record<string, unknown>,
     });
 
     const bpTheme = getBpTheme(bp);
-
     edges.push({
       id: `e-${bpId}-core`,
       source: bpId,
       target: 'core',
-      type: 'lightning',
+      type: 'static',
       data: {
         color:  `rgba(${bpTheme.rgb},${(0.55 + bpNorm * 0.35).toFixed(2)})`,
-        bright: bpTheme.plasma.core,
         width:  Math.max(1.5, 1.8 + bpNorm * 1.5),
         baseOpacity: 0.55 + bpNorm * 0.35,
       } as unknown as Record<string, unknown>,
@@ -764,10 +477,9 @@ function buildGraph(
         id: `e-${techId}-${bpId}`,
         source: techId,
         target: bpId,
-        type: 'lightning',
+        type: 'static',
         data: {
           color:  `rgba(${techTheme.rgb},${(0.45 + norm * 0.4).toFixed(2)})`,
-          bright: techTheme.plasma.mid,
           width:  Math.max(1, 1.2 + norm * 1.2),
           baseOpacity: 0.4 + norm * 0.4,
         } as unknown as Record<string, unknown>,
@@ -802,142 +514,24 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 // CSS キーフレーム
 // =====================================================================
 const KEYFRAMES = `
-  /* ===== Edge：3種類の不規則リズム（超高速・長い待機＋鋭い一閃） ===== */
-  @keyframes edge-pulse-a {
-    0%        { stroke-dashoffset: 80; opacity: 0; }
-    80%       { opacity: 0; }
-    82%       { opacity: 1; }
-    84%       { opacity: 0.15; }
-    86%       { opacity: 0.95; }
-    88%       { opacity: 0.3; }
-    90%       { opacity: 0; }
-    100%      { stroke-dashoffset: 0; opacity: 0; }
-  }
-  .edge-pulse-a {
-    animation-name: edge-pulse-a;
-    animation-timing-function: linear;
-    animation-iteration-count: infinite;
-    will-change: stroke-dashoffset, opacity;
-  }
-
-  @keyframes edge-pulse-b {
-    0%        { stroke-dashoffset: 80; opacity: 0; }
-    88%       { opacity: 0; }
-    90%       { opacity: 1; }
-    92%       { opacity: 0.4; }
-    94%       { opacity: 0; }
-    100%      { stroke-dashoffset: 0; opacity: 0; }
-  }
-  .edge-pulse-b {
-    animation-name: edge-pulse-b;
-    animation-timing-function: linear;
-    animation-iteration-count: infinite;
-    will-change: stroke-dashoffset, opacity;
-  }
-
-  @keyframes edge-pulse-c {
-    0%        { stroke-dashoffset: 80; opacity: 0; }
-    70%       { opacity: 0; }
-    72%       { opacity: 0.6; }
-    74%       { opacity: 0.05; }
-    76%       { opacity: 0; }
-    90%       { opacity: 0; }
-    92%       { opacity: 1; }
-    94%       { opacity: 0.5; }
-    96%       { opacity: 0; }
-    100%      { stroke-dashoffset: 0; opacity: 0; }
-  }
-  .edge-pulse-c {
-    animation-name: edge-pulse-c;
-    animation-timing-function: linear;
-    animation-iteration-count: infinite;
-    will-change: stroke-dashoffset, opacity;
-  }
-
-  /* ===== Aura：衛星旋回（自転） ===== */
-  @keyframes aura-spin {
-    0%   { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  .aura-spin {
-    animation-name: aura-spin;
-    animation-timing-function: linear;
-    animation-iteration-count: infinite;
-    transform-origin: center;
-    transform-box: fill-box;
-    will-change: transform;
-  }
-
-  /* ===== Aura：間欠クラック明滅（普段は消灯、一瞬だけ鋭く光る） ===== */
-  @keyframes aura-crack-flash-a {
-    0%, 88%   { opacity: 0; }
-    90%       { opacity: 1; }
-    92%       { opacity: 0.1; }
-    94%       { opacity: 0.85; }
-    97%       { opacity: 0; }
-    100%      { opacity: 0; }
-  }
-  .aura-crack-flash-a {
-    animation: aura-crack-flash-a 4.3s linear infinite;
-    will-change: opacity;
-  }
-
-  @keyframes aura-crack-flash-b {
-    0%, 91%   { opacity: 0; }
-    93%       { opacity: 0.95; }
-    95%       { opacity: 0.05; }
-    97%       { opacity: 0.8; }
-    100%      { opacity: 0; }
-  }
-  .aura-crack-flash-b {
-    animation: aura-crack-flash-b 6.7s linear infinite;
-    animation-delay: -1.9s;
-    will-change: opacity;
-  }
-
-  /* ===== 得意技バッジ ===== */
   @keyframes signature-star-pop {
     0%   { transform: translateY(-50%) scale(0) rotate(-180deg); opacity: 0; }
     60%  { transform: translateY(-50%) scale(1.4) rotate(20deg); opacity: 1; }
     100% { transform: translateY(-50%) scale(1.0) rotate(0); opacity: 1; }
   }
   @keyframes signature-star-twinkle {
-    0%, 100% {
-      color: #fde047;
-      text-shadow: 0 0 4px rgba(0,0,0,0.7), 0 0 6px rgba(253,224,71,0.6);
-    }
-    50% {
-      color: #fffbeb;
-      text-shadow: 0 0 4px rgba(0,0,0,0.7), 0 0 12px rgba(253,224,71,0.95), 0 0 16px rgba(251,191,36,0.7);
-    }
+    0%, 100% { color: #fde047; text-shadow: 0 0 4px rgba(0,0,0,0.7), 0 0 6px rgba(253,224,71,0.6); }
+    50% { color: #fffbeb; text-shadow: 0 0 4px rgba(0,0,0,0.7), 0 0 12px rgba(253,224,71,0.95); }
   }
   .signature-star-badge {
-    animation:
-      signature-star-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both,
-      signature-star-twinkle 2.4s ease-in-out infinite 0.6s;
+    animation: signature-star-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both, signature-star-twinkle 2.4s ease-in-out infinite 0.6s;
   }
-
-  @media (prefers-reduced-motion: reduce) {
-    .edge-pulse-a,
-    .edge-pulse-b,
-    .edge-pulse-c,
-    .aura-spin,
-    .aura-crack-flash-a,
-    .aura-crack-flash-b,
-    .signature-star-badge {
-      animation: none !important;
-    }
-    svg animate { display: none; }
-  }
-
   .react-flow__controls-button {
     background: rgba(15,14,42,0.95) !important;
     border-color: rgba(99,102,241,0.25) !important;
     fill: rgba(129,140,248,0.8) !important;
   }
   .react-flow__controls-button:hover { background: rgba(49,46,129,0.8) !important; }
-  .react-flow__edge.selected .react-flow__edge-path,
-  .react-flow__edge:focus .react-flow__edge-path { stroke-width: inherit !important; }
 `;
 
 // =====================================================================
@@ -980,7 +574,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
   return (
     <div style={{ width: '100%' }}>
       <style>{KEYFRAMES}</style>
-      <SharedLightningFilters />
 
       {signatureTech && (
         <div style={{
@@ -989,20 +582,9 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
           background: 'linear-gradient(90deg, rgba(30,27,75,0.55), rgba(30,27,75,0.18))',
           border: '1px solid rgba(253,224,71,0.4)',
         }}>
-          <span
-            className="signature-star-badge"
-            style={{
-              fontSize: 16,
-              color: '#fde047',
-              fontWeight: 900,
-              lineHeight: 1,
-              display: 'inline-block',
-            }}
-          >★</span>
+          <span className="signature-star-badge" style={{ fontSize: 16, color: '#fde047', fontWeight: 900, lineHeight: 1, display: 'inline-block' }}>★</span>
           <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'rgba(253,224,71,0.85)', letterSpacing: '0.1em' }}>得意技</span>
-          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#fef9c3', letterSpacing: '0.05em' }}>
-            {signatureTech.name}
-          </span>
+          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#fef9c3', letterSpacing: '0.05em' }}>{signatureTech.name}</span>
           <span style={{ marginLeft: 'auto', fontSize: '0.68rem', color: 'rgba(253,224,71,0.5)' }}>{signatureTech.points}pt</span>
         </div>
       )}
@@ -1015,7 +597,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         }}>
           <span style={{ fontSize: 11 }}>⚡</span>
           <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(199,210,254,0.8)', letterSpacing: '0.08em' }}>MAX到達: {maxedCount}技</span>
-          <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.45)', marginLeft: 2 }}>({TECH_SCORE_CAP}pt以上)</span>
         </div>
       )}
 
@@ -1030,7 +611,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
               color: active ? '#c7d2fe' : 'rgba(99,102,241,0.55)',
               fontSize: '0.7rem', fontWeight: active ? 700 : 500, fontFamily: 'inherit',
               cursor: 'pointer', transition: 'all .15s',
-              boxShadow: active ? '0 0 8px rgba(99,102,241,0.35)' : 'none',
             }}>
               {label}
             </button>
@@ -1054,7 +634,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
           minZoom={0.2} maxZoom={2.5}
           colorMode="dark"
         >
-          <Background variant={BackgroundVariant.Dots} color="rgba(99,102,241,0.12)" gap={28} size={1.2} />
+          <Background variant="dots" color="rgba(99,102,241,0.12)" gap={28} size={1.2} />
           <Controls showInteractive={false} style={{ background: 'rgba(15,14,42,0.9)', border: '1px solid rgba(99,102,241,0.22)', borderRadius: 8 }} />
         </ReactFlow>
       </div>
@@ -1071,11 +651,6 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
             <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.55)', fontWeight: 600 }}>{label}</span>
           </div>
         ))}
-        <div style={{ width: 1, background: 'rgba(99,102,241,0.2)', margin: '0 2px' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 10, color: '#fde047' }}>★</span>
-          <span style={{ fontSize: '0.62rem', color: 'rgba(199,210,254,0.55)', fontWeight: 600 }}>得意技</span>
-        </div>
       </div>
     </div>
   );

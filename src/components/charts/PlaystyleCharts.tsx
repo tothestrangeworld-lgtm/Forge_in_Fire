@@ -9,7 +9,7 @@ import {
 import type {
   Technique, MatchupMasterEntry, PeerStyleEntry, TechniqueMasterEntry,
 } from '@/types';
-import MatchupScroll from './MatchupScroll';
+import MatchupScroll from '../MatchupScroll';
 
 interface Props {
   techniques:       Technique[];
@@ -27,6 +27,110 @@ const TOOLTIP_STYLE = {
   borderRadius: 10, color: '#fff',
   fontSize: 12, padding: '8px 12px',
 };
+
+// =====================================================================
+// Degree によるカラーパレット ★ MatchupScroll.tsx と完全同期
+//   S(得意): 青〜シアン系 / W(苦手): 赤〜マゼンタ系
+//   degree が高いほど 色相が鮮やかに / Glow が強く / ボーダー太く
+// =====================================================================
+type DegreeTheme = {
+  primary:     string;   // メインカラー（テキスト・アイコン）
+  textBright:  string;   // 強調テキスト（TargetStyle名）
+  bg:          string;   // 背景
+  bgHover:     string;   // hover時の背景
+  border:      string;   // ボーダー色
+  borderW:     number;   // ボーダー太さ
+  glow:        string;   // box-shadow
+  glowHover:   string;   // hover時の box-shadow
+  innerGlow:   string;   // inset box-shadow
+};
+
+function getDegreeTheme(matchType: string, degree: number): DegreeTheme {
+  const isStrong = matchType === 'S';
+  const d        = Math.max(1, Math.min(3, degree || 1));
+
+  if (isStrong) {
+    // ── 得意（S）: 青〜シアン系 ──
+    if (d === 1) {
+      return {
+        primary:    '#5eead4',
+        textBright: '#ccfbf1',
+        bg:         'rgba(20,83,75,0.22)',
+        bgHover:    'rgba(20,83,75,0.34)',
+        border:     'rgba(45,212,191,0.40)',
+        borderW:    1,
+        glow:       'none',
+        glowHover:  '0 0 10px rgba(45,212,191,0.20)',
+        innerGlow:  'inset 0 0 8px rgba(45,212,191,0.06)',
+      };
+    }
+    if (d === 2) {
+      return {
+        primary:    '#34d399',
+        textBright: '#d1fae5',
+        bg:         'rgba(16,185,129,0.20)',
+        bgHover:    'rgba(16,185,129,0.32)',
+        border:     'rgba(52,211,153,0.65)',
+        borderW:    1.5,
+        glow:       '0 0 14px rgba(52,211,153,0.30), 0 0 28px rgba(16,185,129,0.14)',
+        glowHover:  '0 0 22px rgba(52,211,153,0.45), 0 0 40px rgba(16,185,129,0.22)',
+        innerGlow:  'inset 0 0 14px rgba(52,211,153,0.10)',
+      };
+    }
+    // d === 3 ── ネオンシアン（最強）
+    return {
+      primary:    '#22d3ee',
+      textBright: '#ecfeff',
+      bg:         'rgba(8,145,178,0.26)',
+      bgHover:    'rgba(8,145,178,0.40)',
+      border:     'rgba(34,211,238,0.90)',
+      borderW:    2,
+      glow:       '0 0 20px rgba(34,211,238,0.55), 0 0 40px rgba(34,211,238,0.30), 0 0 60px rgba(34,211,238,0.15)',
+      glowHover:  '0 0 28px rgba(34,211,238,0.75), 0 0 56px rgba(34,211,238,0.45), 0 0 80px rgba(34,211,238,0.22)',
+      innerGlow:  'inset 0 0 22px rgba(34,211,238,0.18)',
+    };
+  } else {
+    // ── 苦手（W）: 赤〜マゼンタ系 ──
+    if (d === 1) {
+      return {
+        primary:    '#fda4af',
+        textBright: '#fecdd3',
+        bg:         'rgba(127,29,29,0.24)',
+        bgHover:    'rgba(127,29,29,0.36)',
+        border:     'rgba(225,29,72,0.40)',
+        borderW:    1,
+        glow:       'none',
+        glowHover:  '0 0 10px rgba(225,29,72,0.20)',
+        innerGlow:  'inset 0 0 8px rgba(225,29,72,0.06)',
+      };
+    }
+    if (d === 2) {
+      return {
+        primary:    '#f87171',
+        textBright: '#fee2e2',
+        bg:         'rgba(220,38,38,0.22)',
+        bgHover:    'rgba(220,38,38,0.34)',
+        border:     'rgba(248,113,113,0.65)',
+        borderW:    1.5,
+        glow:       '0 0 14px rgba(248,113,113,0.30), 0 0 28px rgba(220,38,38,0.14)',
+        glowHover:  '0 0 22px rgba(248,113,113,0.45), 0 0 40px rgba(220,38,38,0.22)',
+        innerGlow:  'inset 0 0 14px rgba(248,113,113,0.10)',
+      };
+    }
+    // d === 3 ── 紅蓮マゼンタ（警告）
+    return {
+      primary:    '#f0abfc',
+      textBright: '#fae8ff',
+      bg:         'rgba(134,25,143,0.28)',
+      bgHover:    'rgba(134,25,143,0.42)',
+      border:     'rgba(240,171,252,0.90)',
+      borderW:    2,
+      glow:       '0 0 20px rgba(240,171,252,0.55), 0 0 40px rgba(217,70,239,0.32), 0 0 60px rgba(192,38,211,0.18)',
+      glowHover:  '0 0 28px rgba(240,171,252,0.75), 0 0 56px rgba(217,70,239,0.50), 0 0 80px rgba(192,38,211,0.28)',
+      innerGlow:  'inset 0 0 22px rgba(240,171,252,0.18)',
+    };
+  }
+}
 
 // カスタム中央ラベル（ドーナツ用）
 function DonutLabel({ cx, cy, totalPts }: { cx: number; cy: number; totalPts: number }) {
@@ -78,24 +182,29 @@ export default function PlaystyleCharts({
 
     const totalPts = techniques.reduce((s, t) => s + t.points, 0);
 
-    // ── ★ Phase10: BaseStyle 判定 ──
-    // subCategory > bodyPart > actionType の優先順で、もっともポイントの高いものを BaseStyle にする。
-    // ただし matchupMaster と照合してヒットするものを優先採用する。
+    // ── ★ Phase10 / 10.1: BaseStyle 判定 ──
+    // 優先順位:
+    //   1. matchupMaster.baseStyle に存在するキーのうち、最もXPが高いもの（subCategory > bodyPart > actionType の順で評価）
+    //   2. 該当なしの場合、subCategory > bodyPart > actionType の順で最大XPを採用
     let baseStyle = '';
-    const candidates: Array<{ key: string; pts: number }> = [];
-    Object.entries(subTotals).forEach(([k, v]) => candidates.push({ key: k, pts: v }));
-    Object.entries(bodyTotals).forEach(([k, v]) => candidates.push({ key: k, pts: v }));
-    Object.entries(actionTotals).forEach(([k, v]) => candidates.push({ key: k, pts: v }));
-    candidates.sort((a, b) => b.pts - a.pts);
+
+    // すべての候補をフラット化（重複除去のため Map 使用：先勝ち＝ subCategory が最優先）
+    const flatCandidates = new Map<string, number>();
+    Object.entries(subTotals).forEach(([k, v])    => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
+    Object.entries(bodyTotals).forEach(([k, v])   => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
+    Object.entries(actionTotals).forEach(([k, v]) => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
+
+    const sortedCandidates = Array.from(flatCandidates.entries())
+      .map(([key, pts]) => ({ key, pts }))
+      .sort((a, b) => b.pts - a.pts);
 
     if (matchupMaster.length > 0) {
-      // matchupMaster の baseStyle に存在するキーを優先
       const styleSet = new Set(matchupMaster.map(m => m.baseStyle));
-      const hit = candidates.find(c => styleSet.has(c.key) && c.pts > 0);
+      const hit = sortedCandidates.find(c => styleSet.has(c.key) && c.pts > 0);
       if (hit) baseStyle = hit.key;
     }
-    if (!baseStyle && candidates.length > 0 && candidates[0].pts > 0) {
-      baseStyle = candidates[0].key;
+    if (!baseStyle && sortedCandidates.length > 0 && sortedCandidates[0].pts > 0) {
+      baseStyle = sortedCandidates[0].key;
     }
 
     return { actionData, subData, totalPts, baseStyle };
@@ -222,13 +331,13 @@ export default function PlaystyleCharts({
 
       </div>
 
-      {/* ── ★ Phase10: BaseStyle と相性タグ ─────────────────────── */}
+      {/* ── ★ Phase10 / 10.1: BaseStyle と相性タグ ─────────────────────── */}
       {baseStyle && (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 18 }}>
           {/* BaseStyle ラベル */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            marginBottom: 8, flexWrap: 'wrap',
+            marginBottom: 10, flexWrap: 'wrap',
           }}>
             <span style={{
               fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.14em',
@@ -237,14 +346,14 @@ export default function PlaystyleCharts({
               YOUR BASE STYLE
             </span>
             <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '3px 10px', borderRadius: 999,
-              background: 'rgba(99,102,241,0.15)',
-              border: '1px solid rgba(129,140,248,0.4)',
-              fontSize: '0.78rem', fontWeight: 800, color: '#c7d2fe',
-              boxShadow: '0 0 10px rgba(99,102,241,0.18)',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 12px', borderRadius: 999,
+              background: 'rgba(99,102,241,0.18)',
+              border: '1px solid rgba(129,140,248,0.45)',
+              fontSize: '0.8rem', fontWeight: 800, color: '#c7d2fe',
+              boxShadow: '0 0 12px rgba(99,102,241,0.22)',
             }}>
-              <span style={{ fontSize: 11 }}>⚔︎</span>
+              <span style={{ fontSize: 12 }}>⚔︎</span>
               {baseStyle}
             </span>
           </div>
@@ -253,12 +362,16 @@ export default function PlaystyleCharts({
           {userMatchups.length > 0 ? (
             <>
               <p style={{
-                margin: '0 0 6px', fontSize: '0.62rem',
+                margin: '0 0 10px', fontSize: '0.62rem',
                 color: 'rgba(165,180,252,0.6)', letterSpacing: '0.08em',
               }}>
                 剣風相性（タップで詳細）
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 10,           // ★ タグ間の余白を拡張
+              }}>
                 {userMatchups.map((m, idx) => (
                   <MatchupTag
                     key={`${m.baseStyle}-${m.targetStyle}-${idx}`}
@@ -271,9 +384,9 @@ export default function PlaystyleCharts({
           ) : matchupMaster.length > 0 ? (
             <p style={{
               margin: 0, fontSize: '0.7rem', color: 'rgba(99,102,241,0.4)',
-              padding: '0.5rem 0.75rem', borderRadius: 10,
+              padding: '0.6rem 0.85rem', borderRadius: 10,
               background: 'rgba(99,102,241,0.04)',
-              border: '1px dashed rgba(99,102,241,0.18)',
+              border: '1px dashed rgba(99,102,241,0.2)',
             }}>
               「{baseStyle}」の相性データはまだ登録されていません
             </p>
@@ -295,8 +408,9 @@ export default function PlaystyleCharts({
 }
 
 // =====================================================================
-// MatchupTag ★ Phase10
+// MatchupTag ★ Phase10 / 10.1
 // 相性タグ（matchType / degree によって色と発光が変化）
+// MatchupScroll.tsx の getDegreeTheme と完全同期。
 // =====================================================================
 interface TagProps {
   matchup: MatchupMasterEntry;
@@ -306,80 +420,106 @@ interface TagProps {
 function MatchupTag({ matchup, onClick }: TagProps) {
   const isStrong = matchup.matchType === 'S';
   const degree   = Math.max(1, Math.min(3, matchup.degree || 1));
-
-  // matchType によるベースカラー（S=緑系/青系、W=赤系/紫系）
-  const color   = isStrong ? '#34d399' : '#f87171';
-  const bgBase  = isStrong ? 'rgba(16,185,129,'  : 'rgba(239,68,68,';
-  const brBase  = isStrong ? 'rgba(52,211,153,'  : 'rgba(248,113,113,';
-
-  // degree によって透明度・ボーダー幅・glow 強度を調整
-  const bgAlpha     = degree === 3 ? 0.18 : degree === 2 ? 0.12 : 0.08;
-  const brAlpha     = degree === 3 ? 0.7  : degree === 2 ? 0.5  : 0.35;
-  const borderWidth = degree === 3 ? 2    : degree === 2 ? 1.5  : 1;
-  const glow        = degree === 3
-    ? `0 0 14px ${bgBase}0.45), 0 0 28px ${bgBase}0.22)`
-    : degree === 2
-      ? `0 0 8px ${bgBase}0.28)`
-      : 'none';
+  const theme    = getDegreeTheme(matchup.matchType, degree);
 
   const symbol = isStrong ? '⚔︎' : '⛨';
   const label  = isStrong ? '得意' : '苦手';
+
+  // タップしたくなる質感: ボタンサイズと余白を拡張
+  const padX = degree === 3 ? 14 : 12;
+  const padY = degree === 3 ? 9 : 8;
+
+  // 一意なアニメーション名（degree 3 のみ脈動）
+  const pulseName = `tagPulse_${isStrong ? 'S' : 'W'}_${degree}`;
 
   return (
     <button
       onClick={onClick}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: degree === 3 ? '6px 12px' : '5px 10px',
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        padding: `${padY}px ${padX}px`,
+        minHeight: 36,           // ★ タップ領域を確保（モバイル）
         borderRadius: 999,
-        background: `${bgBase}${bgAlpha})`,
-        border: `${borderWidth}px solid ${brBase}${brAlpha})`,
-        boxShadow: glow,
+        background: theme.bg,
+        border: `${theme.borderW}px solid ${theme.border}`,
+        boxShadow: `${theme.glow}${theme.glow !== 'none' ? ', ' : ''}${theme.innerGlow}`.replace(/^,\s*/, ''),
         cursor: 'pointer',
         fontFamily: 'inherit',
-        transition: 'all 0.15s ease',
+        transition: 'all 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        // degree 3 のみ脈動アニメ
+        animation: degree === 3 ? `${pulseName} 2.6s ease-in-out infinite` : 'none',
+        WebkitTapHighlightColor: 'transparent',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-1px)';
+        e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
+        e.currentTarget.style.background = theme.bgHover;
+        if (theme.glowHover) {
+          e.currentTarget.style.boxShadow = `${theme.glowHover}, ${theme.innerGlow}`;
+        }
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.transform = 'translateY(0) scale(1)';
+        e.currentTarget.style.background = theme.bg;
+        e.currentTarget.style.boxShadow = `${theme.glow}${theme.glow !== 'none' ? ', ' : ''}${theme.innerGlow}`.replace(/^,\s*/, '');
+      }}
+      onTouchStart={(e) => {
+        e.currentTarget.style.transform = 'translateY(0) scale(0.97)';
+      }}
+      onTouchEnd={(e) => {
+        e.currentTarget.style.transform = 'translateY(0) scale(1)';
       }}
       title={`${label} (Degree ${degree}) vs ${matchup.targetStyle}`}
     >
+      {/* degree 3 専用 keyframes */}
+      {degree === 3 && (
+        <style>{`
+          @keyframes ${pulseName} {
+            0%, 100% { box-shadow: ${theme.glow}, ${theme.innerGlow}; }
+            50%      { box-shadow: ${theme.glowHover}, ${theme.innerGlow}; }
+          }
+        `}</style>
+      )}
+
+      {/* シンボル（剣 or 盾） */}
       <span style={{
-        fontSize: degree === 3 ? 12 : 11,
-        color,
-        filter: degree === 3 ? `drop-shadow(0 0 4px ${color})` : 'none',
+        fontSize: degree === 3 ? 13 : 12,
+        color: theme.primary,
+        filter: degree >= 2
+          ? `drop-shadow(0 0 ${degree === 3 ? 6 : 4}px ${theme.primary})`
+          : 'none',
+        lineHeight: 1,
       }}>
         {symbol}
       </span>
+
+      {/* ラベル（得意 / 苦手） */}
       <span style={{
-        fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.1em',
-        color, opacity: 0.85,
+        fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.12em',
+        color: theme.primary,
+        opacity: 0.92,
+        textShadow: degree === 3 ? `0 0 6px ${theme.primary}` : 'none',
       }}>
         {label}
       </span>
+
+      {/* 区切り線（degree 2以上で表示） */}
+      {degree >= 2 && (
+        <span style={{
+          width: 1, height: 12,
+          background: theme.border,
+          opacity: 0.6,
+        }} />
+      )}
+
+      {/* TargetStyle 名 */}
       <span style={{
-        fontSize: degree === 3 ? '0.78rem' : '0.72rem',
+        fontSize: degree === 3 ? '0.82rem' : degree === 2 ? '0.78rem' : '0.74rem',
         fontWeight: degree === 3 ? 800 : 700,
-        color: degree === 3 ? '#fff' : '#e0e7ff',
+        color: theme.textBright,
         letterSpacing: '0.02em',
+        textShadow: degree === 3 ? `0 0 4px ${theme.primary}` : 'none',
       }}>
         {matchup.targetStyle}
-      </span>
-      {/* degree インジケーター */}
-      <span style={{ display: 'inline-flex', gap: 1.5, marginLeft: 1 }}>
-        {[1, 2, 3].map(n => (
-          <span
-            key={n}
-            style={{
-              width: 3, height: 3, borderRadius: '50%',
-              background: n <= degree ? color : 'rgba(255,255,255,0.15)',
-              boxShadow: n <= degree && degree === 3 ? `0 0 3px ${color}` : 'none',
-            }}
-          />
-        ))}
       </span>
     </button>
   );
