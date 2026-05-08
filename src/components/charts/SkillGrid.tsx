@@ -1,7 +1,7 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.3版：構造修正リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.4版：細糸リビジョン）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -276,7 +276,6 @@ const StaticEdge = memo(function StaticEdge({
 }: EdgeProps) {
   const d = (data ?? {}) as Partial<StaticEdgeData>;
   const color  = d.color  ?? 'rgba(99,102,241,0.6)';
-  const width  = d.width  ?? 1.5;
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
@@ -287,8 +286,7 @@ const StaticEdge = memo(function StaticEdge({
       style={{
         ...style,
         stroke: color,
-        strokeWidth: width * 1.2,
-        filter: `drop-shadow(0 0 4px ${color})`,
+        strokeWidth: 1.5,
       }}
     />
   );
@@ -413,31 +411,36 @@ function buildGraph(
     });
 
     const bpTheme = getBpTheme(bp);
+    const bpIsMaxed = totalPts >= BP_SCORE_CAP;
+    const edgeColorToCore = bpIsMaxed ? bpTheme.plasma.core : (bpNorm > 0.5 ? bpTheme.plasma.mid : `rgba(${bpTheme.rgb},0.55)`);
+
     edges.push({
       id: `e-${bpId}-core`,
       source: bpId,
       target: 'core',
       type: 'static',
-      data: {
-        color:  `rgba(${bpTheme.rgb},${0.55 + bpNorm * 0.35})`,
-        width:  Math.max(1.5, 1.8 + bpNorm * 1.5),
-      } as unknown as Record<string, unknown>,
+      data: { color: edgeColorToCore },
     });
 
     techs.forEach(tech => {
       const techId      = `tech-${tech.id}`;
-      const norm        = Math.min((tech.points ?? 0) / TECH_SCORE_CAP, 1.0);
+      const tier        = pointsToTier(tech.points ?? 0);
       const techTheme   = getBpTheme(tech.bodyPart);
+      const techIsMaxed = (tech.points ?? 0) >= TECH_SCORE_CAP;
+      
+      let edgeColorToBp = '';
+      if (techIsMaxed) edgeColorToBp = techTheme.plasma.core;
+      else if (tier >= 3) edgeColorToBp = techTheme.plasma.mid;
+      else if (tier >= 2) edgeColorToBp = `rgba(${techTheme.rgb},0.6)`;
+      else if (tier >= 1) edgeColorToBp = `rgba(${techTheme.rgb},0.32)`;
+      else edgeColorToBp = `rgba(${techTheme.rgb},0.12)`;
 
       edges.push({
         id: `e-${techId}-${bpId}`,
         source: techId,
         target: bpId,
         type: 'static',
-        data: {
-          color:  `rgba(${techTheme.rgb},${0.4 + norm * 0.4})`,
-          width:  Math.max(1, 1.2 + norm * 1.2),
-        } as unknown as Record<string, unknown>,
+        data: { color: edgeColorToBp },
       });
     });
   });
