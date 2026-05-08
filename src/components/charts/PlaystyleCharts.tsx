@@ -9,7 +9,8 @@ import {
 import type {
   Technique, MatchupMasterEntry, PeerStyleEntry, TechniqueMasterEntry,
 } from '@/types';
-import MatchupScroll from './MatchupScroll';
+import MatchupScroll from '@/components/charts/MatchupScroll';
+import { getDegreeTheme, getTagHoverStyles } from '@/lib/matchupTheme';
 
 interface Props {
   techniques:       Technique[];
@@ -27,110 +28,6 @@ const TOOLTIP_STYLE = {
   borderRadius: 10, color: '#fff',
   fontSize: 12, padding: '8px 12px',
 };
-
-// =====================================================================
-// Degree によるカラーパレット ★ MatchupScroll.tsx と完全同期
-//   S(得意): 青〜シアン系 / W(苦手): 赤〜マゼンタ系
-//   degree が高いほど 色相が鮮やかに / Glow が強く / ボーダー太く
-// =====================================================================
-type DegreeTheme = {
-  primary:     string;   // メインカラー（テキスト・アイコン）
-  textBright:  string;   // 強調テキスト（TargetStyle名）
-  bg:          string;   // 背景
-  bgHover:     string;   // hover時の背景
-  border:      string;   // ボーダー色
-  borderW:     number;   // ボーダー太さ
-  glow:        string;   // box-shadow
-  glowHover:   string;   // hover時の box-shadow
-  innerGlow:   string;   // inset box-shadow
-};
-
-function getDegreeTheme(matchType: string, degree: number): DegreeTheme {
-  const isStrong = matchType === 'S';
-  const d        = Math.max(1, Math.min(3, degree || 1));
-
-  if (isStrong) {
-    // ── 得意（S）: 青〜シアン系 ──
-    if (d === 1) {
-      return {
-        primary:    '#5eead4',
-        textBright: '#ccfbf1',
-        bg:         'rgba(20,83,75,0.22)',
-        bgHover:    'rgba(20,83,75,0.34)',
-        border:     'rgba(45,212,191,0.40)',
-        borderW:    1,
-        glow:       'none',
-        glowHover:  '0 0 10px rgba(45,212,191,0.20)',
-        innerGlow:  'inset 0 0 8px rgba(45,212,191,0.06)',
-      };
-    }
-    if (d === 2) {
-      return {
-        primary:    '#34d399',
-        textBright: '#d1fae5',
-        bg:         'rgba(16,185,129,0.20)',
-        bgHover:    'rgba(16,185,129,0.32)',
-        border:     'rgba(52,211,153,0.65)',
-        borderW:    1.5,
-        glow:       '0 0 14px rgba(52,211,153,0.30), 0 0 28px rgba(16,185,129,0.14)',
-        glowHover:  '0 0 22px rgba(52,211,153,0.45), 0 0 40px rgba(16,185,129,0.22)',
-        innerGlow:  'inset 0 0 14px rgba(52,211,153,0.10)',
-      };
-    }
-    // d === 3 ── ネオンシアン（最強）
-    return {
-      primary:    '#22d3ee',
-      textBright: '#ecfeff',
-      bg:         'rgba(8,145,178,0.26)',
-      bgHover:    'rgba(8,145,178,0.40)',
-      border:     'rgba(34,211,238,0.90)',
-      borderW:    2,
-      glow:       '0 0 20px rgba(34,211,238,0.55), 0 0 40px rgba(34,211,238,0.30), 0 0 60px rgba(34,211,238,0.15)',
-      glowHover:  '0 0 28px rgba(34,211,238,0.75), 0 0 56px rgba(34,211,238,0.45), 0 0 80px rgba(34,211,238,0.22)',
-      innerGlow:  'inset 0 0 22px rgba(34,211,238,0.18)',
-    };
-  } else {
-    // ── 苦手（W）: 赤〜マゼンタ系 ──
-    if (d === 1) {
-      return {
-        primary:    '#fda4af',
-        textBright: '#fecdd3',
-        bg:         'rgba(127,29,29,0.24)',
-        bgHover:    'rgba(127,29,29,0.36)',
-        border:     'rgba(225,29,72,0.40)',
-        borderW:    1,
-        glow:       'none',
-        glowHover:  '0 0 10px rgba(225,29,72,0.20)',
-        innerGlow:  'inset 0 0 8px rgba(225,29,72,0.06)',
-      };
-    }
-    if (d === 2) {
-      return {
-        primary:    '#f87171',
-        textBright: '#fee2e2',
-        bg:         'rgba(220,38,38,0.22)',
-        bgHover:    'rgba(220,38,38,0.34)',
-        border:     'rgba(248,113,113,0.65)',
-        borderW:    1.5,
-        glow:       '0 0 14px rgba(248,113,113,0.30), 0 0 28px rgba(220,38,38,0.14)',
-        glowHover:  '0 0 22px rgba(248,113,113,0.45), 0 0 40px rgba(220,38,38,0.22)',
-        innerGlow:  'inset 0 0 14px rgba(248,113,113,0.10)',
-      };
-    }
-    // d === 3 ── 紅蓮マゼンタ（警告）
-    return {
-      primary:    '#f0abfc',
-      textBright: '#fae8ff',
-      bg:         'rgba(134,25,143,0.28)',
-      bgHover:    'rgba(134,25,143,0.42)',
-      border:     'rgba(240,171,252,0.90)',
-      borderW:    2,
-      glow:       '0 0 20px rgba(240,171,252,0.55), 0 0 40px rgba(217,70,239,0.32), 0 0 60px rgba(192,38,211,0.18)',
-      glowHover:  '0 0 28px rgba(240,171,252,0.75), 0 0 56px rgba(217,70,239,0.50), 0 0 80px rgba(192,38,211,0.28)',
-      innerGlow:  'inset 0 0 22px rgba(240,171,252,0.18)',
-    };
-  }
-}
 
 // カスタム中央ラベル（ドーナツ用）
 function DonutLabel({ cx, cy, totalPts }: { cx: number; cy: number; totalPts: number }) {
@@ -187,8 +84,6 @@ export default function PlaystyleCharts({
     //   1. matchupMaster.baseStyle に存在するキーのうち、最もXPが高いもの（subCategory > bodyPart > actionType の順で評価）
     //   2. 該当なしの場合、subCategory > bodyPart > actionType の順で最大XPを採用
     let baseStyle = '';
-
-    // すべての候補をフラット化（重複除去のため Map 使用：先勝ち＝ subCategory が最優先）
     const flatCandidates = new Map<string, number>();
     Object.entries(subTotals).forEach(([k, v])    => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
     Object.entries(bodyTotals).forEach(([k, v])   => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
@@ -216,9 +111,7 @@ export default function PlaystyleCharts({
     return matchupMaster
       .filter(m => m.baseStyle === baseStyle)
       .sort((a, b) => {
-        // 1. matchType 優先（S → W）
         if (a.matchType !== b.matchType) return a.matchType === 'S' ? -1 : 1;
-        // 2. degree 降順
         return (b.degree ?? 0) - (a.degree ?? 0);
       });
   }, [baseStyle, matchupMaster]);
@@ -331,7 +224,7 @@ export default function PlaystyleCharts({
 
       </div>
 
-      {/* ── ★ Phase10 / 10.1: BaseStyle と相性タグ ─────────────────────── */}
+      {/* ── ★ Phase10 / 10.2: BaseStyle と相性タグ ─────────────────────── */}
       {baseStyle && (
         <div style={{ marginTop: 18 }}>
           {/* BaseStyle ラベル */}
@@ -370,7 +263,7 @@ export default function PlaystyleCharts({
               <div style={{
                 display: 'flex',
                 flexWrap: 'wrap',
-                gap: 10,           // ★ タグ間の余白を拡張
+                gap: 10,
               }}>
                 {userMatchups.map((m, idx) => (
                   <MatchupTag
@@ -408,9 +301,13 @@ export default function PlaystyleCharts({
 }
 
 // =====================================================================
-// MatchupTag ★ Phase10 / 10.1
+// MatchupTag ★ Phase10 / 10.2
 // 相性タグ（matchType / degree によって色と発光が変化）
-// MatchupScroll.tsx の getDegreeTheme と完全同期。
+// matchupTheme.ts の getDegreeTheme / getTagHoverStyles を使用。
+//
+// ★ 10.2 配色:
+//   S (得意): 青緑 / エメラルド / ネオンシアン
+//   W (苦手): 赤紫 / 警告アンバー / 真紅ネオン
 // =====================================================================
 interface TagProps {
   matchup: MatchupMasterEntry;
@@ -421,16 +318,22 @@ function MatchupTag({ matchup, onClick }: TagProps) {
   const isStrong = matchup.matchType === 'S';
   const degree   = Math.max(1, Math.min(3, matchup.degree || 1));
   const theme    = getDegreeTheme(matchup.matchType, degree);
+  const hover    = getTagHoverStyles(matchup.matchType, degree);
 
-  const symbol = isStrong ? '⚔︎' : '⛨';
-  const label  = isStrong ? '得意' : '苦手';
+  // 苦手 D3 のみ警告マーク、それ以外は剣/盾
+  const symbol = isStrong
+    ? '⚔︎'
+    : (degree === 3 ? '⚠' : '⛨');
+  const label = isStrong ? '得意' : '苦手';
 
-  // タップしたくなる質感: ボタンサイズと余白を拡張
+  // タップしたくなる質感
   const padX = degree === 3 ? 14 : 12;
   const padY = degree === 3 ? 9 : 8;
 
   // 一意なアニメーション名（degree 3 のみ脈動）
   const pulseName = `tagPulse_${isStrong ? 'S' : 'W'}_${degree}`;
+  const baseShadow  = `${theme.glow}${theme.glow !== 'none' ? ', ' : ''}${theme.innerGlow}`.replace(/^,\s*/, '');
+  const hoverShadow = `${hover.glowHover}, ${theme.innerGlow}`;
 
   return (
     <button
@@ -438,29 +341,26 @@ function MatchupTag({ matchup, onClick }: TagProps) {
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 7,
         padding: `${padY}px ${padX}px`,
-        minHeight: 36,           // ★ タップ領域を確保（モバイル）
+        minHeight: 36,
         borderRadius: 999,
         background: theme.bg,
         border: `${theme.borderW}px solid ${theme.border}`,
-        boxShadow: `${theme.glow}${theme.glow !== 'none' ? ', ' : ''}${theme.innerGlow}`.replace(/^,\s*/, ''),
+        boxShadow: baseShadow,
         cursor: 'pointer',
         fontFamily: 'inherit',
         transition: 'all 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)',
-        // degree 3 のみ脈動アニメ
         animation: degree === 3 ? `${pulseName} 2.6s ease-in-out infinite` : 'none',
         WebkitTapHighlightColor: 'transparent',
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
-        e.currentTarget.style.background = theme.bgHover;
-        if (theme.glowHover) {
-          e.currentTarget.style.boxShadow = `${theme.glowHover}, ${theme.innerGlow}`;
-        }
+        e.currentTarget.style.background = hover.bgHover;
+        e.currentTarget.style.boxShadow = hoverShadow;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0) scale(1)';
         e.currentTarget.style.background = theme.bg;
-        e.currentTarget.style.boxShadow = `${theme.glow}${theme.glow !== 'none' ? ', ' : ''}${theme.innerGlow}`.replace(/^,\s*/, '');
+        e.currentTarget.style.boxShadow = baseShadow;
       }}
       onTouchStart={(e) => {
         e.currentTarget.style.transform = 'translateY(0) scale(0.97)';
@@ -474,13 +374,13 @@ function MatchupTag({ matchup, onClick }: TagProps) {
       {degree === 3 && (
         <style>{`
           @keyframes ${pulseName} {
-            0%, 100% { box-shadow: ${theme.glow}, ${theme.innerGlow}; }
-            50%      { box-shadow: ${theme.glowHover}, ${theme.innerGlow}; }
+            0%, 100% { box-shadow: ${baseShadow}; }
+            50%      { box-shadow: ${hoverShadow}; }
           }
         `}</style>
       )}
 
-      {/* シンボル（剣 or 盾） */}
+      {/* シンボル */}
       <span style={{
         fontSize: degree === 3 ? 13 : 12,
         color: theme.primary,
@@ -492,7 +392,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
         {symbol}
       </span>
 
-      {/* ラベル（得意 / 苦手） */}
+      {/* ラベル */}
       <span style={{
         fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.12em',
         color: theme.primary,
