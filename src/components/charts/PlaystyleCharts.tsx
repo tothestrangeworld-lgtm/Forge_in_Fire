@@ -58,16 +58,14 @@ export default function PlaystyleCharts({
   // ★ Phase10: モーダル開閉ステート
   const [selectedMatchup, setSelectedMatchup] = useState<MatchupMasterEntry | null>(null);
 
-  // ★ Phase10.4: baseStyles を上位3つの配列で保持
+  // ★ Phase10.5: baseStyles を「純粋に subTotals の上位3件」で抽出
   const { actionData, subData, totalPts, baseStyles } = useMemo(() => {
     const actionTotals: Record<string, number> = {};
     const subTotals:    Record<string, number> = {};
-    const bodyTotals:   Record<string, number> = {};
 
     techniques.forEach(t => {
       if (t.actionType)  actionTotals[t.actionType]  = (actionTotals[t.actionType]  ?? 0) + t.points;
       if (t.subCategory) subTotals[t.subCategory]    = (subTotals[t.subCategory]    ?? 0) + t.points;
-      if (t.bodyPart)    bodyTotals[t.bodyPart]      = (bodyTotals[t.bodyPart]      ?? 0) + t.points;
     });
 
     const actionData = Object.entries(actionTotals)
@@ -80,41 +78,17 @@ export default function PlaystyleCharts({
 
     const totalPts = techniques.reduce((s, t) => s + t.points, 0);
 
-    // ── ★ Phase10.4: BaseStyle 上位3つ抽出 ──
-    // 優先順位:
-    //   1. matchupMaster.baseStyle に存在するキーを優先採用
-    //   2. それ以外は単純に XP 降順
-    // 同一キーは subCategory > bodyPart > actionType の優先で重複除去
-    const flatCandidates = new Map<string, number>();
-    Object.entries(subTotals).forEach(([k, v])    => { if (!flatCandidates.has(k) && v > 0) flatCandidates.set(k, v); });
-    Object.entries(bodyTotals).forEach(([k, v])   => { if (!flatCandidates.has(k) && v > 0) flatCandidates.set(k, v); });
-    Object.entries(actionTotals).forEach(([k, v]) => { if (!flatCandidates.has(k) && v > 0) flatCandidates.set(k, v); });
-
-    const sortedCandidates = Array.from(flatCandidates.entries())
-      .map(([key, pts]) => ({ key, pts }))
-      .sort((a, b) => b.pts - a.pts);
-
-    const baseStyles: string[] = [];
-
-    if (matchupMaster.length > 0) {
-      const styleSet = new Set(matchupMaster.map(m => m.baseStyle));
-      // matchupMaster にヒットするものから優先で最大3つ
-      sortedCandidates
-        .filter(c => styleSet.has(c.key))
-        .slice(0, 3)
-        .forEach(c => baseStyles.push(c.key));
-    }
-
-    // 不足分は XP 降順で補完（重複排除）
-    if (baseStyles.length < 3) {
-      for (const c of sortedCandidates) {
-        if (baseStyles.length >= 3) break;
-        if (!baseStyles.includes(c.key)) baseStyles.push(c.key);
-      }
-    }
+    // ── ★ Phase10.5: subTotals（SubCategory = 技の種類）から、純粋に XP 上位3件を抽出 ──
+    // matchupMaster の存在有無による優先・並び替えロジックは廃止。
+    // ユーザーの真のステータス上位3つをそのまま baseStyles として返す。
+    const baseStyles: string[] = Object.entries(subTotals)
+      .filter(([, pts]) => pts > 0)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([key]) => key);
 
     return { actionData, subData, totalPts, baseStyles };
-  }, [techniques, matchupMaster]);
+  }, [techniques]);
 
   // ★ Phase10.4: 各 baseStyle ごとに該当する matchupMaster データをグルーピング
   const matchupGroups = useMemo(() => {
@@ -381,14 +355,14 @@ export default function PlaystyleCharts({
 }
 
 // =====================================================================
-// MatchupTag ★ Phase10 / 10.4
+// MatchupTag ★ Phase10 / 10.5
 // 相性タグ（matchType / degree によって色と発光が変化）
 // matchupTheme.ts の getDegreeTheme / getTagHoverStyles を使用。
 //
-// ★ Phase10.4 修正:
-//   - padding / フォントサイズをわずかに縮小し、スマホ画面での圧迫感を軽減
-//   - minHeight も小さく
-//   - degree 3 の脈動アニメは継続（控えめな glow と組み合わせて存在感は維持）
+// ★ Phase10.5 修正:
+//   - 「得意」「苦手」テキストラベルを削除
+//   - 区切り線（縦棒）を削除
+//   - シンボルアイコン + TargetStyle名 のシンプル構成に
 //
 // 配色:
 //   S (得意): 青緑 / エメラルド / ネオンシアン
@@ -411,7 +385,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
     : (degree === 3 ? '⚠' : '⛨');
   const label = isStrong ? '得意' : '苦手';
 
-  // ★ Phase10.4: padding と minHeight を縮小（スマホでの圧迫感軽減）
+  // padding と minHeight（スマホでの圧迫感軽減）
   const padX = degree === 3 ? 11 : 10;
   const padY = degree === 3 ? 6 : 5;
 
@@ -424,7 +398,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
     <button
       onClick={onClick}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: `${padY}px ${padX}px`,
         minHeight: 30,
         borderRadius: 999,
@@ -465,9 +439,15 @@ function MatchupTag({ matchup, onClick }: TagProps) {
         `}</style>
       )}
 
+      {/*
+        ★ Phase10.5 修正: シンボル + TargetStyle名 のみのシンプル構成。
+        「得意 / 苦手」テキストラベルと区切り線は削除。
+        色（青緑系/赤系）とアイコンで matchType を表現する。
+      */}
+
       {/* シンボル */}
       <span style={{
-        fontSize: degree === 3 ? 11 : 10,
+        fontSize: degree === 3 ? 12 : 11,
         color: theme.primary,
         filter: degree >= 2
           ? `drop-shadow(0 0 ${degree === 3 ? 5 : 3}px ${theme.primary})`
@@ -477,28 +457,9 @@ function MatchupTag({ matchup, onClick }: TagProps) {
         {symbol}
       </span>
 
-      {/* ラベル */}
-      <span style={{
-        fontSize: '0.55rem', fontWeight: 800, letterSpacing: '0.10em',
-        color: theme.primary,
-        opacity: 0.92,
-        textShadow: degree === 3 ? `0 0 5px ${theme.primary}` : 'none',
-      }}>
-        {label}
-      </span>
-
-      {/* 区切り線（degree 2以上で表示） */}
-      {degree >= 2 && (
-        <span style={{
-          width: 1, height: 10,
-          background: theme.border,
-          opacity: 0.6,
-        }} />
-      )}
-
       {/* TargetStyle 名 */}
       <span style={{
-        fontSize: degree === 3 ? '0.74rem' : degree === 2 ? '0.72rem' : '0.7rem',
+        fontSize: degree === 3 ? '0.78rem' : degree === 2 ? '0.74rem' : '0.72rem',
         fontWeight: degree === 3 ? 800 : 700,
         color: theme.textBright,
         letterSpacing: '0.02em',
