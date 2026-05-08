@@ -9,7 +9,7 @@ import {
 import type {
   Technique, MatchupMasterEntry, PeerStyleEntry, TechniqueMasterEntry,
 } from '@/types';
-import MatchupScroll from '../MatchupScroll';
+import MatchupScroll from './MatchupScroll';
 
 interface Props {
   techniques:       Technique[];
