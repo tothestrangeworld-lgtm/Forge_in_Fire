@@ -293,7 +293,7 @@ export default function MatchupScroll({
                 fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.14em',
                 color: '#a5b4fc',
               }}>
-                理 由
+                REASON
               </span>
             </div>
             <p style={{
@@ -320,7 +320,7 @@ export default function MatchupScroll({
                 fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.14em',
                 color: '#fbbf24',
               }}>
-                対 策
+                ADVICE
               </span>
             </div>
             <p style={{

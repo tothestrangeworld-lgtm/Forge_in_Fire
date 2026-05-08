@@ -12,6 +12,7 @@ import { getCurrentUserId } from '@/lib/auth';
 import { calcLevelFromXp } from '@/types';
 import type { PeerEvalItem, UserTask } from '@/types';
 import { UserStatusCard } from '@/components/UserStatusCard';
+import { TaskEvalCard } from '@/components/TaskEvalCard';
 
 export const runtime = 'edge';
 
@@ -22,11 +23,6 @@ const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),  
 const SCORE_COLORS: Record<number, string> = {
   5: '#4f46e5', 4: '#6366f1', 3: '#818cf8', 2: '#c7d2fe', 1: '#e0e7ff',
 };
-
-const SCORE_LABELS = [
-  '', '少し取り組んでいる', '取り組んでいる', '概ね取り組んでいる',
-  'よく取り組んでいる', '非常によく取り組んでいる',
-] as const;
 
 export default function RivalDashboardPage({
   params,
@@ -191,9 +187,7 @@ export default function RivalDashboardPage({
               level={level}
               realRank={status.real_rank}
               motto={status.motto}
-              // rivals 画面では achiev バッジを非表示（自分のホーム画面のみ表示）
             />
-            {/* 最終稽古日（rivals 画面のみ追加表示） */}
             {status.last_practice_date && (
               <div style={{
                 marginTop: 8, padding: '7px 12px', borderRadius: 10,
@@ -217,7 +211,6 @@ export default function RivalDashboardPage({
             )}
           </div>
         ) : (
-          /* epithet が null（技データなし）の場合の簡易ステータス表示 */
           <div style={{
             marginBottom: 14, padding: '16px',
             borderRadius: 16,
@@ -265,61 +258,31 @@ export default function RivalDashboardPage({
               {activeTasks.map((task, idx) => {
                 const isEvaluated   = evaluatedTaskIds.has(task.id);
                 const selectedScore = taskScores[task.id] ?? null;
+
+                // 自分自身を見ている場合は閲覧専用なので、評価UIは disabled とする
+                const disabled = isSelf || evalLoading;
+
+                // バッジ：評価済 → "評価済" / 未評価 → "課題 N"
+                const indexBadge = isEvaluated
+                  ? '評価済'
+                  : (!isSelf ? `課題 ${idx + 1}` : undefined);
+
                 return (
-                  <div key={task.id} style={{
-                    padding: '10px 12px', borderRadius: 12,
-                    background: isEvaluated ? 'rgba(34,197,94,0.07)' : 'rgba(49,46,129,0.35)',
-                    border: isEvaluated ? '1px solid rgba(34,197,94,0.25)' : '1px solid rgba(139,92,246,0.2)',
-                    opacity: isEvaluated ? 0.75 : 1,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: isSelf ? 0 : 8 }}>
-                      <span style={{
-                        fontSize: 9, fontWeight: 800, flexShrink: 0,
-                        color: isEvaluated ? '#86efac' : '#a78bfa',
-                        background: isEvaluated ? 'rgba(34,197,94,0.12)' : 'rgba(109,40,217,0.2)',
-                        border: isEvaluated ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(109,40,217,0.35)',
-                        borderRadius: 5, padding: '2px 6px', marginTop: 2,
-                      }}>
-                        {isEvaluated ? '評価済' : `課題 ${idx + 1}`}
-                      </span>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: isEvaluated ? 'rgba(199,210,254,0.55)' : '#ede9fe', lineHeight: 1.35, wordBreak: 'break-word', flex: 1 }}>
-                        {task.task_text}
-                      </p>
-                    </div>
-                    {!isSelf && !isEvaluated && (
-                      <>
-                        <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
-                          {[1,2,3,4,5].map(s => {
-                            const filled = selectedScore !== null && s <= selectedScore;
-                            return (
-                              <button key={s}
-                                onClick={() => setTaskScores(prev => ({ ...prev, [task.id]: prev[task.id] === s ? null : s }))}
-                                disabled={evalLoading}
-                                style={{
-                                  width: 40, height: 40, borderRadius: 10,
-                                  border: filled ? '1px solid rgba(251,191,36,0.6)' : '1px solid rgba(139,92,246,0.3)',
-                                  background: filled ? 'linear-gradient(135deg, rgba(180,130,0,0.25), rgba(251,191,36,0.18))' : 'rgba(30,27,75,0.5)',
-                                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
-                                  cursor: evalLoading ? 'not-allowed' : 'pointer',
-                                  transition: 'all 0.15s ease',
-                                  transform: filled ? 'scale(1.08)' : 'scale(1)',
-                                  padding: 0,
-                                }}
-                              >
-                                <Star style={{ width: 18, height: 18, color: filled ? '#fbbf24' : 'rgba(139,92,246,0.5)', fill: filled ? '#fbbf24' : 'transparent' }} />
-                                <span style={{ fontSize: 8, fontWeight: 700, color: filled ? '#fde68a' : 'rgba(139,92,246,0.5)' }}>{s}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {selectedScore !== null && (
-                          <p style={{ margin: '6px 0 0', fontSize: 10, textAlign: 'center', fontWeight: 700, color: '#fde68a' }}>
-                            {SCORE_LABELS[selectedScore]}
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <TaskEvalCard
+                    key={task.id}
+                    taskText={task.task_text}
+                    score={selectedScore}
+                    onChange={(s) => {
+                      // 同じスコアを再タップでクリア（既存仕様を踏襲）
+                      setTaskScores(prev => ({
+                        ...prev,
+                        [task.id]: prev[task.id] === s ? null : s,
+                      }));
+                    }}
+                    disabled={disabled}
+                    isEvaluated={isEvaluated}
+                    indexBadge={indexBadge}
+                  />
                 );
               })}
             </div>
@@ -406,10 +369,6 @@ export default function RivalDashboardPage({
         )}
 
         {/* ── 3. XP推移チャート ──────────────────────────────── */}
-        {/*
-         * ★ Phase9.5: XpHistoryEntry から title が削除されたため、
-         * titleMaster を渡して Tooltip 内で動的に称号を導出する。
-         */}
         {mounted && xpHistory && xpHistory.length > 0 && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>

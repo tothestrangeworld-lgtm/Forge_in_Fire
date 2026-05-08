@@ -5,17 +5,10 @@
 // ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
 // ★ Phase6 Step3: saveLog レスポンスの newAchievements をトースト通知で表示
 // ★ SWR: PracticeTab → useDashboardSWR / TechniqueTab → useTechniquesSWR に移行
-// ★ SWR修正: useDashboardSWR の戻り値が { dashboard, techniques } になったため
-//            PracticeTab の data 受け取り方を修正（data: swrData → swrData.dashboard）
 // ★ Phase8: TechniqueTab を量×質ステッパーUIに刷新
-//   - ratings ステート: Record<string, { quantity, quality }> に変更（初期値 3/3）
-//   - handleSave: updateTechniqueRating(id, quantity, quality) に変更
-//   - 保存後: techniques SWR をローカル更新 + dashboard SWR を再検証
-//   - YojiToast: 四字熟語フィードバックを画面左下にトースト表示
-//   - TechCard: 星評価廃止 → 量/質ステッパー + リアルタイム獲得XPプレビュー
 // ★ Phase9.5: SaveLogResponse から title が削除されたため、
-//   setResult の title を titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster)
-//   で動的導出するよう変更。
+//   titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster) で動的導出
+// ★ リファクタリング: PracticeTab の課題評価UIを TaskEvalCard 共通コンポーネントに置き換え
 // =====================================================================
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
@@ -41,7 +34,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { Achievement, Technique, UserTask } from '@/types';
-// ★ Phase9.5: titleForLevel / calcLevelFromXp を追加（res.title の動的導出に使用）
 import { titleForLevel, calcLevelFromXp } from '@/types';
 import {
   saveLog,
@@ -49,6 +41,7 @@ import {
   useDashboardSWR,
   useTechniquesSWR,
 } from '@/lib/api';
+import { TaskEvalCard } from '@/components/TaskEvalCard';
 
 // =====================================================================
 // 共通型・定数
@@ -68,15 +61,6 @@ interface YojiToastInfo {
   feedback:     string;
   earnedPoints: number;
 }
-
-const SCORE_LABELS: Record<number, string> = {
-  1:'悪い', 2:'少し悪い', 3:'普通', 4:'少し良い', 5:'良い',
-};
-const BADGE_STYLES: Record<number, { bg: string; color: string }> = {
-  1:{bg:'#fee2e2',color:'#b91c1c'}, 2:{bg:'#ffedd5',color:'#c2410c'},
-  3:{bg:'#fef9c3',color:'#a16207'}, 4:{bg:'#dcfce7',color:'#15803d'},
-  5:{bg:'#1e1b4b',color:'#ffffff'},
-};
 
 function todayStr() {
   const d = new Date();
@@ -125,16 +109,10 @@ function getIcon(iconType: string): LucideIcon {
 
 // =====================================================================
 // AchievementToast コンポーネント
-// ★ Phase6 Step3
-//
-// 【設計】
-//   - 複数実績は順番にキューイングして 1つずつ表示（間隔 600ms）
-//   - 各トーストは 4秒後に自動 dismiss（フェードアウト込み）
-//   - 画面右下（モバイルは画面下中央）に固定表示
 // =====================================================================
 
 interface ToastItem {
-  id:          string;   // 一意ID（複数枚管理用）
+  id:          string;
   achievement: Achievement;
   phase:       'enter' | 'show' | 'exit';
 }
@@ -151,7 +129,6 @@ function AchievementToast({ achievements, onAllDone }: AchievementToastProps) {
   const onAllDoneRef         = useRef(onAllDone);
   onAllDoneRef.current       = onAllDone;
 
-  // 次をキューから取り出して表示
   const showNext = useCallback(() => {
     const next = queueRef.current.shift();
     if (!next) {
@@ -160,27 +137,21 @@ function AchievementToast({ achievements, onAllDone }: AchievementToastProps) {
     }
     const itemId = `${next.id}_${Date.now()}`;
 
-    // enter フェーズ → show フェーズ → exit フェーズ の順に遷移
     setItems(prev => [...prev, { id: itemId, achievement: next, phase: 'enter' }]);
 
-    // 60ms後に show（enterアニメーション完了待ち）
     setTimeout(() => {
       setItems(prev => prev.map(it => it.id === itemId ? { ...it, phase: 'show' } : it));
     }, 60);
 
-    // 4秒後に exit
     timerRef.current = setTimeout(() => {
       setItems(prev => prev.map(it => it.id === itemId ? { ...it, phase: 'exit' } : it));
-      // exitアニメーション(500ms)完了後に削除 → 次へ
       setTimeout(() => {
         setItems(prev => prev.filter(it => it.id !== itemId));
-        // 次のトーストを 200ms 後に表示（連続感を出しつつ少しズラす）
         setTimeout(showNext, 200);
       }, 500);
     }, 4000);
   }, []);
 
-  // achievementsが来たらキューに積んで先頭を表示開始
   useEffect(() => {
     if (achievements.length === 0) return;
     queueRef.current = [...achievements];
@@ -222,10 +193,9 @@ function AchievementToast({ achievements, onAllDone }: AchievementToastProps) {
         }
       `}</style>
 
-      {/* トースト群のコンテナ（画面右下・モバイルは下中央） */}
       <div style={{
         position:   'fixed',
-        bottom:     80,   // ボトムナビ分を避ける
+        bottom:     80,
         right:      16,
         zIndex:     9998,
         display:    'flex',
@@ -242,7 +212,6 @@ function AchievementToast({ achievements, onAllDone }: AchievementToastProps) {
   );
 }
 
-// ── 個別トーストカード ──
 function SingleToast({ item }: { item: ToastItem }) {
   const { achievement, phase } = item;
   const IconComp = getIcon(achievement.iconType);
@@ -280,7 +249,6 @@ function SingleToast({ item }: { item: ToastItem }) {
         ...animStyle,
       }}
     >
-      {/* シマーライン（背景を横切る光沢） */}
       <div style={{
         position:   'absolute',
         inset:      0,
@@ -291,7 +259,6 @@ function SingleToast({ item }: { item: ToastItem }) {
         pointerEvents: 'none',
       }} />
 
-      {/* 上辺グロウライン */}
       <div style={{
         position:   'absolute',
         top:        0,
@@ -302,7 +269,6 @@ function SingleToast({ item }: { item: ToastItem }) {
         borderRadius: '0 0 4px 4px',
       }} />
 
-      {/* アイコン */}
       <div style={{
         flexShrink:  0,
         width:       48,
@@ -320,9 +286,7 @@ function SingleToast({ item }: { item: ToastItem }) {
         <IconComp size={22} color={colors.fg} strokeWidth={1.6} />
       </div>
 
-      {/* テキスト */}
       <div style={{ flex:1, minWidth:0, zIndex:1 }}>
-        {/* ラベル */}
         <div style={{
           display:        'flex',
           alignItems:     'center',
@@ -341,7 +305,6 @@ function SingleToast({ item }: { item: ToastItem }) {
           </span>
         </div>
 
-        {/* バッジ名 */}
         <p style={{
           fontSize:      '15px',
           fontWeight:    800,
@@ -356,7 +319,6 @@ function SingleToast({ item }: { item: ToastItem }) {
           {achievement.name}
         </p>
 
-        {/* 説明 */}
         <p style={{
           fontSize:      '11px',
           color:         'rgba(200,195,220,0.8)',
@@ -371,7 +333,6 @@ function SingleToast({ item }: { item: ToastItem }) {
         </p>
       </div>
 
-      {/* パーティクル（右上） */}
       {phase === 'show' && (
         <div style={{ position:'absolute', top:8, right:12, display:'flex', gap:4, pointerEvents:'none' }}>
           {[0,1,2].map(i => (
@@ -391,8 +352,6 @@ function SingleToast({ item }: { item: ToastItem }) {
 
 // =====================================================================
 // ★ Phase8: 四字熟語フィードバックトースト
-// 技の稽古記録後、画面左下に一時表示するコンパクトなトースト。
-// AchievementToast（右下）と干渉しないよう左下に配置する。
 // =====================================================================
 
 interface YojiToastProps {
@@ -431,7 +390,6 @@ function YojiToast({ info, visible }: YojiToastProps) {
           maxWidth:     280,
           overflow:     'hidden',
         }}>
-          {/* シマーライン */}
           <div style={{
             position:       'absolute',
             inset:          0,
@@ -440,7 +398,6 @@ function YojiToast({ info, visible }: YojiToastProps) {
             animation:      'yojiShimmer 2s linear infinite',
             borderRadius:   14,
           }} />
-          {/* 上辺グロウ */}
           <div style={{
             position:   'absolute',
             top:        0, left:'15%', right:'15%', height: 1.5,
@@ -448,7 +405,6 @@ function YojiToast({ info, visible }: YojiToastProps) {
             animation:  'yojiGlow 2s ease-in-out infinite',
           }} />
 
-          {/* 漢字アイコン */}
           <div style={{
             flexShrink:     0,
             width:          38,
@@ -465,7 +421,6 @@ function YojiToast({ info, visible }: YojiToastProps) {
             <span style={{ fontSize: 16, lineHeight: 1 }}>⚔️</span>
           </div>
 
-          {/* テキスト */}
           <div style={{ zIndex: 1, minWidth: 0 }}>
             <div style={{
               fontSize:      9,
@@ -554,34 +509,21 @@ export default function RecordPage() {
 
 // =====================================================================
 // タブ①：稽古を記録（XP獲得フォーム）
-// ★ Phase4: saveLog に task_id を渡す（item_name ではなく）
-// ★ Phase6 Step3: saveLog レスポンスの newAchievements をトーストで通知
-// ★ SWR: fetchDashboard の手動フェッチを useDashboardSWR に置き換え
-// ★ SWR修正: useDashboardSWR が { dashboard, techniques } を返すため
-//            data を swrData として受け取り、swrData.dashboard を参照する
-// ★ Phase9.5: res.title が SaveLogResponse から削除されたため、
-//   titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster) で動的導出
+// ★ リファクタリング: TaskEvalCard 共通コンポーネントを使用
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
 
-  // ── SWR でダッシュボードを取得 ────────────────────────────────────
-  // useDashboardSWR は { dashboard: DashboardData, techniques: Technique[] } を返す
   const { data: swrData, isLoading, error: fetchError } = useDashboardSWR();
-
-  // dashboard を一段ほどいて参照する（旧: data: dashboard と直接受け取っていた）
   const dashboard = swrData?.dashboard ?? null;
 
-  // ── ローカル UI ステート ──────────────────────────────────────────
   const [scores, setScores]                = useState<ScoreMap>({});
   const [date, setDate]                    = useState(todayStr());
   const [submitting, setSubmitting]        = useState(false);
   const [result, setResult]                = useState<{xp:number; title:string}|null>(null);
   const [submitError, setSubmitError]      = useState<string|null>(null);
-  // ★ Phase6 Step3: トースト表示用
   const [toastAchievements, setToastAchievements] = useState<Achievement[]>([]);
 
-  // AUTH_REQUIRED は静かに無視（SWR が shouldRetryOnError で止めてくれる）
   const error = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
 
   const activeTasks: UserTask[] = (dashboard?.tasks ?? []).filter(t => t.status === 'active');
@@ -594,17 +536,13 @@ function PracticeTab() {
     try {
       const res = await saveLog({
         date,
-        // ★ Phase4: task_id（UUID）を送信。item_name は廃止。
         items: activeTasks.map(t => ({ task_id: t.id, score: scores[t.id] })),
       });
-      // ★ Phase9.5: res.title は SaveLogResponse から削除済み。
-      //   titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster) で動的導出する。
       setResult({
         xp:    res.xp_earned,
         title: titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster),
       });
 
-      // ★ Phase6 Step3: 新規解除実績があればトーストキューに積む
       if (res.newAchievements && res.newAchievements.length > 0) {
         setToastAchievements(res.newAchievements);
       }
@@ -648,7 +586,6 @@ function PracticeTab() {
           </div>
         </div>
 
-        {/* ★ Phase6 Step3: 完了画面でもトースト表示 */}
         {toastAchievements.length > 0 && (
           <AchievementToast
             achievements={toastAchievements}
@@ -694,7 +631,7 @@ function PracticeTab() {
         {/* 評価カード */}
         {isLoading ? (
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            {[1,2,3].map(i => <div key={i} style={{ height:100, borderRadius:16, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
+            {[1,2,3].map(i => <div key={i} style={{ height:80, borderRadius:12, background:'#eef2ff', animation:'shimmer 1.4s infinite' }} />)}
             <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
           </div>
         ) : activeTasks.length === 0 ? (
@@ -706,56 +643,21 @@ function PracticeTab() {
             </p>
           </div>
         ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {activeTasks.map((task, idx) => {
-              const current = scores[task.id];
-              const badge   = current ? BADGE_STYLES[current] : null;
+              const current = scores[task.id] ?? null;
               return (
-                <div key={task.id} className="wa-card animate-slide-in" style={{ animationDelay:`${idx*60}ms` }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                    <p style={{ fontWeight:700, color:'#e0e7ff', margin:0, fontSize:'0.95rem' }}>{task.task_text}</p>
-                    {badge && current && (
-                      <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.2rem 0.6rem', borderRadius:999, background:badge.bg, color:badge.color }}>
-                        {SCORE_LABELS[current]}
-                      </span>
-                    )}
-                  </div>
-                  {/* 星評価ボタン */}
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {[1, 2, 3, 4, 5].map(star => {
-                      const filled = (current ?? 0) >= star;
-                      return (
-                        <button
-                          key={star}
-                          onClick={() => setScores(prev => ({ ...prev, [task.id]: star }))}
-                          style={{
-                            flex:       1,
-                            height:     44,
-                            border:     'none',
-                            background: 'transparent',
-                            cursor:     'pointer',
-                            padding:    0,
-                            display:    'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'transform .1s',
-                          }}
-                          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.88)')}
-                          onMouseUp={e   => (e.currentTarget.style.transform = 'scale(1)')}
-                          onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
-                          onTouchStart={e => (e.currentTarget.style.transform = 'scale(0.88)')}
-                          onTouchEnd={e   => (e.currentTarget.style.transform = 'scale(1)')}
-                        >
-                          <Star
-                            size={32}
-                            fill={filled ? '#f59e0b' : 'none'}
-                            color={filled ? '#f59e0b' : 'rgba(167,139,250,0.3)'}
-                            strokeWidth={filled ? 0 : 1.8}
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
+                <div
+                  key={task.id}
+                  className="animate-slide-in"
+                  style={{ animationDelay: `${idx * 60}ms` }}
+                >
+                  <TaskEvalCard
+                    taskText={task.task_text}
+                    score={current}
+                    onChange={(s) => setScores(prev => ({ ...prev, [task.id]: s }))}
+                    disabled={submitting}
+                  />
                 </div>
               );
             })}
@@ -779,7 +681,7 @@ function PracticeTab() {
               className="btn-ai"
               onClick={handleSubmit}
               disabled={!canSubmit}
-              style={{ marginTop:4, opacity: canSubmit ? 1 : 0.45 }}
+              style={{ marginTop:6, opacity: canSubmit ? 1 : 0.45 }}
             >
               {submitting ? (
                 <>
@@ -795,7 +697,6 @@ function PracticeTab() {
         )}
       </div>
 
-      {/* ★ Phase6 Step3: アチーブメントトースト */}
       {toastAchievements.length > 0 && (
         <AchievementToast
           achievements={toastAchievements}
@@ -808,16 +709,11 @@ function PracticeTab() {
 
 // =====================================================================
 // タブ②：技を記録（習熟度評価）
-// ★ Phase8: 量×質ステッパーUIに刷新
-//   - ratings: Record<id, { quantity, quality }> / 初期値 3/3
-//   - 保存後: techniques SWR ローカル更新 + dashboard SWR 再検証
-//   - YojiToast で四字熟語フィードバックを表示
 // =====================================================================
 function TechniqueTab() {
   const { data: techniques, isLoading, error: fetchError, mutate } = useTechniquesSWR();
   const { mutate: globalMutate } = useSWRConfig();
 
-  // ── ローカル UI ステート ──────────────────────────────────────────
   const [ratings,    setRatings]    = useState<RatingMap>({});
   const [saveStates, setSaveStates] = useState<SavedMap>({});
   const [yojiToast,  setYojiToast]  = useState<YojiToastInfo | null>(null);
@@ -827,7 +723,6 @@ function TechniqueTab() {
   const error   = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
   const techList = techniques ?? [];
 
-  // 指定IDのレーティングを取得（未設定なら量3/質3）
   const getRating = (id: string): RatingEntry => ratings[id] ?? { quantity: 3, quality: 3 };
 
   const grouped = useMemo(() => {
@@ -842,7 +737,6 @@ function TechniqueTab() {
     return map;
   }, [techList]);
 
-  /** 量 or 質 のステッパー値を更新する */
   function handleRate(id: string, axis: 'quantity' | 'quality', val: number) {
     const clamped = Math.min(5, Math.max(1, val));
     setRatings(prev => ({ ...prev, [id]: { ...getRating(id), [axis]: clamped } }));
@@ -854,7 +748,6 @@ function TechniqueTab() {
     try {
       const res = await updateTechniqueRating(t.id, quantity, quality);
 
-      // ── SWR: techniques をローカル更新（再フェッチなし）──
       mutate(
         prev => prev?.map(tech =>
           tech.id === t.id
@@ -871,16 +764,13 @@ function TechniqueTab() {
         { revalidate: false },
       );
 
-      // ── SWR: dashboard を再検証（total_xp / level を最新化）──
       void globalMutate(['dashboard']);
 
-      // ── 四字熟語トーストを表示 ──
       if (yojiTimerRef.current) clearTimeout(yojiTimerRef.current);
       setYojiToast({ techName: t.name, feedback: res.feedback, earnedPoints: res.earnedPoints });
       setYojiVisible(true);
       yojiTimerRef.current = setTimeout(() => {
         setYojiVisible(false);
-        // フェードアウト完了後にアンマウント
         setTimeout(() => setYojiToast(null), 400);
       }, 3000);
 
@@ -922,7 +812,6 @@ function TechniqueTab() {
       <div>
         {Object.entries(grouped).map(([bodyPart, actionTypes]) => (
           <div key={bodyPart} style={{ marginBottom:'1.25rem' }}>
-            {/* BodyPart 区切り */}
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:'0.5rem' }}>
               <div style={{ flex:1, height:1, background:'#e0e7ff' }} />
               <span style={{ fontSize:'0.7rem', fontWeight:800, color:'#6366f1', letterSpacing:'0.1em', whiteSpace:'nowrap' }}>
@@ -954,14 +843,13 @@ function TechniqueTab() {
         ))}
       </div>
 
-      {/* ★ Phase8: 四字熟語フィードバックトースト */}
       {yojiToast && <YojiToast info={yojiToast} visible={yojiVisible} />}
     </>
   );
 }
 
 // =====================================================================
-// 技カード ★ Phase8 刷新 / モバイル最適化: ステッパー → select
+// 技カード
 // =====================================================================
 interface TechCardProps {
   technique: Technique;
@@ -971,7 +859,6 @@ interface TechCardProps {
   onSave:    () => void;
 }
 
-/** 量/質セレクト共通スタイル */
 const selectStyle: React.CSSProperties = {
   background:   'rgba(30, 27, 75, 0.55)',
   border:       '1px solid rgba(99,102,241,0.35)',
@@ -999,13 +886,12 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
     saveState === 'saving' ? '#6366f1' : '#1e1b4b';
   const btnLabel =
     saveState === 'saving' ? '記録中…' :
-    saveState === 'saved'  ? '完了！'  :
+    saveState === 'saved'  ? '完了!'  :
     saveState === 'error'  ? 'エラー'  : '＋記録';
 
   return (
     <div className="wa-card" style={{ padding:'0.7rem 0.85rem' }}>
 
-      {/* ── 上段: 技名 / pt[四字熟語] / サブカテゴリバッジ ── */}
       <div style={{
         display:     'flex',
         alignItems:  'center',
@@ -1013,7 +899,6 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
         marginBottom: 7,
         minWidth:    0,
       }}>
-        {/* 技名 */}
         <span style={{
           fontWeight:   700,
           color:        '#e0e7ff',
@@ -1027,7 +912,6 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           {t.name}
         </span>
 
-        {/* pt + 四字熟語 */}
         <span style={{
           fontSize:   '0.72rem',
           color:      '#a5b4fc',
@@ -1043,7 +927,6 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           )}
         </span>
 
-        {/* サブカテゴリバッジ（右端） */}
         {t.subCategory && (
           <span style={{
             marginLeft:   'auto',
@@ -1061,13 +944,11 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
         )}
       </div>
 
-      {/* ── 下段: 量 × 質 ＋記録 ── */}
       <div style={{
         display:    'flex',
         alignItems: 'center',
         gap:        5,
       }}>
-        {/* 量 label + select */}
         <div style={{ display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
           <span style={{ fontSize:'0.58rem', color:'#a5b4fc', fontWeight:700, whiteSpace:'nowrap' }}>量</span>
           <select
@@ -1082,10 +963,8 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           </select>
         </div>
 
-        {/* × 記号 */}
         <span style={{ fontSize:'0.72rem', color:'#a8a29e', fontWeight:700, flexShrink:0 }}>×</span>
 
-        {/* 質 label + select */}
         <div style={{ display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
           <span style={{ fontSize:'0.58rem', color:'#a5b4fc', fontWeight:700, whiteSpace:'nowrap' }}>質</span>
           <select
@@ -1100,7 +979,6 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           </select>
         </div>
 
-        {/* 記録ボタン（左の要素を押しのけて右端に） */}
         <button
           onClick={onSave}
           disabled={isBusy}
