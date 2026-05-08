@@ -1,14 +1,15 @@
 // src/components/MatchupScroll.tsx
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Swords, Shield, Sparkles, UserRound, BookOpen, AlertTriangle } from 'lucide-react';
 import type { MatchupMasterEntry, PeerStyleEntry, TechniqueMasterEntry } from '@/types';
 import { resolveTechniqueName } from '@/types';
 import { getDegreeTheme } from '@/lib/matchupTheme';
 
 // =====================================================================
-// MatchupScroll（剣風書）★ Phase10 / 10.2 最終版
+// MatchupScroll（剣風書）★ Phase10 / 10.3 createPortal 版
 //
 // 相性タグをタップしたときに開くグラスモーフィズム調モーダル。
 // - 相性関係（あなたの BaseStyle vs TargetStyle）
@@ -16,10 +17,17 @@ import { getDegreeTheme } from '@/lib/matchupTheme';
 // - マッチングされた剣友リスト
 // - 「この対策を今日の課題にする」ボタン
 //
-// ★ 修正点（10.2）:
-//   - スクロール構造を完全刷新: コンテナに直接 maxHeight + overflowY を適用
-//   - 閉じるボタンを sticky で右上に常駐させ、スクロール中も常にアクセス可能
-//   - 苦手（W）の配色を変更: D2=警告アンバー / D3=真紅ネオン
+// ★ 修正点（10.3）:
+//   - createPortal を導入し、document.body 直下にテレポートレンダリング
+//     → 親コンポーネントの transform / overflow / contain などの影響を受けず、
+//       position: fixed が正しく viewport 基準で動作する
+//   - SSR / Hydration 対策として mounted ステートでクライアント描画を保証
+//   - スクロール構造・配色・グラスモーフィズムは一切変更なし
+//
+// ★ 修正点（10.2 継承）:
+//   - スクロール構造: コンテナに直接 maxHeight + overflowY を適用
+//   - 閉じるボタンを sticky で右上に常駐
+//   - 苦手（W）の配色: D2=警告アンバー / D3=真紅ネオン
 //   - Degree カラー定義を src/lib/matchupTheme.ts に共通化
 // =====================================================================
 
@@ -36,6 +44,13 @@ export default function MatchupScroll({
   open, onClose, matchup, baseStyle, peers, techniqueMaster,
 }: Props) {
 
+  // ★ Phase10.3: SSR / Hydration 対策
+  // createPortal は document.body を参照するため、必ずクライアントマウント後に実行する。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // ESC キー / body スクロールロック
   useEffect(() => {
     if (!open) return;
@@ -49,6 +64,8 @@ export default function MatchupScroll({
     };
   }, [open, onClose]);
 
+  // クライアントマウント前 / 非表示時 / matchup 未指定時はレンダリングしない
+  if (!mounted) return null;
   if (!open || !matchup) return null;
 
   const isStrong = matchup.matchType === 'S';
@@ -82,7 +99,11 @@ export default function MatchupScroll({
     alert('課題に追加しました（バックエンドAPI連携は今後のフェーズで実装）');
   }
 
-  return (
+  // =====================================================================
+  // ★ Phase10.3: モーダル本体を JSX 変数として組み立て、最後に createPortal で
+  // document.body 直下にレンダリングする。
+  // =====================================================================
+  const modalContent = (
     <div
       role="dialog"
       aria-modal="true"
@@ -124,8 +145,9 @@ export default function MatchupScroll({
       `}</style>
 
       {/*
-        ★ 10.2 修正: コンテナ自体に maxHeight + overflowY を直接適用。
-        flex レイアウトを廃止して、ブラウザのスクロール処理を素直に使う。
+        コンテナ自体に maxHeight + overflowY を直接適用。
+        document.body 直下にあるため、親要素の transform / overflow に
+        影響されず、position: fixed と内部スクロールが正しく機能する。
       */}
       <div
         className="matchup-scroll-container"
@@ -150,7 +172,7 @@ export default function MatchupScroll({
         }}
       >
         {/*
-          ★ 10.2 修正: 閉じるボタンを sticky で右上固定。
+          閉じるボタンを sticky で右上固定。
           コンテナ内をスクロールしても常に画面右上に追従する。
         */}
         <div style={{
@@ -399,10 +421,14 @@ export default function MatchupScroll({
             }}
           >
             <Sparkles style={{ width: 14, height: 14 }} />
-            この対策を今日の課題にする
+            この対策を課題に設定する
           </button>
         )}
       </div>
     </div>
   );
+
+  // ★ Phase10.3: createPortal で document.body 直下にテレポートレンダリング
+  // 親要素の transform / overflow / contain などの影響を完全に排除する。
+  return createPortal(modalContent, document.body);
 }
