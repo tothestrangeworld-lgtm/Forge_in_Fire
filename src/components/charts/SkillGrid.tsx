@@ -1,13 +1,13 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（Phase 6.7 雷光リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（Phase 6.8 引き算の美学リビジョン）
 //
-// ★ Phase 6.7 の変更点（炎を完全廃止し電撃エフェクトに刷新）:
-//   ① Edge: 素数周期の dashoffset アニメで電流フローをカオス化
-//   ② Node: feTurbulence + feColorMatrix で鋭い稲妻状の帯電
-//   ③ 色:   部位カラーをベースに高輝度ネオン（白飛び寸前のプラズマ）
-//   ④ 成長: tier / norm に応じて帯電の強さ・規模が拡大
+// ★ Phase 6.8 の変更点:
+//   ① Edge: 電流方向を逆転（末端→中心）
+//   ② Edge/Node: 重ね合わせ層数を削減し「一筋」に洗練
+//   ③ アニメ周期を長く（4〜8s）し、間欠的な放電「パリッ...パリパリッ」に
+//   ④ 雷の位置をノード輪郭上に（r = size/2）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -64,35 +64,26 @@ function bpTotalPointsToTier(totalPoints: number): LightningTier {
   return 0;
 }
 
-const TIER_SCALE: Record<LightningTier, number> = {
-  0: 0,
-  1: 0.55,
-  2: 0.78,
-  3: 1.00,
-  4: 1.20,
-};
-
+// 帯電の規模（ノードに対する半径倍率は固定で1.0、強度はstrokeWidthとringCountで表現）
 const TIER_OPACITY: Record<LightningTier, number> = {
   0: 0,
-  1: 0.55,
-  2: 0.72,
-  3: 0.86,
+  1: 0.7,
+  2: 0.85,
+  3: 0.95,
   4: 1.0,
 };
 
+// リング数：基本1本、Tier4のみ2本
 const TIER_RING_COUNT: Record<LightningTier, number> = {
   0: 0,
   1: 1,
-  2: 2,
-  3: 3,
-  4: 4,
+  2: 1,
+  3: 1,
+  4: 2,
 };
 
 // =====================================================================
 // 部位カラーテーマ（高輝度プラズマ版）
-//   plasma.core: 白飛び寸前の高エネルギー色（中心）
-//   plasma.mid:  ノード本体の部位色（中間）
-//   plasma.glow: 外周のオーラカラー
 // =====================================================================
 interface BpTheme {
   rgb:    string;
@@ -130,7 +121,7 @@ function getBpTheme(bodyPart: string): BpTheme {
 }
 
 // =====================================================================
-// 共有 SVG フィルタ（鋭い稲妻状のディスプレイス + アルファ閾値）
+// 共有 SVG フィルタ（鋭い稲妻状のディスプレイス）
 // =====================================================================
 const LIGHTNING_FILTER_IDS: Record<LightningTier, string> = {
   0: '',
@@ -147,15 +138,13 @@ const SharedLightningFilters = memo(() => (
     aria-hidden="true"
   >
     <defs>
-      {/* Tier1：軽い帯電 */}
+      {/* Tier1 */}
       <filter id={LIGHTNING_FILTER_IDS[1]} x="-50%" y="-50%" width="200%" height="200%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.08 0.12" numOctaves="2" seed="3" result="n">
-          <animate attributeName="baseFrequency"
-            dur="1.3s" values="0.08 0.12; 0.12 0.18; 0.08 0.12" repeatCount="indefinite" />
+        <feTurbulence type="fractalNoise" baseFrequency="0.09 0.13" numOctaves="2" seed="3" result="n">
           <animate attributeName="seed"
-            dur="1.7s" values="3;13;23;3" repeatCount="indefinite" />
+            dur="3.7s" values="3;13;23;3" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G" result="d" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" result="d" />
         <feColorMatrix in="d" type="matrix"
           values="1 0 0 0 0
                   0 1 0 0 0
@@ -163,15 +152,13 @@ const SharedLightningFilters = memo(() => (
                   0 0 0 4 -1.2" />
       </filter>
 
-      {/* Tier2：弱めのプラズマ */}
-      <filter id={LIGHTNING_FILTER_IDS[2]} x="-60%" y="-60%" width="220%" height="220%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.09 0.14" numOctaves="2" seed="7" result="n">
-          <animate attributeName="baseFrequency"
-            dur="1.1s" values="0.09 0.14; 0.14 0.2; 0.09 0.14" repeatCount="indefinite" />
+      {/* Tier2 */}
+      <filter id={LIGHTNING_FILTER_IDS[2]} x="-55%" y="-55%" width="210%" height="210%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.1 0.14" numOctaves="2" seed="7" result="n">
           <animate attributeName="seed"
-            dur="1.9s" values="7;17;27;7" repeatCount="indefinite" />
+            dur="3.1s" values="7;17;27;7" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="11" xChannelSelector="R" yChannelSelector="G" result="d" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="8" xChannelSelector="R" yChannelSelector="G" result="d" />
         <feColorMatrix in="d" type="matrix"
           values="1 0 0 0 0
                   0 1 0 0 0
@@ -179,15 +166,13 @@ const SharedLightningFilters = memo(() => (
                   0 0 0 5 -1.6" />
       </filter>
 
-      {/* Tier3：中程度のプラズマ */}
-      <filter id={LIGHTNING_FILTER_IDS[3]} x="-70%" y="-70%" width="240%" height="240%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.1 0.16" numOctaves="2" seed="13" result="n">
-          <animate attributeName="baseFrequency"
-            dur="0.9s" values="0.1 0.16; 0.16 0.24; 0.1 0.16" repeatCount="indefinite" />
+      {/* Tier3 */}
+      <filter id={LIGHTNING_FILTER_IDS[3]} x="-60%" y="-60%" width="220%" height="220%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.11 0.16" numOctaves="2" seed="13" result="n">
           <animate attributeName="seed"
-            dur="2.3s" values="13;23;33;13" repeatCount="indefinite" />
+            dur="2.9s" values="13;23;33;13" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="16" xChannelSelector="R" yChannelSelector="G" result="d" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="11" xChannelSelector="R" yChannelSelector="G" result="d" />
         <feColorMatrix in="d" type="matrix"
           values="1 0 0 0 0
                   0 1 0 0 0
@@ -195,15 +180,13 @@ const SharedLightningFilters = memo(() => (
                   0 0 0 6 -2" />
       </filter>
 
-      {/* Tier4：高エネルギープラズマ（白飛び寸前） */}
-      <filter id={LIGHTNING_FILTER_IDS[4]} x="-80%" y="-80%" width="260%" height="260%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.11 0.18" numOctaves="2" seed="19" result="n">
-          <animate attributeName="baseFrequency"
-            dur="0.83s" values="0.11 0.18; 0.18 0.28; 0.11 0.18" repeatCount="indefinite" />
+      {/* Tier4：高エネルギー */}
+      <filter id={LIGHTNING_FILTER_IDS[4]} x="-65%" y="-65%" width="230%" height="230%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.12 0.18" numOctaves="2" seed="19" result="n">
           <animate attributeName="seed"
-            dur="2.9s" values="19;29;41;19" repeatCount="indefinite" />
+            dur="2.3s" values="19;29;41;19" repeatCount="indefinite" />
         </feTurbulence>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="22" xChannelSelector="R" yChannelSelector="G" result="d" />
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="14" xChannelSelector="R" yChannelSelector="G" result="d" />
         <feColorMatrix in="d" type="matrix"
           values="1 0 0 0 0
                   0 1 0 0 0
@@ -243,36 +226,41 @@ MinimalHandles.displayName = 'MinimalHandles';
 
 // =====================================================================
 // 帯電オーラ（LightningAura）
+//   ノード輪郭上に1〜2本の電流が走る
 // =====================================================================
 interface LightningAuraProps {
   size:       number;
   tier:       LightningTier;
   plasma:     BpTheme['plasma'];
   uid:        string;
-  baseScale?: number;
 }
 
-// 素数周期セット（リング毎にローテーションして重複しないカオス感を演出）
-const PRIME_DURS = [1.1, 1.9, 2.3, 2.9, 3.1, 3.7];
+// 間欠放電のクラス名（パリッ...パリパリッ...）
+const FLICKER_CLASSES = [
+  'lightning-flicker-a',  // 5s周期
+  'lightning-flicker-b',  // 7s周期
+];
 
 const LightningAura = memo(function LightningAura({
-  size, tier, plasma, uid, baseScale = 1.0,
+  size, tier, plasma, uid,
 }: LightningAuraProps) {
   if (tier === 0) return null;
 
-  const tierScale = TIER_SCALE[tier];
   const tierOpacity = TIER_OPACITY[tier];
-  const totalScale = tierScale * baseScale;
   const ringCount = TIER_RING_COUNT[tier];
 
-  const pad = size * 0.6 * totalScale;
+  // ノードの輪郭上で電流が走るため、padはstrokeとぼかし分のみ
+  const strokeMax = 3.5;
+  const glowPad = 8;
+  const pad = strokeMax + glowPad;
   const w = size + pad * 2;
   const h = size + pad * 2;
 
   const cx = w / 2;
   const cy = h / 2;
 
-  const baseR = size / 2 * (1.0 + tierScale * 0.35);
+  // 仕様④：半径はノードと同一
+  const ringR = size / 2;
   const filterId = LIGHTNING_FILTER_IDS[tier];
 
   return (
@@ -292,87 +280,44 @@ const LightningAura = memo(function LightningAura({
     >
       <g filter={`url(#${filterId})`} opacity={tierOpacity}>
         {Array.from({ length: ringCount }).map((_, i) => {
-          const ringR = baseR * (1.0 + i * 0.12);
-          const dur = PRIME_DURS[i % PRIME_DURS.length];
-          const delay = -((i * 547) % 100) / 100 * dur;
-          const rotateDur = PRIME_DURS[(i + 2) % PRIME_DURS.length] * 1.7;
-          const rotateDelay = -((i * 991) % 100) / 100 * rotateDur;
-          // リング毎に色をローテーション
-          const stroke = i === 0 ? plasma.core
-                       : i === 1 ? plasma.mid
-                       : i % 2 === 0 ? plasma.mid
-                       : plasma.glow;
-          const strokeOpacity = 0.55 + (i % 3) * 0.15;
-          const strokeW = Math.max(0.8, 1.2 + tier * 0.3 - i * 0.2);
+          // メインの電流とサブの電流（Tier4のみ）
+          const isMain = i === 0;
+          const stroke = isMain ? plasma.mid : plasma.core;
+          // 内側に少し、外側に多め（strokeが境界を跨ぐ）
+          const strokeW = isMain ? (1.8 + tier * 0.35) : 1.4;
+          // strokeWidth を活かすため、リング半径は微調整して外側にやや張り出す
+          const r = ringR + (isMain ? strokeW * 0.3 : strokeW * 0.5);
+          const flickerClass = FLICKER_CLASSES[i % FLICKER_CLASSES.length];
+          // dasharray でちぎれた稲妻表現（メインは長め、サブは細かく）
+          const dashArr = isMain
+            ? `${4 + tier * 1.5} ${5 + tier * 1.2}`
+            : `${2} ${7}`;
 
           return (
-            <g
-              key={`${uid}-ring-${i}`}
-              className="lightning-ring-rotate"
-              style={{
-                transformOrigin: `${cx}px ${cy}px`,
-                animationDuration: `${rotateDur}s`,
-                animationDelay: `${rotateDelay}s`,
-                animationDirection: i % 2 === 0 ? 'normal' : 'reverse',
-              }}
-            >
-              <g
-                className="lightning-ring-flicker"
-                style={{
-                  transformOrigin: `${cx}px ${cy}px`,
-                  animationDuration: `${dur}s`,
-                  animationDelay: `${delay}s`,
-                }}
-              >
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={ringR}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={strokeW}
-                  strokeOpacity={strokeOpacity}
-                  strokeDasharray={`${4 + i * 2} ${6 + i * 3}`}
-                  style={{
-                    filter: `drop-shadow(0 0 ${2 + tier}px ${stroke})`,
-                  }}
-                />
-              </g>
-            </g>
-          );
-        })}
-
-        {/* 中心の高エネルギーコア（Tier3以上） */}
-        {tier >= 3 && (
-          <g
-            className="lightning-core-pulse"
-            style={{
-              transformOrigin: `${cx}px ${cy}px`,
-              animationDuration: '1.3s',
-            }}
-          >
             <circle
+              key={`${uid}-ring-${i}`}
+              className={flickerClass}
               cx={cx}
               cy={cy}
-              r={baseR * 0.55}
+              r={r}
               fill="none"
-              stroke={plasma.core}
-              strokeWidth={0.8}
-              strokeOpacity={0.85}
-              strokeDasharray="2 4"
+              stroke={stroke}
+              strokeWidth={strokeW}
+              strokeDasharray={dashArr}
+              strokeLinecap="round"
               style={{
-                filter: `drop-shadow(0 0 ${3 + tier}px ${plasma.core})`,
+                filter: `drop-shadow(0 0 ${2 + tier * 0.6}px ${stroke})`,
               }}
             />
-          </g>
-        )}
+          );
+        })}
       </g>
     </svg>
   );
 });
 
 // =====================================================================
-// CORE ノード（最強プラズマ）
+// CORE ノード
 // =====================================================================
 const CoreNode = memo(function CoreNode(_: NodeProps) {
   const s = CORE_NODE_SIZE;
@@ -383,7 +328,7 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
       background: `radial-gradient(circle, ${plasma.glow} 0%, ${DEFAULT_THEME.dark} 65%, #0a0918 100%)`,
       border: `2px solid ${plasma.core}`,
       boxShadow: [
-        `0 0 18px 6px ${plasma.mid}`,
+        `0 0 16px 5px ${plasma.mid}`,
         `0 0 0 1.5px ${plasma.core}`,
         `inset 0 0 14px ${plasma.glow}`,
       ].join(', '),
@@ -394,7 +339,7 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
       position: 'relative', userSelect: 'none', zIndex: 2,
       textShadow: `0 0 6px ${plasma.core}`,
     }}>
-      <LightningAura size={s} tier={4} plasma={plasma} uid="core" baseScale={1.1} />
+      <LightningAura size={s} tier={4} plasma={plasma} uid="core" />
       <div style={{ position: 'relative', zIndex: 2 }}>
         <MinimalHandles />
         技
@@ -432,18 +377,17 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
     ? plasma.mid
     : `rgba(${rgb},0.55)`;
 
-  // 帯電中のグロウ：normに応じて強化
   const glowIntensity = Math.max(0.35, d.norm);
   const neonGlow = isMaxed
     ? [
-        `0 0 14px 4px ${plasma.mid}`,
+        `0 0 12px 3px ${plasma.mid}`,
         `0 0 0 1.5px ${plasma.core}`,
         `inset 0 0 10px ${plasma.glow}`,
       ].join(', ')
     : [
-        `0 0 ${8 + glowIntensity * 8}px ${1.5 + glowIntensity * 2.5}px rgba(${rgb},${(0.5 + glowIntensity * 0.35).toFixed(2)})`,
+        `0 0 ${7 + glowIntensity * 7}px ${1.2 + glowIntensity * 2}px rgba(${rgb},${(0.45 + glowIntensity * 0.3).toFixed(2)})`,
         `0 0 0 1px rgba(${rgb},${(0.45 + glowIntensity * 0.3).toFixed(2)})`,
-        `inset 0 0 7px rgba(${rgb},${(0.2 + glowIntensity * 0.2).toFixed(2)})`,
+        `inset 0 0 6px rgba(${rgb},${(0.18 + glowIntensity * 0.18).toFixed(2)})`,
       ].join(', ');
 
   const textColor = isMaxed ? plasma.core : bpText;
@@ -459,7 +403,7 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
-      <LightningAura size={s} tier={d.tier} plasma={plasma} uid={`bp-${id}`} baseScale={1.0} />
+      <LightningAura size={s} tier={d.tier} plasma={plasma} uid={`bp-${id}`} />
       <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <MinimalHandles />
         <span style={{
@@ -505,19 +449,19 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
   if (isMaxed) {
     bg = `radial-gradient(circle, ${plasma.glow} 0%, ${dark} 70%, #050412 100%)`;
     borderColor = plasma.core; textColor = plasma.core;
-    neonGlow = `0 0 10px 3px ${plasma.mid}, 0 0 0 1px ${plasma.core}`;
+    neonGlow = `0 0 9px 2.5px ${plasma.mid}, 0 0 0 1px ${plasma.core}`;
   } else if (tier >= 3) {
-    bg = `radial-gradient(circle, rgba(${rgb},0.45) 0%, ${dark} 70%, #050412 100%)`;
+    bg = `radial-gradient(circle, rgba(${rgb},0.4) 0%, ${dark} 70%, #050412 100%)`;
     borderColor = plasma.mid; textColor = bpText;
-    neonGlow = `0 0 8px 2px rgba(${rgb},0.55), 0 0 0 1px rgba(${rgb},0.5)`;
+    neonGlow = `0 0 7px 2px rgba(${rgb},0.5), 0 0 0 1px rgba(${rgb},0.5)`;
   } else if (tier >= 2) {
-    bg = `radial-gradient(circle, rgba(${rgb},0.22) 0%, ${dark} 70%, #050412 100%)`;
-    borderColor = `rgba(${rgb},0.65)`; textColor = bpText;
-    neonGlow = `0 0 6px 1.5px rgba(${rgb},0.4)`;
+    bg = `radial-gradient(circle, rgba(${rgb},0.2) 0%, ${dark} 70%, #050412 100%)`;
+    borderColor = `rgba(${rgb},0.6)`; textColor = bpText;
+    neonGlow = `0 0 5px 1.5px rgba(${rgb},0.35)`;
   } else if (tier >= 1) {
     bg = `linear-gradient(135deg, #06050f, #0d0b1a)`;
-    borderColor = `rgba(${rgb},0.35)`; textColor = `rgba(${rgb},0.75)`;
-    neonGlow = `0 0 4px 1px rgba(${rgb},0.25)`;
+    borderColor = `rgba(${rgb},0.32)`; textColor = `rgba(${rgb},0.72)`;
+    neonGlow = `0 0 3px 1px rgba(${rgb},0.22)`;
   } else {
     bg = '#06050f';
     borderColor = `rgba(${rgb},0.12)`; textColor = `rgba(${rgb},0.32)`;
@@ -533,7 +477,7 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
-      <LightningAura size={s} tier={tier} plasma={plasma} uid={`tech-${id}`} baseScale={1.0} />
+      <LightningAura size={s} tier={tier} plasma={plasma} uid={`tech-${id}`} />
       <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <MinimalHandles />
 
@@ -589,15 +533,17 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
 
 // =====================================================================
 // 雷光エッジ（LightningEdge）
-//   - 3層の半透明パスを重ね、素数周期で dashoffset アニメ
-//   - パターン化されないカオスな電流を State 不使用で実現
+//   2層構成（ベース連続光 + 1本のパルス）
+//   電流方向：source（外）→ target（内）
+//   React Flow の path は source→target の方向で描かれるため、
+//   stroke-dashoffset を「正の値→0」に流すと source→target 方向に流れる
 // =====================================================================
 interface LightningEdgeData {
-  color:    string;  // 部位カラーベース
-  bright:   string;  // 高輝度カラー（中央層用）
+  color:    string;
+  bright:   string;
   width:    number;
   baseOpacity: number;
-  [key: string]: unknown;  // ← この1行を追加
+  [key: string]: unknown;
 }
 
 const LightningEdge = memo(function LightningEdge({
@@ -607,68 +553,37 @@ const LightningEdge = memo(function LightningEdge({
   const color  = d.color  ?? 'rgba(99,102,241,0.6)';
   const bright = d.bright ?? '#c7d2fe';
   const width  = d.width  ?? 1.5;
-  const baseOpacity = d.baseOpacity ?? 0.65;
+  const baseOpacity = d.baseOpacity ?? 0.55;
 
+  // ★重要：source は末端ノード、target は中心側になるよう buildGraph で設定する
+  // よって source→target 方向＝末端→中心となる
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
-  // 3層を素数周期で動かすことでカオス化
-  // それぞれ dasharray のパターンも変えてリズムを崩す
   return (
     <>
-      {/* ベースライン（柔らかい連続光） */}
+      {/* ベースライン（極めて控えめな連続光） */}
       <BaseEdge
         id={id}
         path={edgePath}
         style={{
           stroke: color,
-          strokeWidth: width,
-          opacity: baseOpacity * 0.45,
-          filter: `drop-shadow(0 0 2px ${color})`,
+          strokeWidth: width * 0.6,
+          opacity: baseOpacity * 0.3,
         }}
       />
 
-      {/* レイヤ1：1.3s 周期 */}
-      <path
-        d={edgePath}
-        fill="none"
-        stroke={color}
-        strokeWidth={width * 1.1}
-        strokeDasharray="2 14"
-        strokeLinecap="round"
-        opacity={baseOpacity * 0.85}
-        className="lightning-edge-flow-a"
-        style={{
-          filter: `drop-shadow(0 0 3px ${color})`,
-        }}
-      />
-
-      {/* レイヤ2：1.7s 周期（明るい中央層） */}
+      {/* 一筋の鋭いパルス（間欠放電） */}
       <path
         d={edgePath}
         fill="none"
         stroke={bright}
-        strokeWidth={width * 0.9}
-        strokeDasharray="1 22"
+        strokeWidth={width * 1.1}
+        strokeDasharray="1 24"
         strokeLinecap="round"
-        opacity={baseOpacity * 0.9}
-        className="lightning-edge-flow-b"
+        opacity={0}
+        className="lightning-edge-pulse"
         style={{
           filter: `drop-shadow(0 0 4px ${bright})`,
-        }}
-      />
-
-      {/* レイヤ3：2.3s 周期（短い火花） */}
-      <path
-        d={edgePath}
-        fill="none"
-        stroke={bright}
-        strokeWidth={width * 0.7}
-        strokeDasharray="3 30"
-        strokeLinecap="round"
-        opacity={baseOpacity * 0.75}
-        className="lightning-edge-flow-c"
-        style={{
-          filter: `drop-shadow(0 0 3px ${bright})`,
         }}
       />
     </>
@@ -710,6 +625,9 @@ function sanitizeTechniques(raw: Technique[]): Technique[] {
 
 // =====================================================================
 // グラフ生成
+//   ★電流が末端→中心へ流れるよう、Edge の source / target を再設計：
+//     source = 末端側（technique / bodyPart）
+//     target = 中心側（bodyPart / core）
 // =====================================================================
 type TechActionMap = Record<string, string>;
 
@@ -797,37 +715,37 @@ function buildGraph(
 
     const bpTheme = getBpTheme(bp);
 
-    // CORE → BodyPart：高エネルギー（中央集電）
+    // ★ BodyPart → CORE：電流が中心へ流れ込む
     edges.push({
-      id: `e-core-${bpId}`,
-      source: 'core',
-      target: bpId,
+      id: `e-${bpId}-core`,
+      source: bpId,    // 末端側
+      target: 'core',  // 中心側
       type: 'lightning',
       data: {
         color:  `rgba(${bpTheme.rgb},${(0.55 + bpNorm * 0.35).toFixed(2)})`,
         bright: bpTheme.plasma.core,
         width:  Math.max(1.5, 1.8 + bpNorm * 1.5),
         baseOpacity: 0.55 + bpNorm * 0.35,
-      } as LightningEdgeData,
+      } as unknown as Record<string, unknown>,
     });
 
-    // BodyPart → Technique
+    // ★ Technique → BodyPart：電流が部位へ流れ込む
     techs.forEach(tech => {
       const techId      = `tech-${tech.id}`;
       const norm        = Math.min((tech.points ?? 0) / TECH_SCORE_CAP, 1.0);
       const techTheme   = getBpTheme(tech.bodyPart);
 
       edges.push({
-        id: `e-${bpId}-${techId}`,
-        source: bpId,
-        target: techId,
+        id: `e-${techId}-${bpId}`,
+        source: techId,  // 末端側
+        target: bpId,    // 部位側
         type: 'lightning',
         data: {
           color:  `rgba(${techTheme.rgb},${(0.45 + norm * 0.4).toFixed(2)})`,
           bright: techTheme.plasma.mid,
           width:  Math.max(1, 1.2 + norm * 1.2),
           baseOpacity: 0.4 + norm * 0.4,
-        } as LightningEdgeData,
+        } as unknown as Record<string, unknown>,
       });
     });
   });
@@ -848,8 +766,10 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
       return { ...n, style: { ...(n.style ?? {}), opacity: (techActionMap[n.id] ?? '') === filter ? 1 : 0.1 } };
     }),
     edges: edges.map(e => {
-      if (e.id.startsWith('e-core-')) return e;
-      const match = (techActionMap[e.target] ?? '') === filter;
+      // 部位→core エッジは常に表示
+      if (e.target === 'core') return e;
+      // 技→部位 エッジは技側がマッチするかで判定
+      const match = (techActionMap[e.source] ?? '') === filter;
       return { ...e, style: { ...(e.style ?? {}), opacity: match ? 1 : 0.08 } };
     }),
   };
@@ -857,77 +777,78 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 
 // =====================================================================
 // CSS キーフレーム
-//   ★ Edge: 素数周期 (1.3s / 1.7s / 2.3s) で dashoffset を動かしカオス化
-//   ★ Node: 素数周期で複数のリングを瞬き・回転
+//   ★ 全てのアニメは「パリッ...パリパリッ...」のリズムを意識：
+//     ほとんどの時間は不可視 → 一瞬だけ閃光 → また消える
 // =====================================================================
 const KEYFRAMES = `
-  /* ===== Edge：3層を素数周期でカオスに走らせる ===== */
-  @keyframes lightning-flow-a {
-    0%   { stroke-dashoffset: 64; opacity: 0; }
-    10%  { opacity: 1; }
-    90%  { opacity: 1; }
-    100% { stroke-dashoffset: 0; opacity: 0; }
-  }
-  @keyframes lightning-flow-b {
-    0%   { stroke-dashoffset: 96; opacity: 0; }
-    15%  { opacity: 1; }
-    85%  { opacity: 1; }
-    100% { stroke-dashoffset: 0; opacity: 0; }
-  }
-  @keyframes lightning-flow-c {
+  /* ===== Edge：間欠的なパルスが末端→中心へ流れる =====
+     dashoffset を 80→0 にすることで、ダッシュが path に沿って source→target 方向に進む
+     opacity をキーフレームで制御し、ほとんどの時間は見えないが特定タイミングで一瞬閃光 */
+  @keyframes lightning-edge-pulse {
+    /* 0%-72%: ほぼ不可視（待機） */
     0%   { stroke-dashoffset: 80; opacity: 0; }
-    20%  { opacity: 0.9; }
-    80%  { opacity: 0.9; }
+    70%  { stroke-dashoffset: 80; opacity: 0; }
+
+    /* 72%-78%: パリッ！（一瞬の閃光） */
+    73%  { opacity: 0.95; }
+    77%  { opacity: 0.85; }
+
+    /* 78%-82%: 一瞬の沈黙 */
+    78%  { opacity: 0.05; }
+    81%  { opacity: 0;    }
+
+    /* 82%-90%: パリパリッ！（連続した閃光） */
+    83%  { opacity: 0.9;  }
+    86%  { opacity: 0.4;  }
+    89%  { opacity: 0.95; }
+
+    /* 90%-100%: 流れて消える */
     100% { stroke-dashoffset: 0; opacity: 0; }
   }
-  .lightning-edge-flow-a {
-    animation: lightning-flow-a 1.3s linear infinite;
-    will-change: stroke-dashoffset, opacity;
-  }
-  .lightning-edge-flow-b {
-    animation: lightning-flow-b 1.7s linear infinite;
-    will-change: stroke-dashoffset, opacity;
-  }
-  .lightning-edge-flow-c {
-    animation: lightning-flow-c 2.3s linear infinite;
+  .lightning-edge-pulse {
+    animation: lightning-edge-pulse 6s linear infinite;
     will-change: stroke-dashoffset, opacity;
   }
 
-  /* ===== Node：帯電リングの瞬き＋回転 ===== */
-  @keyframes lightning-ring-flicker {
-    0%, 100% { opacity: 0.85; transform: scale(0.97); }
-    20%      { opacity: 0.45; transform: scale(1.04); }
-    50%      { opacity: 1;    transform: scale(1.0);  }
-    75%      { opacity: 0.6;  transform: scale(1.06); }
+  /* ===== Node：間欠的な帯電「パリッ...パリパリッ...」 ===== */
+  @keyframes lightning-flicker-a {
+    /* 待機時間を多く取る */
+    0%, 60%   { opacity: 0; }
+    /* パリッ */
+    62%       { opacity: 1; }
+    65%       { opacity: 0.2; }
+    /* 沈黙 */
+    66%, 78%  { opacity: 0; }
+    /* パリパリッ */
+    79%       { opacity: 0.85; }
+    81%       { opacity: 0.3; }
+    83%       { opacity: 1; }
+    86%       { opacity: 0.5; }
+    /* 余韻と消え */
+    88%       { opacity: 0; }
+    100%      { opacity: 0; }
   }
-  .lightning-ring-flicker {
-    animation-name: lightning-ring-flicker;
-    animation-timing-function: ease-in-out;
-    animation-iteration-count: infinite;
-    will-change: opacity, transform;
-  }
-
-  @keyframes lightning-ring-rotate {
-    0%   { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  .lightning-ring-rotate {
-    animation-name: lightning-ring-rotate;
-    animation-timing-function: linear;
-    animation-iteration-count: infinite;
-    will-change: transform;
+  .lightning-flicker-a {
+    animation: lightning-flicker-a 5s ease-in-out infinite;
+    will-change: opacity;
   }
 
-  /* ===== Node：高エネルギーコアのパルス ===== */
-  @keyframes lightning-core-pulse {
-    0%, 100% { opacity: 0.85; transform: scale(0.92); }
-    50%      { opacity: 0.4;  transform: scale(1.18); }
+  @keyframes lightning-flicker-b {
+    /* 別リズムで重なってカオスを演出 */
+    0%, 35%   { opacity: 0; }
+    37%       { opacity: 0.9; }
+    40%       { opacity: 0; }
+    41%, 80%  { opacity: 0; }
+    82%       { opacity: 1; }
+    84%       { opacity: 0.4; }
+    86%       { opacity: 0.95; }
+    89%       { opacity: 0; }
+    100%      { opacity: 0; }
   }
-  .lightning-core-pulse {
-    animation-name: lightning-core-pulse;
-    animation-timing-function: ease-in-out;
-    animation-iteration-count: infinite;
-    will-change: opacity, transform;
+  .lightning-flicker-b {
+    animation: lightning-flicker-b 7s ease-in-out infinite;
+    animation-delay: -2.3s;
+    will-change: opacity;
   }
 
   /* ===== 得意技バッジ ===== */
@@ -953,12 +874,9 @@ const KEYFRAMES = `
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .lightning-edge-flow-a,
-    .lightning-edge-flow-b,
-    .lightning-edge-flow-c,
-    .lightning-ring-flicker,
-    .lightning-ring-rotate,
-    .lightning-core-pulse,
+    .lightning-edge-pulse,
+    .lightning-flicker-a,
+    .lightning-flicker-b,
     .signature-star-badge {
       animation: none !important;
     }
