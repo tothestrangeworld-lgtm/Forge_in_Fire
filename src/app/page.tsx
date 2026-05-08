@@ -1,3 +1,4 @@
+// src/app/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -53,6 +54,10 @@ export default function DashboardPage() {
   const em         = data.epithetMaster ?? [] as EpithetMasterEntry[];
   const techMaster = data.techniqueMaster ?? [];
   const level      = calcLevelFromXp(status.total_xp);
+
+  // ★ Phase10: 剣風相性 / 剣友スタイル
+  const matchupMaster = data.matchupMaster ?? [];
+  const peersStyle    = data.peersStyle    ?? [];
 
   const epithet: EpithetResult = calcEpithet(techniques, em, level, tm);
 
@@ -406,10 +411,19 @@ export default function DashboardPage() {
       </div>
 
       {/* ── プレイスタイル分析 ────────────────────────────────── */}
+      {/*
+       * ★ Phase10: matchupMaster / peersStyle / techniqueMaster を渡して
+       * 剣風相性タグ＋剣風書ポップアップを内部で描画する。
+       */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">プレイスタイル分析</span>
-          <PlaystyleCharts techniques={techniques} />
+          <PlaystyleCharts
+            techniques={techniques}
+            matchupMaster={matchupMaster}
+            peersStyle={peersStyle}
+            techniqueMaster={techMaster}
+          />
         </div>
       )}
 
