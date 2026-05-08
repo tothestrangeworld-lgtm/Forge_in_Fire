@@ -1,3 +1,4 @@
+// types/index.ts
 // =====================================================================
 // 百錬自得 - 型定義・レベル/XPロジック
 // ★ Phase4 正規化:
@@ -26,6 +27,11 @@
 //   - UserStatus から title プロパティを削除
 //   - XpHistoryEntry から title プロパティを削除
 //   - 称号は level + titleMaster から動的に calcTitleFromMaster() で導出する
+// ★ Phase10: 剣風相性＆マッチングシステム
+//   - MatchupMasterEntry 型を追加（MatchupMaster シート A〜F列）
+//   - PeerStyleEntry 型を追加（他の剣友のスタイル把握用）
+//   - DashboardData に matchupMaster?: MatchupMasterEntry[] を追加
+//   - DashboardData に peersStyle?: PeerStyleEntry[] を追加
 // =====================================================================
 
 export interface LogEntry {
@@ -104,6 +110,38 @@ export interface UserTask {
   updated_at: string;
 }
 
+// =====================================================================
+// MatchupMasterEntry ★ Phase10
+// MatchupMaster シートの1行（全ユーザー共通マスタ）
+// GAS列構成: A=BaseStyle, B=MatchType, C=Degree, D=TargetStyle, E=Reason, F=Advice
+// =====================================================================
+export interface MatchupMasterEntry {
+  /** 自分の得意技スタイル（例: "出端技"） */
+  baseStyle:   string;
+  /** 'S' = 強い/得意, 'W' = 弱い/苦手 */
+  matchType:   'S' | 'W' | string;
+  /** 相性の強さ（1〜3）。3が最強の相性 */
+  degree:      number;
+  /** 相手の得意技スタイル（例: "払い技"） */
+  targetStyle: string;
+  /** 相性の理由テキスト */
+  reason:      string;
+  /** 対策・アドバイステキスト（タスクへワンタップ追加可能） */
+  advice:      string;
+}
+
+// =====================================================================
+// PeerStyleEntry ★ Phase10
+// 他の剣友のスタイル把握用エントリ
+// UserMaster + user_status を JOIN して GAS が返却する
+// =====================================================================
+export interface PeerStyleEntry {
+  userId:            string;
+  name:              string;
+  /** 得意技ID（例: "T001"）。未設定の場合 undefined */
+  favoriteTechnique?: string;
+}
+
 export interface DashboardData {
   status:           UserStatus;
   tasks?:           UserTask[];        // 評価項目（active / archived 含む）
@@ -125,6 +163,16 @@ export interface DashboardData {
    * task_id → item_name に JOIN して返す。
    */
   peerLogs?:        PeerLogEntry[];
+  /**
+   * ★ Phase10: 剣風相性マスタ全件。
+   * フロント側で自分の BaseStyle に合致する行をフィルタして表示する。
+   */
+  matchupMaster?:   MatchupMasterEntry[];
+  /**
+   * ★ Phase10: 自分以外の剣友のスタイル一覧。
+   * targetStyle に該当する favoriteTechnique を持つ剣友を検索するために使用。
+   */
+  peersStyle?:      PeerStyleEntry[];
 }
 
 // =====================================================================

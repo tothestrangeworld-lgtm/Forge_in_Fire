@@ -1,3 +1,4 @@
+// Code.gs
 // =====================================================================
 // 百錬自得 - Google Apps Script バックエンド（マルチユーザー対応版）
 // ★ Phase4 正規化: logs.C列 = task_id（UUID）に変更
@@ -30,6 +31,12 @@
 //               F(total_xp_after), G(level)
 //   - writeXpHistory のシグネチャから title 引数を削除
 //   - calcTitleFromMaster 呼び出しを全廃止（GASレスポンスには title を含めない）
+// ★ Phase10: 剣風相性＆マッチングシステム
+//   - MatchupMaster シート（A=BaseStyle, B=MatchType, C=Degree, D=TargetStyle,
+//                           E=Reason, F=Advice）を読み込む getMatchupMasterData() 追加
+//   - getPeersStyleData(ss, currentUserId) を新設し、UserMaster と user_status を
+//     JOIN して自分以外の剣友の favorite_technique を返す
+//   - getDashboard レスポンスに matchupMaster / peersStyle を追加
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -51,6 +58,7 @@ var SHEET_TITLE_MASTER        = 'title_master';
 var SHEET_EPITHET_MASTER      = 'EpithetMaster';       // ID, Category, TriggerValue, Name, Rarity, Description ★ Phase9
 var SHEET_USER_MASTER         = 'UserMaster';
 var SHEET_ACHIEVEMENT_MASTER  = 'achievement_master';  // achievement_id, name, condition_type, condition_value, description, hint, icon_type ★ Phase6
+var SHEET_MATCHUP_MASTER      = 'MatchupMaster';       // BaseStyle, MatchType, Degree, TargetStyle, Reason, Advice ★ Phase10
 
 // システム用
 var SHEET_ERRORLOGS      = 'error_logs';
@@ -1043,6 +1051,7 @@ function getTodayEvaluations(params) {
 // ★ Phase4: settings フィールド廃止。logs は task_id → item_name に JOIN して返す。
 // ★ Phase8 Step3-1: peerLogs を追加（他者から受けた評価ログ）
 // ★ Phase9.5: user_status / xp_history の列インデックス修正。title を返さない。
+// ★ Phase10: matchupMaster / peersStyle を追加
 //
 // user_status 新列構成（Phase9.5）:
 //   [0]=user_id, [1]=total_xp, [2]=level, [3]=last_practice_date,
@@ -1155,6 +1164,12 @@ function getDashboard(params) {
     }
   }
 
+  // ── 11. matchupMaster（剣風相性マスタ全件）★ Phase10 ──
+  var matchupMaster = getMatchupMasterData(ss);
+
+  // ── 12. peersStyle（自分以外の剣友のスタイル一覧）★ Phase10 ──
+  var peersStyle = getPeersStyleData(ss, userId);
+
   return createResponse({
     status:          status,
     tasks:           tasks,
@@ -1166,6 +1181,8 @@ function getDashboard(params) {
     xpHistory:       xpHistory,
     techniqueMaster: techniqueMaster,
     peerLogs:        peerLogs,
+    matchupMaster:   matchupMaster,   // ★ Phase10
+    peersStyle:      peersStyle,      // ★ Phase10
   });
 }
 
@@ -1243,6 +1260,97 @@ function getEpithetMasterData(ss) {
 
 function getEpithetMaster() {
   return createResponse(getEpithetMasterData(SpreadsheetApp.openById(SPREADSHEET_ID)));
+}
+
+// =====================================================================
+// L2. 剣風相性マスタ（共通）★ Phase10
+// MatchupMaster シートの列構成:
+//   A=BaseStyle, B=MatchType (S/W), C=Degree (1-3),
+//   D=TargetStyle, E=Reason, F=Advice
+// =====================================================================
+
+function getMatchupMasterData(ss) {
+  var sheet = ss.getSheetByName(SHEET_MATCHUP_MASTER);
+  if (!sheet) {
+    gasLog('WARN', 'getMatchupMasterData', 'MatchupMaster シートが存在しません。空配列を返します');
+    return [];
+  }
+
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length < 2) return [];
+
+  var data = rows.slice(1)
+    .filter(function(r){
+      // BaseStyle と TargetStyle が両方とも空でない行のみ採用
+      return r[0] !== '' && r[3] !== '';
+    })
+    .map(function(r){
+      return {
+        baseStyle:   String(r[0] || ''),
+        matchType:   String(r[1] || ''),   // 'S' or 'W'
+        degree:      parseInt(r[2]) || 1,
+        targetStyle: String(r[3] || ''),
+        reason:      String(r[4] || ''),
+        advice:      String(r[5] || ''),
+      };
+    });
+
+  gasLog('INFO', 'getMatchupMasterData', data.length + '件 ロード成功');
+  return data;
+}
+
+// =====================================================================
+// L3. 剣友スタイル取得（自分以外のユーザーの favorite_technique）★ Phase10
+//
+// UserMaster (user_id, name, password, role) と
+// user_status ([0]=user_id, [7]=favorite_technique) を JOIN する。
+// =====================================================================
+
+function getPeersStyleData(ss, currentUserId) {
+  if (!currentUserId) return [];
+
+  var umSheet = ss.getSheetByName(SHEET_USER_MASTER);
+  if (!umSheet) {
+    gasLog('WARN', 'getPeersStyleData', 'UserMaster シートが存在しません');
+    return [];
+  }
+
+  // user_status から user_id -> favorite_technique のマップを構築
+  var statSheet     = ss.getSheetByName(SHEET_STATUS);
+  var favTechMap    = {};
+  if (statSheet) {
+    var statRows = statSheet.getDataRange().getValues();
+    for (var i = 1; i < statRows.length; i++) {
+      var sr = statRows[i];
+      var uid = String(sr[0] || '');
+      if (!uid) continue;
+      // ★ Phase9.5: favorite_technique は H列（index 7）
+      var fav = String(sr[7] || '');
+      if (fav) favTechMap[uid] = fav;
+    }
+  }
+
+  // UserMaster を走査して自分以外のユーザーをリストアップ
+  var umRows = umSheet.getDataRange().getValues();
+  var peers  = [];
+  for (var j = 1; j < umRows.length; j++) {
+    var ur     = umRows[j];
+    var uid    = String(ur[0] || '');
+    var name   = String(ur[1] || '');
+    if (!uid || uid === String(currentUserId)) continue;
+
+    var entry = {
+      userId: uid,
+      name:   name,
+    };
+    if (favTechMap[uid]) {
+      entry.favoriteTechnique = favTechMap[uid];
+    }
+    peers.push(entry);
+  }
+
+  gasLog('INFO', 'getPeersStyleData', peers.length + '人 ロード成功 (currentUser=' + currentUserId + ')');
+  return peers;
 }
 
 // =====================================================================
