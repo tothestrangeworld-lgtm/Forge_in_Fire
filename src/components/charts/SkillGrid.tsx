@@ -1,7 +1,7 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4弾：静寂リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.1版：型修正リビジョン）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -11,6 +11,7 @@ import {
   Controls,
   BaseEdge,
   getStraightPath,
+  BackgroundVariant,
   type Node,
   type Edge,
   type NodeProps,
@@ -634,7 +635,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
           minZoom={0.2} maxZoom={2.5}
           colorMode="dark"
         >
-          <Background variant="dots" color="rgba(99,102,241,0.12)" gap={28} size={1.2} />
+          <Background variant={BackgroundVariant.Dots} color="rgba(99,102,241,0.12)" gap={28} size={1.2} />
           <Controls showInteractive={false} style={{ background: 'rgba(15,14,42,0.9)', border: '1px solid rgba(99,102,241,0.22)', borderRadius: 8 }} />
         </ReactFlow>
       </div>
