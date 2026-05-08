@@ -1,13 +1,14 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（Phase 6.8 引き算の美学リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（Phase 6.8 + カオスエッジ統合版）
 //
-// ★ Phase 6.8 の変更点:
-//   ① Edge: 電流方向を逆転（末端→中心）
-//   ② Edge/Node: 重ね合わせ層数を削減し「一筋」に洗練
-//   ③ アニメ周期を長く（4〜8s）し、間欠的な放電「パリッ...パリパリッ」に
-//   ④ 雷の位置をノード輪郭上に（r = size/2）
+// ★ 主な特徴:
+//   ① Edge: id由来の決定論的ハッシュで3パターン×5周期×100段階のカオス
+//   ② Edge: 素数秒の周期 [5.3, 6.7, 7.1, 8.9, 11.3] で同期回避
+//   ③ Edge: 末端→中心へエネルギーが流れ込む方向性
+//   ④ Node: ノード輪郭上を走る間欠放電（パリッ...パリパリッ...）
+//   ⑤ 部位カラーベースの高輝度プラズマ
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -64,7 +65,6 @@ function bpTotalPointsToTier(totalPoints: number): LightningTier {
   return 0;
 }
 
-// 帯電の規模（ノードに対する半径倍率は固定で1.0、強度はstrokeWidthとringCountで表現）
 const TIER_OPACITY: Record<LightningTier, number> = {
   0: 0,
   1: 0.7,
@@ -73,7 +73,6 @@ const TIER_OPACITY: Record<LightningTier, number> = {
   4: 1.0,
 };
 
-// リング数：基本1本、Tier4のみ2本
 const TIER_RING_COUNT: Record<LightningTier, number> = {
   0: 0,
   1: 1,
@@ -235,10 +234,9 @@ interface LightningAuraProps {
   uid:        string;
 }
 
-// 間欠放電のクラス名（パリッ...パリパリッ...）
 const FLICKER_CLASSES = [
-  'lightning-flicker-a',  // 5s周期
-  'lightning-flicker-b',  // 7s周期
+  'lightning-flicker-a',
+  'lightning-flicker-b',
 ];
 
 const LightningAura = memo(function LightningAura({
@@ -249,7 +247,6 @@ const LightningAura = memo(function LightningAura({
   const tierOpacity = TIER_OPACITY[tier];
   const ringCount = TIER_RING_COUNT[tier];
 
-  // ノードの輪郭上で電流が走るため、padはstrokeとぼかし分のみ
   const strokeMax = 3.5;
   const glowPad = 8;
   const pad = strokeMax + glowPad;
@@ -259,7 +256,6 @@ const LightningAura = memo(function LightningAura({
   const cx = w / 2;
   const cy = h / 2;
 
-  // 仕様④：半径はノードと同一
   const ringR = size / 2;
   const filterId = LIGHTNING_FILTER_IDS[tier];
 
@@ -280,15 +276,11 @@ const LightningAura = memo(function LightningAura({
     >
       <g filter={`url(#${filterId})`} opacity={tierOpacity}>
         {Array.from({ length: ringCount }).map((_, i) => {
-          // メインの電流とサブの電流（Tier4のみ）
           const isMain = i === 0;
           const stroke = isMain ? plasma.mid : plasma.core;
-          // 内側に少し、外側に多め（strokeが境界を跨ぐ）
           const strokeW = isMain ? (1.8 + tier * 0.35) : 1.4;
-          // strokeWidth を活かすため、リング半径は微調整して外側にやや張り出す
           const r = ringR + (isMain ? strokeW * 0.3 : strokeW * 0.5);
           const flickerClass = FLICKER_CLASSES[i % FLICKER_CLASSES.length];
-          // dasharray でちぎれた稲妻表現（メインは長め、サブは細かく）
           const dashArr = isMain
             ? `${4 + tier * 1.5} ${5 + tier * 1.2}`
             : `${2} ${7}`;
@@ -533,10 +525,7 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
 
 // =====================================================================
 // 雷光エッジ（LightningEdge）
-//   2層構成（ベース連続光 + 1本のパルス）
-//   電流方向：source（外）→ target（内）
-//   React Flow の path は source→target の方向で描かれるため、
-//   stroke-dashoffset を「正の値→0」に流すと source→target 方向に流れる
+//   id由来の決定論的ハッシュで、3パターン×5周期×100段階のカオス
 // =====================================================================
 interface LightningEdgeData {
   color:    string;
@@ -544,6 +533,20 @@ interface LightningEdgeData {
   width:    number;
   baseOpacity: number;
   [key: string]: unknown;
+}
+
+// 素数秒（重なりにくい周期）
+const EDGE_PULSE_DURS = [5.3, 6.7, 7.1, 8.9, 11.3];
+// 3種類のリズムパターン
+const EDGE_PULSE_CLASSES = ['edge-pulse-a', 'edge-pulse-b', 'edge-pulse-c'];
+
+/** 簡易な決定論的ハッシュ（djb2風） */
+function hashString(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
 }
 
 const LightningEdge = memo(function LightningEdge({
@@ -555,9 +558,17 @@ const LightningEdge = memo(function LightningEdge({
   const width  = d.width  ?? 1.5;
   const baseOpacity = d.baseOpacity ?? 0.55;
 
-  // ★重要：source は末端ノード、target は中心側になるよう buildGraph で設定する
-  // よって source→target 方向＝末端→中心となる
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+
+  // ★ id からカオスパラメータを決定論的に生成
+  const { className, duration, delay } = useMemo(() => {
+    const h = hashString(id);
+    const cls = EDGE_PULSE_CLASSES[h % EDGE_PULSE_CLASSES.length];
+    const dur = EDGE_PULSE_DURS[(h >> 3) % EDGE_PULSE_DURS.length];
+    // 0〜durの範囲で負のdelay → 最初からバラバラに動く
+    const dly = -(((h >> 7) % 100) / 100) * dur;
+    return { className: cls, duration: dur, delay: dly };
+  }, [id]);
 
   return (
     <>
@@ -572,7 +583,7 @@ const LightningEdge = memo(function LightningEdge({
         }}
       />
 
-      {/* 一筋の鋭いパルス（間欠放電） */}
+      {/* 一筋の鋭いパルス（カオス放電） */}
       <path
         d={edgePath}
         fill="none"
@@ -581,8 +592,10 @@ const LightningEdge = memo(function LightningEdge({
         strokeDasharray="1 24"
         strokeLinecap="round"
         opacity={0}
-        className="lightning-edge-pulse"
+        className={className}
         style={{
+          animationDuration: `${duration}s`,
+          animationDelay: `${delay}s`,
           filter: `drop-shadow(0 0 4px ${bright})`,
         }}
       />
@@ -625,7 +638,7 @@ function sanitizeTechniques(raw: Technique[]): Technique[] {
 
 // =====================================================================
 // グラフ生成
-//   ★電流が末端→中心へ流れるよう、Edge の source / target を再設計：
+//   電流が末端→中心へ流れるよう、Edge の source / target を設計：
 //     source = 末端側（technique / bodyPart）
 //     target = 中心側（bodyPart / core）
 // =====================================================================
@@ -718,8 +731,8 @@ function buildGraph(
     // ★ BodyPart → CORE：電流が中心へ流れ込む
     edges.push({
       id: `e-${bpId}-core`,
-      source: bpId,    // 末端側
-      target: 'core',  // 中心側
+      source: bpId,
+      target: 'core',
       type: 'lightning',
       data: {
         color:  `rgba(${bpTheme.rgb},${(0.55 + bpNorm * 0.35).toFixed(2)})`,
@@ -737,8 +750,8 @@ function buildGraph(
 
       edges.push({
         id: `e-${techId}-${bpId}`,
-        source: techId,  // 末端側
-        target: bpId,    // 部位側
+        source: techId,
+        target: bpId,
         type: 'lightning',
         data: {
           color:  `rgba(${techTheme.rgb},${(0.45 + norm * 0.4).toFixed(2)})`,
@@ -766,9 +779,7 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
       return { ...n, style: { ...(n.style ?? {}), opacity: (techActionMap[n.id] ?? '') === filter ? 1 : 0.1 } };
     }),
     edges: edges.map(e => {
-      // 部位→core エッジは常に表示
       if (e.target === 'core') return e;
-      // 技→部位 エッジは技側がマッチするかで判定
       const match = (techActionMap[e.source] ?? '') === filter;
       return { ...e, style: { ...(e.style ?? {}), opacity: match ? 1 : 0.08 } };
     }),
@@ -777,54 +788,80 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 
 // =====================================================================
 // CSS キーフレーム
-//   ★ 全てのアニメは「パリッ...パリパリッ...」のリズムを意識：
-//     ほとんどの時間は不可視 → 一瞬だけ閃光 → また消える
 // =====================================================================
 const KEYFRAMES = `
-  /* ===== Edge：間欠的なパルスが末端→中心へ流れる =====
-     dashoffset を 80→0 にすることで、ダッシュが path に沿って source→target 方向に進む
-     opacity をキーフレームで制御し、ほとんどの時間は見えないが特定タイミングで一瞬閃光 */
-  @keyframes lightning-edge-pulse {
-    /* 0%-72%: ほぼ不可視（待機） */
-    0%   { stroke-dashoffset: 80; opacity: 0; }
-    70%  { stroke-dashoffset: 80; opacity: 0; }
+  /* ===== Edge：3種類の不規則リズム =====
+     共通：dashoffset を 80→0 にして source→target 方向に流す
+     opacity はパターンごとに不規則に */
 
-    /* 72%-78%: パリッ！（一瞬の閃光） */
-    73%  { opacity: 0.95; }
-    77%  { opacity: 0.85; }
-
-    /* 78%-82%: 一瞬の沈黙 */
-    78%  { opacity: 0.05; }
-    81%  { opacity: 0;    }
-
-    /* 82%-90%: パリパリッ！（連続した閃光） */
-    83%  { opacity: 0.9;  }
-    86%  { opacity: 0.4;  }
-    89%  { opacity: 0.95; }
-
-    /* 90%-100%: 流れて消える */
-    100% { stroke-dashoffset: 0; opacity: 0; }
+  /* パターンA：標準的な放電 パリッ…パリパリッ */
+  @keyframes edge-pulse-a {
+    0%        { stroke-dashoffset: 80; opacity: 0; }
+    65%       { opacity: 0; }
+    67%       { opacity: 0.95; }
+    70%       { opacity: 0.2; }
+    72%, 81%  { opacity: 0; }
+    83%       { opacity: 0.85; }
+    85%       { opacity: 0.4; }
+    87%       { opacity: 0.95; }
+    90%       { opacity: 0.5; }
+    93%       { opacity: 0; }
+    100%      { stroke-dashoffset: 0; opacity: 0; }
   }
-  .lightning-edge-pulse {
-    animation: lightning-edge-pulse 6s linear infinite;
+  .edge-pulse-a {
+    animation-name: edge-pulse-a;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: stroke-dashoffset, opacity;
+  }
+
+  /* パターンB：一瞬の鋭い一閃 */
+  @keyframes edge-pulse-b {
+    0%        { stroke-dashoffset: 80; opacity: 0; }
+    78%       { opacity: 0; }
+    80%       { opacity: 1; }
+    82%       { opacity: 0.6; }
+    84%       { opacity: 0; }
+    100%      { stroke-dashoffset: 0; opacity: 0; }
+  }
+  .edge-pulse-b {
+    animation-name: edge-pulse-b;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: stroke-dashoffset, opacity;
+  }
+
+  /* パターンC：不安定にジリッ…バチィッ */
+  @keyframes edge-pulse-c {
+    0%        { stroke-dashoffset: 80; opacity: 0; }
+    50%       { opacity: 0; }
+    52%       { opacity: 0.4; }
+    54%       { opacity: 0.1; }
+    56%       { opacity: 0.5; }
+    58%       { opacity: 0; }
+    60%, 84%  { opacity: 0; }
+    86%       { opacity: 1; }
+    88%       { opacity: 0.7; }
+    90%       { opacity: 0; }
+    100%      { stroke-dashoffset: 0; opacity: 0; }
+  }
+  .edge-pulse-c {
+    animation-name: edge-pulse-c;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
     will-change: stroke-dashoffset, opacity;
   }
 
   /* ===== Node：間欠的な帯電「パリッ...パリパリッ...」 ===== */
   @keyframes lightning-flicker-a {
-    /* 待機時間を多く取る */
     0%, 60%   { opacity: 0; }
-    /* パリッ */
     62%       { opacity: 1; }
     65%       { opacity: 0.2; }
-    /* 沈黙 */
     66%, 78%  { opacity: 0; }
-    /* パリパリッ */
     79%       { opacity: 0.85; }
     81%       { opacity: 0.3; }
     83%       { opacity: 1; }
     86%       { opacity: 0.5; }
-    /* 余韻と消え */
     88%       { opacity: 0; }
     100%      { opacity: 0; }
   }
@@ -834,7 +871,6 @@ const KEYFRAMES = `
   }
 
   @keyframes lightning-flicker-b {
-    /* 別リズムで重なってカオスを演出 */
     0%, 35%   { opacity: 0; }
     37%       { opacity: 0.9; }
     40%       { opacity: 0; }
@@ -874,7 +910,9 @@ const KEYFRAMES = `
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .lightning-edge-pulse,
+    .edge-pulse-a,
+    .edge-pulse-b,
+    .edge-pulse-c,
     .lightning-flicker-a,
     .lightning-flicker-b,
     .signature-star-badge {
