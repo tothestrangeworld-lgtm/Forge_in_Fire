@@ -1,7 +1,7 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（Phase 6.8 + カオスエッジ統合版）
+// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第2弾：衛星旋回リビジョン）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -38,7 +38,7 @@ const BP_NODE_SIZE   = 56;
 const CORE_NODE_SIZE = 64;
 
 // =====================================================================
-// 帯電階層（Tier）定義
+// 帯電階層
 // =====================================================================
 type LightningTier = 0 | 1 | 2 | 3 | 4;
 
@@ -213,7 +213,7 @@ const MinimalHandles = memo(() => (
 MinimalHandles.displayName = 'MinimalHandles';
 
 // =====================================================================
-// 帯電オーラ
+// 帯電オーラ（衛星旋回版）
 // =====================================================================
 interface LightningAuraProps {
   size:       number;
@@ -222,10 +222,23 @@ interface LightningAuraProps {
   uid:        string;
 }
 
+// 旋回（明滅と組み合わせる控えめ版）
 const FLICKER_CLASSES = [
-  'lightning-flicker-a',
-  'lightning-flicker-b',
+  'lightning-flicker-soft-a',
+  'lightning-flicker-soft-b',
 ];
+
+// 素数秒の旋回周期（リング毎にローテーション）
+const SPIN_DURS = [7.3, 11.3, 13.7, 17.9, 19.3];
+
+/** 簡易な決定論的ハッシュ（djb2風） */
+function hashString(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
 
 const LightningAura = memo(function LightningAura({
   size, tier, plasma, uid,
@@ -246,6 +259,9 @@ const LightningAura = memo(function LightningAura({
 
   const ringR = size / 2;
   const filterId = LIGHTNING_FILTER_IDS[tier];
+
+  // uid から決定論的に旋回パラメータを決定
+  const baseHash = hashString(uid);
 
   return (
     <svg
@@ -269,26 +285,47 @@ const LightningAura = memo(function LightningAura({
           const strokeW = isMain ? (1.8 + tier * 0.35) : 1.4;
           const r = ringR + (isMain ? strokeW * 0.3 : strokeW * 0.5);
           const flickerClass = FLICKER_CLASSES[i % FLICKER_CLASSES.length];
+
+          // 衛星旋回：2〜3個の弧の断片
+          // 円周長 ≈ 2πr。Tierに応じて非対称な隙間パターン
           const dashArr = isMain
-            ? `${4 + tier * 1.5} ${5 + tier * 1.2}`
-            : `${2} ${7}`;
+            ? `10 120 25 180 5 150`
+            : `8 140 18 200 4 170`;
+
+          // 旋回パラメータ：素数秒 + 逆回転を半々
+          const ringHash = (baseHash + i * 7919) | 0;
+          const spinDur = SPIN_DURS[Math.abs(ringHash >> 3) % SPIN_DURS.length];
+          const reverse = ((ringHash >> 5) & 1) === 1;
+          const spinDelay = -((Math.abs(ringHash >> 9) % 100) / 100) * spinDur;
+          const dashOffsetSeed = Math.abs(ringHash >> 11) % 360;
 
           return (
-            <circle
+            <g
               key={`${uid}-ring-${i}`}
-              className={flickerClass}
-              cx={cx}
-              cy={cy}
-              r={r}
-              fill="none"
-              stroke={stroke}
-              strokeWidth={strokeW}
-              strokeDasharray={dashArr}
-              strokeLinecap="round"
+              className="aura-spin"
               style={{
-                filter: `drop-shadow(0 0 ${2 + tier * 0.6}px ${stroke})`,
+                transformOrigin: `${cx}px ${cy}px`,
+                animationDuration: `${spinDur}s`,
+                animationDelay: `${spinDelay}s`,
+                animationDirection: reverse ? 'reverse' : 'normal',
               }}
-            />
+            >
+              <circle
+                className={flickerClass}
+                cx={cx}
+                cy={cy}
+                r={r}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={strokeW}
+                strokeDasharray={dashArr}
+                strokeDashoffset={dashOffsetSeed}
+                strokeLinecap="round"
+                style={{
+                  filter: `drop-shadow(0 0 ${2 + tier * 0.6}px ${stroke})`,
+                }}
+              />
+            </g>
           );
         })}
       </g>
@@ -512,7 +549,7 @@ const TechniqueNode = memo(function TechniqueNode({ data, id }: NodeProps) {
 });
 
 // =====================================================================
-// 雷光エッジ
+// 雷光エッジ（一閃版：1〜2粒の独立エネルギー塊）
 // =====================================================================
 interface LightningEdgeData {
   color:    string;
@@ -524,14 +561,13 @@ interface LightningEdgeData {
 
 const EDGE_PULSE_DURS = [5.3, 6.7, 7.1, 8.9, 11.3];
 const EDGE_PULSE_CLASSES = ['edge-pulse-a', 'edge-pulse-b', 'edge-pulse-c'];
-
-function hashString(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
+// 非対称なdashArrayパターン（1〜2粒の鋭い一閃）
+const EDGE_DASH_PATTERNS = [
+  '2 120 6 250 3 180',
+  '3 200 4 320',
+  '2 180 8 260 2 220',
+  '5 280 2 340',
+];
 
 const LightningEdge = memo(function LightningEdge({
   sourceX, sourceY, targetX, targetY, data, id,
@@ -544,12 +580,13 @@ const LightningEdge = memo(function LightningEdge({
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
-  const { className, duration, delay } = useMemo(() => {
+  const { className, duration, delay, dashArray } = useMemo(() => {
     const h = hashString(id);
     const cls = EDGE_PULSE_CLASSES[h % EDGE_PULSE_CLASSES.length];
     const dur = EDGE_PULSE_DURS[(h >> 3) % EDGE_PULSE_DURS.length];
     const dly = -(((h >> 7) % 100) / 100) * dur;
-    return { className: cls, duration: dur, delay: dly };
+    const da  = EDGE_DASH_PATTERNS[(h >> 11) % EDGE_DASH_PATTERNS.length];
+    return { className: cls, duration: dur, delay: dly, dashArray: da };
   }, [id]);
 
   return (
@@ -568,7 +605,7 @@ const LightningEdge = memo(function LightningEdge({
         fill="none"
         stroke={bright}
         strokeWidth={width * 1.1}
-        strokeDasharray="1 24"
+        strokeDasharray={dashArray}
         strokeLinecap="round"
         opacity={0}
         className={className}
@@ -764,6 +801,7 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 // CSS キーフレーム
 // =====================================================================
 const KEYFRAMES = `
+  /* ===== Edge：3種類の不規則リズム ===== */
   @keyframes edge-pulse-a {
     0%        { stroke-dashoffset: 80; opacity: 0; }
     65%       { opacity: 0; }
@@ -819,40 +857,49 @@ const KEYFRAMES = `
     will-change: stroke-dashoffset, opacity;
   }
 
-  @keyframes lightning-flicker-a {
-    0%, 60%   { opacity: 0; }
-    62%       { opacity: 1; }
-    65%       { opacity: 0.2; }
-    66%, 78%  { opacity: 0; }
-    79%       { opacity: 0.85; }
-    81%       { opacity: 0.3; }
-    83%       { opacity: 1; }
-    86%       { opacity: 0.5; }
-    88%       { opacity: 0; }
-    100%      { opacity: 0; }
+  /* ===== Aura：衛星旋回（自転） ===== */
+  @keyframes aura-spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
-  .lightning-flicker-a {
-    animation: lightning-flicker-a 5s ease-in-out infinite;
+  .aura-spin {
+    animation-name: aura-spin;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    transform-origin: center;
+    transform-box: fill-box;
+    will-change: transform;
+  }
+
+  /* ===== Aura：控えめな明滅（旋回する刃を主役に） ===== */
+  @keyframes lightning-flicker-soft-a {
+    0%, 70%   { opacity: 0.75; }
+    72%       { opacity: 1; }
+    75%       { opacity: 0.55; }
+    78%       { opacity: 1; }
+    82%       { opacity: 0.7; }
+    100%      { opacity: 0.75; }
+  }
+  .lightning-flicker-soft-a {
+    animation: lightning-flicker-soft-a 5s ease-in-out infinite;
     will-change: opacity;
   }
 
-  @keyframes lightning-flicker-b {
-    0%, 35%   { opacity: 0; }
-    37%       { opacity: 0.9; }
-    40%       { opacity: 0; }
-    41%, 80%  { opacity: 0; }
-    82%       { opacity: 1; }
-    84%       { opacity: 0.4; }
-    86%       { opacity: 0.95; }
-    89%       { opacity: 0; }
-    100%      { opacity: 0; }
+  @keyframes lightning-flicker-soft-b {
+    0%, 50%   { opacity: 0.7; }
+    52%       { opacity: 1; }
+    55%       { opacity: 0.5; }
+    85%       { opacity: 0.95; }
+    88%       { opacity: 0.6; }
+    100%      { opacity: 0.7; }
   }
-  .lightning-flicker-b {
-    animation: lightning-flicker-b 7s ease-in-out infinite;
+  .lightning-flicker-soft-b {
+    animation: lightning-flicker-soft-b 7s ease-in-out infinite;
     animation-delay: -2.3s;
     will-change: opacity;
   }
 
+  /* ===== 得意技バッジ ===== */
   @keyframes signature-star-pop {
     0%   { transform: translateY(-50%) scale(0) rotate(-180deg); opacity: 0; }
     60%  { transform: translateY(-50%) scale(1.4) rotate(20deg); opacity: 1; }
@@ -878,8 +925,9 @@ const KEYFRAMES = `
     .edge-pulse-a,
     .edge-pulse-b,
     .edge-pulse-c,
-    .lightning-flicker-a,
-    .lightning-flicker-b,
+    .aura-spin,
+    .lightning-flicker-soft-a,
+    .lightning-flicker-soft-b,
     .signature-star-badge {
       animation: none !important;
     }
