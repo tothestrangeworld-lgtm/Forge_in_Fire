@@ -58,7 +58,8 @@ export default function PlaystyleCharts({
   // ★ Phase10: モーダル開閉ステート
   const [selectedMatchup, setSelectedMatchup] = useState<MatchupMasterEntry | null>(null);
 
-  const { actionData, subData, totalPts, baseStyle } = useMemo(() => {
+  // ★ Phase10.4: baseStyles を上位3つの配列で保持
+  const { actionData, subData, totalPts, baseStyles } = useMemo(() => {
     const actionTotals: Record<string, number> = {};
     const subTotals:    Record<string, number> = {};
     const bodyTotals:   Record<string, number> = {};
@@ -79,42 +80,58 @@ export default function PlaystyleCharts({
 
     const totalPts = techniques.reduce((s, t) => s + t.points, 0);
 
-    // ── ★ Phase10 / 10.1: BaseStyle 判定 ──
+    // ── ★ Phase10.4: BaseStyle 上位3つ抽出 ──
     // 優先順位:
-    //   1. matchupMaster.baseStyle に存在するキーのうち、最もXPが高いもの（subCategory > bodyPart > actionType の順で評価）
-    //   2. 該当なしの場合、subCategory > bodyPart > actionType の順で最大XPを採用
-    let baseStyle = '';
+    //   1. matchupMaster.baseStyle に存在するキーを優先採用
+    //   2. それ以外は単純に XP 降順
+    // 同一キーは subCategory > bodyPart > actionType の優先で重複除去
     const flatCandidates = new Map<string, number>();
-    Object.entries(subTotals).forEach(([k, v])    => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
-    Object.entries(bodyTotals).forEach(([k, v])   => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
-    Object.entries(actionTotals).forEach(([k, v]) => { if (!flatCandidates.has(k)) flatCandidates.set(k, v); });
+    Object.entries(subTotals).forEach(([k, v])    => { if (!flatCandidates.has(k) && v > 0) flatCandidates.set(k, v); });
+    Object.entries(bodyTotals).forEach(([k, v])   => { if (!flatCandidates.has(k) && v > 0) flatCandidates.set(k, v); });
+    Object.entries(actionTotals).forEach(([k, v]) => { if (!flatCandidates.has(k) && v > 0) flatCandidates.set(k, v); });
 
     const sortedCandidates = Array.from(flatCandidates.entries())
       .map(([key, pts]) => ({ key, pts }))
       .sort((a, b) => b.pts - a.pts);
 
+    const baseStyles: string[] = [];
+
     if (matchupMaster.length > 0) {
       const styleSet = new Set(matchupMaster.map(m => m.baseStyle));
-      const hit = sortedCandidates.find(c => styleSet.has(c.key) && c.pts > 0);
-      if (hit) baseStyle = hit.key;
-    }
-    if (!baseStyle && sortedCandidates.length > 0 && sortedCandidates[0].pts > 0) {
-      baseStyle = sortedCandidates[0].key;
+      // matchupMaster にヒットするものから優先で最大3つ
+      sortedCandidates
+        .filter(c => styleSet.has(c.key))
+        .slice(0, 3)
+        .forEach(c => baseStyles.push(c.key));
     }
 
-    return { actionData, subData, totalPts, baseStyle };
+    // 不足分は XP 降順で補完（重複排除）
+    if (baseStyles.length < 3) {
+      for (const c of sortedCandidates) {
+        if (baseStyles.length >= 3) break;
+        if (!baseStyles.includes(c.key)) baseStyles.push(c.key);
+      }
+    }
+
+    return { actionData, subData, totalPts, baseStyles };
   }, [techniques, matchupMaster]);
 
-  // ★ Phase10: 現在の BaseStyle に合致する相性データを抽出
-  const userMatchups = useMemo(() => {
-    if (!baseStyle || matchupMaster.length === 0) return [];
-    return matchupMaster
-      .filter(m => m.baseStyle === baseStyle)
-      .sort((a, b) => {
-        if (a.matchType !== b.matchType) return a.matchType === 'S' ? -1 : 1;
-        return (b.degree ?? 0) - (a.degree ?? 0);
-      });
-  }, [baseStyle, matchupMaster]);
+  // ★ Phase10.4: 各 baseStyle ごとに該当する matchupMaster データをグルーピング
+  const matchupGroups = useMemo(() => {
+    if (baseStyles.length === 0 || matchupMaster.length === 0) return [];
+    return baseStyles.map(style => ({
+      style,
+      matchups: matchupMaster
+        .filter(m => m.baseStyle === style)
+        .sort((a, b) => {
+          if (a.matchType !== b.matchType) return a.matchType === 'S' ? -1 : 1;
+          return (b.degree ?? 0) - (a.degree ?? 0);
+        }),
+    })).filter(g => g.matchups.length > 0);
+  }, [baseStyles, matchupMaster]);
+
+  // モーダル表示時の baseStyle（クリックされた matchup の baseStyle を使う）
+  const modalBaseStyle = selectedMatchup?.baseStyle ?? (baseStyles[0] ?? '');
 
   if (!mounted) return null;
   if (totalPts === 0) {
@@ -224,10 +241,9 @@ export default function PlaystyleCharts({
 
       </div>
 
-      {/* ── ★ Phase10 / 10.2: BaseStyle と相性タグ ─────────────────────── */}
-      {baseStyle && (
+      {/* ── ★ Phase10.4: BaseStyle 複数バッジ ─────────────────────── */}
+      {baseStyles.length > 0 && (
         <div style={{ marginTop: 18 }}>
-          {/* BaseStyle ラベル */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
             marginBottom: 10, flexWrap: 'wrap',
@@ -235,42 +251,106 @@ export default function PlaystyleCharts({
             <span style={{
               fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.14em',
               color: 'rgba(165,180,252,0.7)',
+              flexShrink: 0,
             }}>
               YOUR BASE STYLE
             </span>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '4px 12px', borderRadius: 999,
-              background: 'rgba(99,102,241,0.18)',
-              border: '1px solid rgba(129,140,248,0.45)',
-              fontSize: '0.8rem', fontWeight: 800, color: '#c7d2fe',
-              boxShadow: '0 0 12px rgba(99,102,241,0.22)',
-            }}>
-              <span style={{ fontSize: 12 }}>⚔︎</span>
-              {baseStyle}
-            </span>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {baseStyles.map((style, idx) => (
+                <span
+                  key={style}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '3px 9px', borderRadius: 999,
+                    background: idx === 0
+                      ? 'rgba(99,102,241,0.22)'
+                      : 'rgba(99,102,241,0.12)',
+                    border: idx === 0
+                      ? '1px solid rgba(129,140,248,0.55)'
+                      : '1px solid rgba(129,140,248,0.30)',
+                    fontSize: '0.7rem', fontWeight: 800, color: '#c7d2fe',
+                    boxShadow: idx === 0 ? '0 0 10px rgba(99,102,241,0.22)' : 'none',
+                  }}
+                >
+                  {idx === 0 && <span style={{ fontSize: 10 }}>⚔︎</span>}
+                  <span style={{
+                    fontSize: '0.55rem', fontWeight: 700,
+                    color: 'rgba(165,180,252,0.6)',
+                    letterSpacing: '0.06em',
+                  }}>
+                    {idx + 1}
+                  </span>
+                  {style}
+                </span>
+              ))}
+            </div>
           </div>
 
-          {/* 相性タグ群 */}
-          {userMatchups.length > 0 ? (
+          {/* ── 相性タグ：BaseStyle ごとのグループ枠 ── */}
+          {matchupGroups.length > 0 ? (
             <>
               <p style={{
-                margin: '0 0 10px', fontSize: '0.62rem',
-                color: 'rgba(165,180,252,0.6)', letterSpacing: '0.08em',
+                margin: '0 0 8px', fontSize: '0.6rem',
+                color: 'rgba(165,180,252,0.55)', letterSpacing: '0.08em',
               }}>
                 剣風相性（タップで詳細）
               </p>
               <div style={{
                 display: 'flex',
-                flexWrap: 'wrap',
-                gap: 10,
+                flexDirection: 'column',
+                gap: 8,
               }}>
-                {userMatchups.map((m, idx) => (
-                  <MatchupTag
-                    key={`${m.baseStyle}-${m.targetStyle}-${idx}`}
-                    matchup={m}
-                    onClick={() => setSelectedMatchup(m)}
-                  />
+                {matchupGroups.map(group => (
+                  <div
+                    key={group.style}
+                    style={{
+                      borderRadius: 10,
+                      background: 'rgba(99,102,241,0.04)',
+                      border: '1px solid rgba(129,140,248,0.14)',
+                      padding: '7px 9px 8px',
+                    }}
+                  >
+                    {/* グループラベル */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      marginBottom: 6,
+                    }}>
+                      <span style={{
+                        fontSize: 9, color: 'rgba(165,180,252,0.55)',
+                        fontWeight: 700,
+                      }}>
+                        ▸
+                      </span>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800,
+                        color: 'rgba(199,210,254,0.78)',
+                        letterSpacing: '0.04em',
+                      }}>
+                        {group.style}
+                      </span>
+                      <span style={{
+                        fontSize: '0.55rem', fontWeight: 600,
+                        color: 'rgba(165,180,252,0.45)',
+                        marginLeft: 2,
+                      }}>
+                        ({group.matchups.length})
+                      </span>
+                    </div>
+                    {/* タグ群 */}
+                    <div style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 6,
+                    }}>
+                      {group.matchups.map((m, idx) => (
+                        <MatchupTag
+                          key={`${m.baseStyle}-${m.targetStyle}-${idx}`}
+                          matchup={m}
+                          onClick={() => setSelectedMatchup(m)}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </>
@@ -281,18 +361,18 @@ export default function PlaystyleCharts({
               background: 'rgba(99,102,241,0.04)',
               border: '1px dashed rgba(99,102,241,0.2)',
             }}>
-              「{baseStyle}」の相性データはまだ登録されていません
+              該当する相性データはまだ登録されていません
             </p>
           ) : null}
         </div>
       )}
 
-      {/* ── ★ Phase10: 剣風書ポップアップ ──────────────────────── */}
+      {/* ── 剣風書ポップアップ ──────────────────────── */}
       <MatchupScroll
         open={!!selectedMatchup}
         onClose={() => setSelectedMatchup(null)}
         matchup={selectedMatchup}
-        baseStyle={baseStyle}
+        baseStyle={modalBaseStyle}
         peers={peersStyle}
         techniqueMaster={techniqueMaster}
       />
@@ -301,11 +381,16 @@ export default function PlaystyleCharts({
 }
 
 // =====================================================================
-// MatchupTag ★ Phase10 / 10.2
+// MatchupTag ★ Phase10 / 10.4
 // 相性タグ（matchType / degree によって色と発光が変化）
 // matchupTheme.ts の getDegreeTheme / getTagHoverStyles を使用。
 //
-// ★ 10.2 配色:
+// ★ Phase10.4 修正:
+//   - padding / フォントサイズをわずかに縮小し、スマホ画面での圧迫感を軽減
+//   - minHeight も小さく
+//   - degree 3 の脈動アニメは継続（控えめな glow と組み合わせて存在感は維持）
+//
+// 配色:
 //   S (得意): 青緑 / エメラルド / ネオンシアン
 //   W (苦手): 赤紫 / 警告アンバー / 真紅ネオン
 // =====================================================================
@@ -326,9 +411,9 @@ function MatchupTag({ matchup, onClick }: TagProps) {
     : (degree === 3 ? '⚠' : '⛨');
   const label = isStrong ? '得意' : '苦手';
 
-  // タップしたくなる質感
-  const padX = degree === 3 ? 14 : 12;
-  const padY = degree === 3 ? 9 : 8;
+  // ★ Phase10.4: padding と minHeight を縮小（スマホでの圧迫感軽減）
+  const padX = degree === 3 ? 11 : 10;
+  const padY = degree === 3 ? 6 : 5;
 
   // 一意なアニメーション名（degree 3 のみ脈動）
   const pulseName = `tagPulse_${isStrong ? 'S' : 'W'}_${degree}`;
@@ -339,9 +424,9 @@ function MatchupTag({ matchup, onClick }: TagProps) {
     <button
       onClick={onClick}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7,
+        display: 'inline-flex', alignItems: 'center', gap: 5,
         padding: `${padY}px ${padX}px`,
-        minHeight: 36,
+        minHeight: 30,
         borderRadius: 999,
         background: theme.bg,
         border: `${theme.borderW}px solid ${theme.border}`,
@@ -353,7 +438,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
         WebkitTapHighlightColor: 'transparent',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
+        e.currentTarget.style.transform = 'translateY(-1px) scale(1.02)';
         e.currentTarget.style.background = hover.bgHover;
         e.currentTarget.style.boxShadow = hoverShadow;
       }}
@@ -382,10 +467,10 @@ function MatchupTag({ matchup, onClick }: TagProps) {
 
       {/* シンボル */}
       <span style={{
-        fontSize: degree === 3 ? 13 : 12,
+        fontSize: degree === 3 ? 11 : 10,
         color: theme.primary,
         filter: degree >= 2
-          ? `drop-shadow(0 0 ${degree === 3 ? 6 : 4}px ${theme.primary})`
+          ? `drop-shadow(0 0 ${degree === 3 ? 5 : 3}px ${theme.primary})`
           : 'none',
         lineHeight: 1,
       }}>
@@ -394,10 +479,10 @@ function MatchupTag({ matchup, onClick }: TagProps) {
 
       {/* ラベル */}
       <span style={{
-        fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.12em',
+        fontSize: '0.55rem', fontWeight: 800, letterSpacing: '0.10em',
         color: theme.primary,
         opacity: 0.92,
-        textShadow: degree === 3 ? `0 0 6px ${theme.primary}` : 'none',
+        textShadow: degree === 3 ? `0 0 5px ${theme.primary}` : 'none',
       }}>
         {label}
       </span>
@@ -405,7 +490,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
       {/* 区切り線（degree 2以上で表示） */}
       {degree >= 2 && (
         <span style={{
-          width: 1, height: 12,
+          width: 1, height: 10,
           background: theme.border,
           opacity: 0.6,
         }} />
@@ -413,7 +498,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
 
       {/* TargetStyle 名 */}
       <span style={{
-        fontSize: degree === 3 ? '0.82rem' : degree === 2 ? '0.78rem' : '0.74rem',
+        fontSize: degree === 3 ? '0.74rem' : degree === 2 ? '0.72rem' : '0.7rem',
         fontWeight: degree === 3 ? 800 : 700,
         color: theme.textBright,
         letterSpacing: '0.02em',
