@@ -1,7 +1,7 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.1版：型修正リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.2版：視認性調整リビジョン）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -307,12 +307,11 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
 });
 
 // =====================================================================
-// 静的な線（LightningEdge を改称・簡略化）
+// 静的な線（StaticEdge）
 // =====================================================================
 interface StaticEdgeData {
   color:    string;
   width:    number;
-  baseOpacity: number;
 }
 
 const StaticEdge = memo(function StaticEdge({
@@ -321,7 +320,6 @@ const StaticEdge = memo(function StaticEdge({
   const d = (data ?? {}) as Partial<StaticEdgeData>;
   const color  = d.color  ?? 'rgba(99,102,241,0.6)';
   const width  = d.width  ?? 1.5;
-  const opacity = d.baseOpacity ?? 0.55;
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
@@ -331,8 +329,8 @@ const StaticEdge = memo(function StaticEdge({
       path={edgePath}
       style={{
         stroke: color,
-        strokeWidth: width,
-        opacity: opacity,
+        strokeWidth: width * 1.2,
+        filter: `drop-shadow(0 0 4px ${color})`,
       }}
     />
   );
@@ -463,9 +461,8 @@ function buildGraph(
       target: 'core',
       type: 'static',
       data: {
-        color:  `rgba(${bpTheme.rgb},${(0.55 + bpNorm * 0.35).toFixed(2)})`,
+        color:  `rgba(${bpTheme.rgb},${0.55 + bpNorm * 0.35})`,
         width:  Math.max(1.5, 1.8 + bpNorm * 1.5),
-        baseOpacity: 0.55 + bpNorm * 0.35,
       } as unknown as Record<string, unknown>,
     });
 
@@ -480,9 +477,8 @@ function buildGraph(
         target: bpId,
         type: 'static',
         data: {
-          color:  `rgba(${techTheme.rgb},${(0.45 + norm * 0.4).toFixed(2)})`,
+          color:  `rgba(${techTheme.rgb},${0.4 + norm * 0.4})`,
           width:  Math.max(1, 1.2 + norm * 1.2),
-          baseOpacity: 0.4 + norm * 0.4,
         } as unknown as Record<string, unknown>,
       });
     });
@@ -656,3 +652,4 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
     </div>
   );
 }
+
