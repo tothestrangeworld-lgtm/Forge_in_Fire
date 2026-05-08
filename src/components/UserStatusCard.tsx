@@ -265,6 +265,10 @@ export function UserStatusCard({
         display: 'flex', alignItems: 'center',
         gap: 8, flexWrap: 'wrap',
       }}>
+
+      {/* ── 区切り線 ────────────────────────────────────────────── */}
+      <div style={{ height: 1, background: 'rgba(99,102,241,0.15)', margin: '0 -2px' }} />
+
         {/* Lvバッジ */}
         <span style={{
           display: 'inline-flex', alignItems: 'center',
@@ -309,8 +313,6 @@ export function UserStatusCard({
         )}
       </div>
 
-      {/* ── 区切り線 ────────────────────────────────────────────── */}
-      <div style={{ height: 1, background: 'rgba(99,102,241,0.15)', margin: '0 -2px' }} />
 
       {/* ── 5行目: TOTAL XP ──────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>

@@ -1,7 +1,7 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第2弾：衛星旋回リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第3弾：帯電一閃リビジョン）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -213,7 +213,7 @@ const MinimalHandles = memo(() => (
 MinimalHandles.displayName = 'MinimalHandles';
 
 // =====================================================================
-// 帯電オーラ（衛星旋回版）
+// 帯電オーラ（間欠一閃版）
 // =====================================================================
 interface LightningAuraProps {
   size:       number;
@@ -222,14 +222,14 @@ interface LightningAuraProps {
   uid:        string;
 }
 
-// 旋回（明滅と組み合わせる控えめ版）
+// 間欠クラック明滅（普段は消灯、一瞬だけ鋭く光る）
 const FLICKER_CLASSES = [
-  'lightning-flicker-soft-a',
-  'lightning-flicker-soft-b',
+  'aura-crack-flash-a',
+  'aura-crack-flash-b',
 ];
 
-// 素数秒の旋回周期（リング毎にローテーション）
-const SPIN_DURS = [7.3, 11.3, 13.7, 17.9, 19.3];
+// 超高速の素数秒旋回周期
+const SPIN_DURS = [0.7, 1.1, 1.3, 1.7, 1.9];
 
 /** 簡易な決定論的ハッシュ（djb2風） */
 function hashString(s: string): number {
@@ -283,11 +283,11 @@ const LightningAura = memo(function LightningAura({
           const isMain = i === 0;
           const stroke = isMain ? plasma.mid : plasma.core;
           const strokeW = isMain ? (1.8 + tier * 0.35) : 1.4;
-          const r = ringR + (isMain ? strokeW * 0.3 : strokeW * 0.5);
+          // ノード縁に密着させるため内側に食い込む
+          const r = ringR - (strokeW * 1.5);
           const flickerClass = FLICKER_CLASSES[i % FLICKER_CLASSES.length];
 
           // 衛星旋回：2〜3個の弧の断片
-          // 円周長 ≈ 2πr。Tierに応じて非対称な隙間パターン
           const dashArr = isMain
             ? `10 120 25 180 5 150`
             : `8 140 18 200 4 170`;
@@ -559,7 +559,8 @@ interface LightningEdgeData {
   [key: string]: unknown;
 }
 
-const EDGE_PULSE_DURS = [5.3, 6.7, 7.1, 8.9, 11.3];
+// 超高速の素数秒パルス周期
+const EDGE_PULSE_DURS = [1.3, 1.7, 2.3, 3.1, 3.7];
 const EDGE_PULSE_CLASSES = ['edge-pulse-a', 'edge-pulse-b', 'edge-pulse-c'];
 // 非対称なdashArrayパターン（1〜2粒の鋭い一閃）
 const EDGE_DASH_PATTERNS = [
@@ -612,7 +613,7 @@ const LightningEdge = memo(function LightningEdge({
         style={{
           animationDuration: `${duration}s`,
           animationDelay: `${delay}s`,
-          filter: `drop-shadow(0 0 4px ${bright})`,
+          filter: `url(#lightning-filter-tier2) drop-shadow(0 0 4px ${bright})`,
         }}
       />
     </>
@@ -801,18 +802,15 @@ function applyFilter(nodes: Node[], edges: Edge[], filter: FilterType, techActio
 // CSS キーフレーム
 // =====================================================================
 const KEYFRAMES = `
-  /* ===== Edge：3種類の不規則リズム ===== */
+  /* ===== Edge：3種類の不規則リズム（超高速・長い待機＋鋭い一閃） ===== */
   @keyframes edge-pulse-a {
     0%        { stroke-dashoffset: 80; opacity: 0; }
-    65%       { opacity: 0; }
-    67%       { opacity: 0.95; }
-    70%       { opacity: 0.2; }
-    72%, 81%  { opacity: 0; }
-    83%       { opacity: 0.85; }
-    85%       { opacity: 0.4; }
-    87%       { opacity: 0.95; }
-    90%       { opacity: 0.5; }
-    93%       { opacity: 0; }
+    80%       { opacity: 0; }
+    82%       { opacity: 1; }
+    84%       { opacity: 0.15; }
+    86%       { opacity: 0.95; }
+    88%       { opacity: 0.3; }
+    90%       { opacity: 0; }
     100%      { stroke-dashoffset: 0; opacity: 0; }
   }
   .edge-pulse-a {
@@ -824,10 +822,10 @@ const KEYFRAMES = `
 
   @keyframes edge-pulse-b {
     0%        { stroke-dashoffset: 80; opacity: 0; }
-    78%       { opacity: 0; }
-    80%       { opacity: 1; }
-    82%       { opacity: 0.6; }
-    84%       { opacity: 0; }
+    88%       { opacity: 0; }
+    90%       { opacity: 1; }
+    92%       { opacity: 0.4; }
+    94%       { opacity: 0; }
     100%      { stroke-dashoffset: 0; opacity: 0; }
   }
   .edge-pulse-b {
@@ -839,15 +837,14 @@ const KEYFRAMES = `
 
   @keyframes edge-pulse-c {
     0%        { stroke-dashoffset: 80; opacity: 0; }
-    50%       { opacity: 0; }
-    52%       { opacity: 0.4; }
-    54%       { opacity: 0.1; }
-    56%       { opacity: 0.5; }
-    58%       { opacity: 0; }
-    60%, 84%  { opacity: 0; }
-    86%       { opacity: 1; }
-    88%       { opacity: 0.7; }
+    70%       { opacity: 0; }
+    72%       { opacity: 0.6; }
+    74%       { opacity: 0.05; }
+    76%       { opacity: 0; }
     90%       { opacity: 0; }
+    92%       { opacity: 1; }
+    94%       { opacity: 0.5; }
+    96%       { opacity: 0; }
     100%      { stroke-dashoffset: 0; opacity: 0; }
   }
   .edge-pulse-c {
@@ -871,31 +868,30 @@ const KEYFRAMES = `
     will-change: transform;
   }
 
-  /* ===== Aura：控えめな明滅（旋回する刃を主役に） ===== */
-  @keyframes lightning-flicker-soft-a {
-    0%, 70%   { opacity: 0.75; }
-    72%       { opacity: 1; }
-    75%       { opacity: 0.55; }
-    78%       { opacity: 1; }
-    82%       { opacity: 0.7; }
-    100%      { opacity: 0.75; }
+  /* ===== Aura：間欠クラック明滅（普段は消灯、一瞬だけ鋭く光る） ===== */
+  @keyframes aura-crack-flash-a {
+    0%, 88%   { opacity: 0; }
+    90%       { opacity: 1; }
+    92%       { opacity: 0.1; }
+    94%       { opacity: 0.85; }
+    97%       { opacity: 0; }
+    100%      { opacity: 0; }
   }
-  .lightning-flicker-soft-a {
-    animation: lightning-flicker-soft-a 5s ease-in-out infinite;
+  .aura-crack-flash-a {
+    animation: aura-crack-flash-a 4.3s linear infinite;
     will-change: opacity;
   }
 
-  @keyframes lightning-flicker-soft-b {
-    0%, 50%   { opacity: 0.7; }
-    52%       { opacity: 1; }
-    55%       { opacity: 0.5; }
-    85%       { opacity: 0.95; }
-    88%       { opacity: 0.6; }
-    100%      { opacity: 0.7; }
+  @keyframes aura-crack-flash-b {
+    0%, 91%   { opacity: 0; }
+    93%       { opacity: 0.95; }
+    95%       { opacity: 0.05; }
+    97%       { opacity: 0.8; }
+    100%      { opacity: 0; }
   }
-  .lightning-flicker-soft-b {
-    animation: lightning-flicker-soft-b 7s ease-in-out infinite;
-    animation-delay: -2.3s;
+  .aura-crack-flash-b {
+    animation: aura-crack-flash-b 6.7s linear infinite;
+    animation-delay: -1.9s;
     will-change: opacity;
   }
 
@@ -926,8 +922,8 @@ const KEYFRAMES = `
     .edge-pulse-b,
     .edge-pulse-c,
     .aura-spin,
-    .lightning-flicker-soft-a,
-    .lightning-flicker-soft-b,
+    .aura-crack-flash-a,
+    .aura-crack-flash-b,
     .signature-star-badge {
       animation: none !important;
     }
