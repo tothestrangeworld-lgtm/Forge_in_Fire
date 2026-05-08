@@ -1,7 +1,7 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.2版：視認性調整リビジョン）
+// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.3版：構造修正リビジョン）
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -9,6 +9,8 @@ import {
   ReactFlow,
   Background,
   Controls,
+  Handle,
+  Position,
   BaseEdge,
   getStraightPath,
   BackgroundVariant,
@@ -36,6 +38,24 @@ const BP_NODE_SIZE   = 56;
 const CORE_NODE_SIZE = 64;
 
 // =====================================================================
+// ハンドル
+// =====================================================================
+const CENTER_HANDLE: React.CSSProperties = {
+  opacity: 0, width: 1, height: 1,
+  top: '50%', left: '50%',
+  transform: 'translate(-50%, -50%)',
+  border: 'none', background: 'transparent', pointerEvents: 'none',
+};
+
+const MinimalHandles = memo(() => (
+  <>
+    <Handle type="source" position={Position.Top}    id="s" style={CENTER_HANDLE} />
+    <Handle type="target" position={Position.Bottom} id="t" style={CENTER_HANDLE} />
+  </>
+));
+MinimalHandles.displayName = 'MinimalHandles';
+
+// =====================================================================
 // 習熟度階層
 // =====================================================================
 type LightningTier = 0 | 1 | 2 | 3 | 4;
@@ -45,14 +65,6 @@ function pointsToTier(points: number): LightningTier {
   if (points >= 500)  return 3;
   if (points >= 200)  return 2;
   if (points >= 50)   return 1;
-  return 0;
-}
-
-function bpTotalPointsToTier(totalPoints: number): LightningTier {
-  if (totalPoints >= 5000) return 4;
-  if (totalPoints >= 2500) return 3;
-  if (totalPoints >= 1000) return 2;
-  if (totalPoints >= 250)  return 1;
   return 0;
 }
 
@@ -125,6 +137,7 @@ const CoreNode = memo(function CoreNode(_: NodeProps) {
       position: 'relative', userSelect: 'none', zIndex: 2,
       textShadow: `0 0 6px ${plasma.core}`,
     }}>
+      <MinimalHandles />
       技
     </div>
   );
@@ -139,7 +152,7 @@ interface BodyPartData {
   norm:        number;
 }
 
-const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
+const BodyPartNode = memo(function BodyPartNode({ data }: NodeProps) {
   const d = data as unknown as BodyPartData;
   const s = BP_NODE_SIZE;
   const isMaxed = d.norm >= 1.0;
@@ -152,24 +165,11 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
     ? `radial-gradient(circle, rgba(${rgb},0.45) 0%, ${dark} 70%, #050412 100%)`
     : `radial-gradient(circle, rgba(${rgb},0.18) 0%, ${dark} 70%, #050412 100%)`;
 
-  const borderColor = isMaxed
-    ? plasma.core
-    : d.norm > 0.5
-    ? plasma.mid
-    : `rgba(${rgb},0.55)`;
-
+  const borderColor = isMaxed ? plasma.core : d.norm > 0.5 ? plasma.mid : `rgba(${rgb},0.55)`;
   const glowIntensity = Math.max(0.35, d.norm);
   const neonGlow = isMaxed
-    ? [
-        `0 0 12px 3px ${plasma.mid}`,
-        `0 0 0 1.5px ${plasma.core}`,
-        `inset 0 0 10px ${plasma.glow}`,
-      ].join(', ')
-    : [
-        `0 0 ${7 + glowIntensity * 7}px ${1.2 + glowIntensity * 2}px rgba(${rgb},${(0.45 + glowIntensity * 0.3).toFixed(2)})`,
-        `0 0 0 1px rgba(${rgb},${(0.45 + glowIntensity * 0.3).toFixed(2)})`,
-        `inset 0 0 6px rgba(${rgb},${(0.18 + glowIntensity * 0.18).toFixed(2)})`,
-      ].join(', ');
+    ? [`0 0 12px 3px ${plasma.mid}`, `0 0 0 1.5px ${plasma.core}`, `inset 0 0 10px ${plasma.glow}`].join(', ')
+    : [`0 0 ${7 + glowIntensity * 7}px ${1.2 + glowIntensity * 2}px rgba(${rgb},${(0.45 + glowIntensity * 0.3).toFixed(2)})`, `0 0 0 1px rgba(${rgb},${(0.45 + glowIntensity * 0.3).toFixed(2)})`, `inset 0 0 6px rgba(${rgb},${(0.18 + glowIntensity * 0.18).toFixed(2)})`].join(', ');
 
   const textColor = isMaxed ? plasma.core : bpText;
   const ptColor   = isMaxed ? plasma.core : `rgba(${rgb},0.9)`;
@@ -184,21 +184,11 @@ const BodyPartNode = memo(function BodyPartNode({ data, id }: NodeProps) {
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
+      <MinimalHandles />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <span style={{
-          fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em',
-          color: textColor,
-          textShadow: `0 0 4px rgba(0,0,0,0.85), 0 0 6px ${plasma.glow}`,
-        }}>
-          {d.label}
-        </span>
+        <span style={{ fontSize: 11, fontWeight: 800, lineHeight: 1.2, letterSpacing: '0.04em', color: textColor, textShadow: `0 0 4px rgba(0,0,0,0.85), 0 0 6px ${plasma.glow}` }}>{d.label}</span>
         {d.totalPoints > 0 && (
-          <span style={{
-            fontSize: 8, opacity: 0.95, marginTop: 1, color: ptColor,
-            textShadow: '0 0 3px rgba(0,0,0,0.85)',
-          }}>
-            {d.totalPoints}pt
-          </span>
+          <span style={{ fontSize: 8, opacity: 0.95, marginTop: 1, color: ptColor, textShadow: '0 0 3px rgba(0,0,0,0.85)' }}>{d.totalPoints}pt</span>
         )}
       </div>
     </div>
@@ -256,50 +246,17 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
     }}>
+      <MinimalHandles />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {isSignature && (
-          <span
-            className="signature-star-badge"
-            style={{
-              position: 'absolute',
-              left: -s * 0.34,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              fontSize: 15,
-              lineHeight: 1,
-              color: '#fde047',
-              fontWeight: 900,
-              zIndex: 3,
-              pointerEvents: 'none',
-              textShadow: '0 0 4px rgba(0,0,0,0.7), 0 0 6px rgba(253,224,71,0.65)',
-            }}
-          >
-            ★
-          </span>
+          <span className="signature-star-badge" style={{ position: 'absolute', left: -s * 0.34, top: '50%', transform: 'translateY(-50%)', fontSize: 15, lineHeight: 1, color: '#fde047', fontWeight: 900, zIndex: 3, pointerEvents: 'none', textShadow: '0 0 4px rgba(0,0,0,0.7), 0 0 6px rgba(253,224,71,0.65)' }}>★</span>
         )}
-
-        <span style={{
-          fontSize: 8, fontWeight: 700, lineHeight: 1.25,
-          wordBreak: 'break-all', maxWidth: s * 0.82, letterSpacing: '0.02em',
-          textShadow: '0 0 3px rgba(0,0,0,0.9)',
-        }}>
-          {t.name}
-        </span>
+        <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1.25, wordBreak: 'break-all', maxWidth: s * 0.82, letterSpacing: '0.02em', textShadow: '0 0 3px rgba(0,0,0,0.9)' }}>{t.name}</span>
         {(t.points ?? 0) > 0 && (
-          <span style={{
-            fontSize: 7, opacity: 0.9, marginTop: 1,
-            textShadow: '0 0 2px rgba(0,0,0,0.9)',
-          }}>{t.points}pt</span>
+          <span style={{ fontSize: 7, opacity: 0.9, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>{t.points}pt</span>
         )}
-
         {isMaxed && (
-          <span style={{
-            position: 'absolute', top: -3, right: -1,
-            fontSize: 6, lineHeight: 1,
-            background: `linear-gradient(135deg, ${plasma.glow}, ${plasma.core})`,
-            borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800,
-            boxShadow: `0 0 4px ${plasma.mid}`,
-          }}>MAX</span>
+          <span style={{ position: 'absolute', top: -3, right: -1, fontSize: 6, lineHeight: 1, background: `linear-gradient(135deg, ${plasma.glow}, ${plasma.core})`, borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800, boxShadow: `0 0 4px ${plasma.mid}` }}>MAX</span>
         )}
       </div>
     </div>
@@ -315,7 +272,7 @@ interface StaticEdgeData {
 }
 
 const StaticEdge = memo(function StaticEdge({
-  sourceX, sourceY, targetX, targetY, data, id,
+  sourceX, sourceY, targetX, targetY, data, id, style
 }: EdgeProps) {
   const d = (data ?? {}) as Partial<StaticEdgeData>;
   const color  = d.color  ?? 'rgba(99,102,241,0.6)';
@@ -328,6 +285,7 @@ const StaticEdge = memo(function StaticEdge({
       id={id}
       path={edgePath}
       style={{
+        ...style,
         stroke: color,
         strokeWidth: width * 1.2,
         filter: `drop-shadow(0 0 4px ${color})`,
@@ -652,4 +610,3 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
     </div>
   );
 }
-
