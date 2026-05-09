@@ -4,7 +4,7 @@
 // 7行レイアウトに統一し、ラベルと値の視覚的区別を明確化する。
 //
 // レイアウト:
-//   1行目: "{二つ名}" [氏名]          （1.25rem・レア度カラー）
+//   1行目: "{二つ名}" [氏名]  [歯車アイコン→/settings/profile] （1.25rem・レア度カラー）
 //   2行目: 信条: [motto]              （small・未設定時は非表示）
 //   3行目: 部位称号: [xxx] リアル段位: [xxx]（small）
 //   4行目: Lv.[XX] [レベル称号] [実績バッジ]（small）
@@ -15,10 +15,14 @@
 // ★ Phase9.5: UserStatus から title が削除されたが、このコンポーネントは
 //   もともと status.title を参照せず epithet.levelTitle を使用しているため、
 //   コード変更は不要。型互換性の確認のみ。
+// ★ Phase11.1: 歯車アイコン（/settings/profile）を右上に追加。
+//   実績バッジの絵文字🏆をLucideのTrophyアイコンに変更。
 // =====================================================================
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { Settings, Trophy } from 'lucide-react';
 import type { EpithetResult } from '@/lib/epithet';
 import { levelColor, xpForLevel, calcLevelFromXp, calcProgressPercent } from '@/types';
 
@@ -65,7 +69,6 @@ function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
           fontSize: '1.25rem', lineHeight: 1.2,
           color: rarityTextColor(epithet.epithetRarity),
           ...rarityExtraStyle(epithet.epithetRarity),
-//          borderBottom: `1.5px dotted ${rarityTextColor(epithet.epithetRarity)}`,
           display: 'inline-flex', alignItems: 'center', gap: 4,
         }}
         aria-expanded={open}
@@ -170,6 +173,12 @@ export interface UserStatusCardProps {
   achiev?:  { unlocked: number; total: number } | null;
   /** title_master から引いたレベル称号（epithet.levelTitle と同値でも可） */
   levelTitle?: string;
+  /**
+   * ★ Phase11.1: 歯車アイコンの表示制御。
+   * ホーム画面（自分のカード）では true、ライバル閲覧画面では false。
+   * デフォルト: false（後方互換性のため）
+   */
+  showSettingsLink?: boolean;
 }
 
 // =====================================================================
@@ -178,6 +187,8 @@ export interface UserStatusCardProps {
 //   epithet.levelTitle（calcEpithet() 内で titleForLevel() で計算済み）を
 //   表示しているため、Phase9.5 の変更による修正箇所はゼロ。
 //   型定義から UserStatus.title が消えても Props に影響なし。
+// ★ Phase11.1: 右上に歯車アイコン（/settings/profile）を追加。
+//   実績バッジの絵文字をLucide Trophyアイコンに変更。
 // =====================================================================
 export function UserStatusCard({
   userName,
@@ -187,6 +198,7 @@ export function UserStatusCard({
   realRank,
   motto,
   achiev,
+  showSettingsLink = false,
 }: UserStatusCardProps) {
   const lvColor     = levelColor(level);
   const progressPct = calcProgressPercent(totalXp);
@@ -204,13 +216,43 @@ export function UserStatusCard({
       border: '1px solid rgba(99,102,241,0.28)',
       padding: '18px 16px',
       display: 'flex', flexDirection: 'column', gap: 10,
+      position: 'relative',
     }}>
+
+      {/* ── ★ Phase11.1: 歯車アイコン（右上固定） ───────────────── */}
+      {showSettingsLink && (
+        <Link
+          href="/settings/profile"
+          style={{
+            position: 'absolute',
+            top: 14,
+            right: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            border: '1px solid rgba(99,102,241,0.25)',
+            background: 'rgba(15,14,42,0.6)',
+            color: 'rgba(99,102,241,0.55)',
+            textDecoration: 'none',
+            transition: 'border-color 0.2s, color 0.2s',
+          }}
+          title="プロフィール設定"
+          aria-label="プロフィール設定へ"
+        >
+          <Settings style={{ width: 14, height: 14 }} />
+        </Link>
+      )}
 
       {/* ── 1行目: "{二つ名}" [氏名] ────────────────────────────── */}
       <div style={{
         display: 'flex', alignItems: 'baseline',
         gap: 8, flexWrap: 'wrap',
         position: 'relative',
+        /* 歯車アイコン分の右余白を確保 */
+        paddingRight: showSettingsLink ? 36 : 0,
       }}>
         <EpithetNameButton epithet={epithet} />
         <span style={{
@@ -266,8 +308,8 @@ export function UserStatusCard({
         gap: 8, flexWrap: 'wrap',
       }}>
 
-      {/* ── 区切り線 ────────────────────────────────────────────── */}
-      <div style={{ height: 1, background: 'rgba(99,102,241,0.15)', margin: '0 -2px' }} />
+        {/* ── 区切り線 ────────────────────────────────────────────── */}
+        <div style={{ height: 1, background: 'rgba(99,102,241,0.15)', margin: '0 -2px', width: '100%' }} />
 
         {/* Lvバッジ */}
         <span style={{
@@ -281,6 +323,7 @@ export function UserStatusCard({
         }}>
           Lv.{level}
         </span>
+
         {/* レベル称号 — epithet.levelTitle は calcEpithet() 内で titleForLevel() から動的計算済み */}
         <span style={{
           fontSize: '0.78rem', fontWeight: 800,
@@ -292,7 +335,8 @@ export function UserStatusCard({
         }}>
           {epithet.levelTitle}
         </span>
-        {/* 実績バッジ（/achievements への導線） */}
+
+        {/* ★ Phase11.1: 実績バッジ — 絵文字🏆 → Lucide Trophy アイコン */}
         {achiev !== undefined && (
           <a
             href="/achievements"
@@ -305,14 +349,20 @@ export function UserStatusCard({
             }}
             title="実績一覧を見る"
           >
-            <span style={{ fontSize: 10 }}>🏆</span>
+            <Trophy
+              style={{
+                width: 11,
+                height: 11,
+                color: 'rgba(251,191,36,0.75)',
+                flexShrink: 0,
+              }}
+            />
             <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'rgba(165,180,252,0.75)' }}>
               {achiev ? `${achiev.unlocked}/${achiev.total}` : '…'}
             </span>
           </a>
         )}
       </div>
-
 
       {/* ── 5行目: TOTAL XP ──────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>

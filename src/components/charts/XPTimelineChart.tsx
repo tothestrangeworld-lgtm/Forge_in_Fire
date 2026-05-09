@@ -18,6 +18,7 @@ import { titleForLevel } from '@/types';
 // ★ Phase9.5: XpHistoryEntry から title が削除されたため、
 //   ToolTip の称号表示を titleForLevel(level, titleMaster) で動的導出するよう変更。
 //   titleMaster を optional Props として受け取る。
+// ★ Phase11.1: AreaChart の margin を調整し、X軸ラベルの見切れを解消。
 // =====================================================================
 
 interface Props {
@@ -169,7 +170,7 @@ export default function XPTimelineChart({ xpHistory = [], compact = false, title
   }
 
   const maxXP  = Math.max(...xpHistory.map(e => e.total_xp_after));
-  const height = compact ? 180 : 260;
+  const height = compact ? 160 : 220;
   const xTicks = buildXTicks(xpHistory);
 
   const chartData = xpHistory.map(e => ({
@@ -190,7 +191,12 @@ export default function XPTimelineChart({ xpHistory = [], compact = false, title
   return (
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 10, right: 6, left: -26, bottom: 0 }}>
+        {/*
+          ★ Phase11.1: margin.bottom を 20 → 28 に増やし、
+          X軸の日付ラベルが下端で見切れないよう修正。
+          left も -26 → -20 に微調整してY軸数値の左クリップを緩和。
+        */}
+        <AreaChart data={chartData} margin={{ top: 10, right: 6, left: -20, bottom: 28 }}>
           <defs>
             {/* ★ ネオングラデーション（積み上がるオーラ） */}
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -218,6 +224,8 @@ export default function XPTimelineChart({ xpHistory = [], compact = false, title
             tick={{ fontSize: 9, fill: 'rgba(99,102,241,0.5)' }}
             tickLine={false}
             axisLine={false}
+            /* ★ Phase11.1: ラベルを少し下げてバーとの重なりを防ぐ */
+            dy={6}
           />
           <YAxis
             tick={{ fontSize: 9, fill: 'rgba(99,102,241,0.5)' }}

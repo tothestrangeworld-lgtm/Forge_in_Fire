@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { RotateCcw, Loader2, TrendingDown } from 'lucide-react';
-import Link from 'next/link'; // ★復元：Linkコンポーネント
+import { RotateCcw, Loader2, TrendingDown, Settings } from 'lucide-react';
+import Link from 'next/link';
 import type { EpithetMasterEntry, UserTask, Achievement } from '@/types';
 import {
   calcLevelFromXp, calcNextLevel, levelColor, resolveTechniqueName,
@@ -16,7 +16,7 @@ import { UserStatusCard } from '@/components/UserStatusCard';
 import dynamic from 'next/dynamic';
 
 const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false });
-const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),       { ssr: false, loading: () => <ChartSkeleton h={500} /> });
+const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),       { ssr: false, loading: () => <ChartSkeleton h={380} /> });
 const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleCharts'), { ssr: false, loading: () => <ChartSkeleton h={180} /> });
 
 const SCORE_COLORS: Record<number, string> = {
@@ -87,7 +87,7 @@ export default function DashboardPage() {
     return { taskText: t.task_text, dist: selfDist, totalPts: selfTotalPts, totalCount: selfTotalCount,
              peerDist, peerTotalPts, peerTotalCount };
   });
-  
+
   const hasScoreData = scoreDistData.some(d => d.totalCount > 0 || d.peerTotalCount > 0);
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
 
@@ -105,7 +105,16 @@ export default function DashboardPage() {
           <span className="section-title">稽古記録アプリ</span>
           <h1 className="kanji-title" style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>百錬自得</h1>
         </div>
-        <button onClick={() => setShowReset(v => !v)} style={{ width: 32, height: 32, borderRadius: 8, border: '1.5px solid rgba(99,102,241,0.2)', background: 'rgba(15,14,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(99,102,241,0.5)' }}>
+        <button
+          onClick={() => setShowReset(v => !v)}
+          style={{
+            width: 32, height: 32, borderRadius: 8,
+            border: '1.5px solid rgba(99,102,241,0.2)',
+            background: 'rgba(15,14,42,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: 'rgba(99,102,241,0.5)',
+          }}
+        >
           <RotateCcw style={{ width: 14, height: 14 }} />
         </button>
       </header>
@@ -114,13 +123,24 @@ export default function DashboardPage() {
         <div className="hud-card animate-fade-up" style={{ marginBottom: '0.75rem', border: '1px solid rgba(239,68,68,0.3)' }}>
           <p style={{ fontWeight: 700, color: '#f87171', fontSize: '0.85rem', margin: '0 0 6px' }}>⚠️ レベルリセット</p>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setShowReset(false)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)', background: 'rgba(15,14,42,0.6)', cursor: 'pointer', fontSize: '0.8rem', color: 'rgba(129,140,248,0.6)' }}>キャンセル</button>
-            <button onClick={handleReset} disabled={resetting} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.15)', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>リセットする</button>
+            <button
+              onClick={() => setShowReset(false)}
+              style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)', background: 'rgba(15,14,42,0.6)', cursor: 'pointer', fontSize: '0.8rem', color: 'rgba(129,140,248,0.6)' }}
+            >
+              キャンセル
+            </button>
+            <button
+              onClick={handleReset}
+              disabled={resetting}
+              style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.15)', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}
+            >
+              リセットする
+            </button>
           </div>
         </div>
       )}
 
-      {/* ★復元：減衰警告 */}
+      {/* 減衰警告 */}
       {isDecaying && (
         <div className="hud-card animate-fade-up" style={{ marginBottom: '0.75rem', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <TrendingDown color="#f87171" size={20} />
@@ -130,37 +150,64 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ★復元：設定画面へのリンクボタン群 */}
-      <div className="animate-fade-up delay-100" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
-        <Link href="/settings/profile" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', color: '#c7d2fe', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none' }}>
-          Profile
-        </Link>
-        <Link href="/settings/tasks" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', color: '#c7d2fe', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none' }}>
-          課題登録
-        </Link>
-      </div>
+      {/*
+        ★ Phase11.1: 「Profile」「課題登録」ボタン群を削除。
+        Profile → UserStatusCard 右上の歯車アイコンへ移動（showSettingsLink prop）。
+        課題登録 → 「課題別 評価スコア分布」カードのヘッダー右上の歯車アイコンへ移動。
+      */}
 
+      {/* UserStatusCard（showSettingsLink=true で歯車アイコンを表示） */}
       <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-        <UserStatusCard userName={user?.name ?? '剣士'} epithet={epithet} totalXp={status.total_xp} level={level} realRank={status.real_rank} motto={status.motto} achiev={achiev} />
+        <UserStatusCard
+          userName={user?.name ?? '剣士'}
+          epithet={epithet}
+          totalXp={status.total_xp}
+          level={level}
+          realRank={status.real_rank}
+          motto={status.motto}
+          achiev={achiev}
+          showSettingsLink={true}
+        />
       </div>
 
-      {/* ★完全版：課題別評価スコア分布（ダブルバー＋インサイト） */}
+      {/* ★ Phase11.1: 課題別評価スコア分布 — ヘッダー右上に課題登録歯車アイコンを追加 */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
-        <span className="section-title">課題別 評価スコア分布（直近50回）</span>
+        {/* カードヘッダー */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hasScoreData ? 0 : 0 }}>
+          <span className="section-title">課題別 評価スコア分布（直近50回）</span>
+          <Link
+            href="/settings/tasks"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 26, height: 26,
+              borderRadius: 7,
+              border: '1px solid rgba(99,102,241,0.25)',
+              background: 'rgba(15,14,42,0.6)',
+              color: 'rgba(99,102,241,0.55)',
+              textDecoration: 'none',
+              flexShrink: 0,
+            }}
+            title="課題登録設定へ"
+            aria-label="課題登録設定へ"
+          >
+            <Settings style={{ width: 13, height: 13 }} />
+          </Link>
+        </div>
+
         {hasScoreData ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
             {scoreDistData.map(({ taskText, dist, totalCount, peerDist, peerTotalCount, totalPts, peerTotalPts }) => {
               const selfAvg = totalCount > 0 ? (totalPts / totalCount).toFixed(1) : '—';
               const peerAvg = peerTotalCount > 0 ? (peerTotalPts / peerTotalCount).toFixed(1) : '—';
               let insight = '';
-              if (peerTotalCount > 0) {
+              if (peerTotalCount > 0 && totalCount > 0) {
                 const s = totalPts / totalCount;
                 const p = peerTotalPts / peerTotalCount;
                 if (p - s >= 1.0) insight = '【過小評価】剣友評価 >> 自己評価';
                 else if (s - p >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
                 else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
               }
-              
+
               return (
                 <div key={taskText} style={{ width: '100%' }}>
                   {/* タイトルと平均点 */}
@@ -168,7 +215,7 @@ export default function DashboardPage() {
                     <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#e0e7ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{taskText}</span>
                     <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#818cf8', flexShrink: 0 }}>自己:{selfAvg} {peerTotalCount > 0 ? `/ 剣友:${peerAvg}` : ''}</span>
                   </div>
-                  
+
                   {/* 1段目：自己評価バー（太め・メイン） */}
                   <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', marginBottom: peerTotalCount > 0 ? 3 : 0 }}>
                     {totalCount > 0 && ([5,4,3,2,1] as const).map(score => {
@@ -204,21 +251,29 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ★復元：XP推移グラフ */}
+      {/* XP推移グラフ */}
       {xpHistory && xpHistory.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">XP獲得推移</span>
-          <div style={{ height: 220, marginTop: 12 }}>
+          {/*
+            ★ Phase11.1: height を 220 → 160 に縮小。
+            XPTimelineChart 側の margin.bottom 調整と合わせてラベル見切れを解消。
+          */}
+          <div style={{ height: 160, marginTop: 12 }}>
             <XPTimelineChart xpHistory={xpHistory} />
           </div>
         </div>
       )}
 
-      {/* ★復元：SkillGrid（技の修練度） */}
+      {/* SkillGrid（技の修練度） */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">Skill Grid</span>
-          <div style={{ height: 500, marginTop: 12 }}>
+          {/*
+            ★ Phase11.1: height を 500 → 380 に縮小。
+            上下の余白を詰めてHUD密度を向上。
+          */}
+          <div style={{ height: 380, marginTop: 12 }}>
             <SkillGrid techniques={techniques} />
           </div>
         </div>

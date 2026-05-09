@@ -53,7 +53,7 @@ Forge_in_Fire/
 │   │   ├── layout.tsx                  # ルートレイアウト（AuthGuard・ナビゲーション・PWAメタデータ）
 │   │   ├── manifest.ts                 # PWAマニフェスト（アプリ名・アイコン・テーマカラー等）
 │   │   ├── globals.css                 # デザイントークン・共通CSS（サイバー和風テーマ）
-│   │   ├── page.tsx                    # ホーム画面。HUD KPI・SkillGrid・分析・UserStatusCard・鏡映分析インサイト表示。
+│   │   ├── page.tsx                    # ホーム画面。HUD KPI・SkillGrid・分析・UserStatusCard・鏡映分析インサイト表示。★ Phase11.1更新
 │   │   ├── record/
 │   │   │   └── page.tsx                # 記録画面（稽古記録・技の評価・★Phase11 皆伝判定/トースト）
 │   │   ├── login/
@@ -72,13 +72,13 @@ Forge_in_Fire/
 │   ├── components/
 │   │   ├── Navigation.tsx              # ボトムナビ（4ボタン: ホーム・稽古記録・門下生・ログアウト）
 │   │   ├── AuthGuard.tsx               # 未ログイン時リダイレクト
-│   │   ├── UserStatusCard.tsx          # ユーザーステータス共通コンポーネント（7行レイアウト）
+│   │   ├── UserStatusCard.tsx          # ユーザーステータス共通コンポーネント（7行レイアウト）★ Phase11.1更新
 │   │   ├── TaskEvalCard.tsx            # 課題評価カード共通コンポーネント ★ Phase11 mastery prop追加
 │   │   ├── MasteryToast.tsx            # 免許皆伝トースト（黒×金×朱印） ★ Phase11新規
 │   │   └── charts/
 │   │       ├── RadarChart.tsx          # 稽古スコアバランス（横型プログレスバー）
 │   │       ├── TechniqueRadarChart.tsx # 技の傾向・習熟度バランスを表示するレーダーチャート
-│   │       ├── XPTimelineChart.tsx     # XP累積推移（ステップライン・ネオングラデーション）
+│   │       ├── XPTimelineChart.tsx     # XP累積推移（ステップライン・ネオングラデーション）★ Phase11.1更新
 │   │       ├── ActivityHeatmap.tsx     # 稽古カレンダー
 │   │       ├── SkillGrid.tsx           # スキルグリッド（六角形ノード・アニメーションエッジ）
 │   │       ├── PlaystyleCharts.tsx     # プレイスタイル分析
