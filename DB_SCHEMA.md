@@ -29,7 +29,7 @@
 
 ---
 
-### `logs`（稽古評価ログ）★ Phase4 完全正規化
+### `logs`（稽古評価ログ）★ Phase11
 
 | 列 | カラム名 | 型 | 内容 |
 |---|---|---|---|
@@ -41,6 +41,11 @@
 
 > **設計原則（Phase4）:** C列は item_name（文字列）から task_id（UUID）に変更済み。
 > 読み取り時は GAS が user_tasks と JOIN して item_name に変換し、フロントに返す。
+## 鏡映分析（Insight）の実装方針
+`logs`（自己評価）と `peer_evaluations`（他者評価）の各課題IDごとのスコアを突合し、フロントエンドで平均値を計算・比較する。
+- 自己評価: `logs` (task_idでフィルタ)
+- 他者評価: `peer_evaluations` (target_id=自分のuser_id かつ task_idでフィルタ)
+両者の平均スコアの差分に基づき、過小/過大評価、または明鏡止水の判定を行い、ダッシュボードの分布UI下部に表示する。
 
 ---
 
@@ -100,7 +105,7 @@
 
 ---
 
-### `peer_evaluations`（他者評価ログ）★ Phase7 更新
+### `peer_evaluations`（他者評価ログ）★ Phase11 更新
 
 | 列 | カラム名 | 型 | 内容 |
 |---|---|---|---|
@@ -111,6 +116,12 @@
 | E | score | number | 評価スコア（1〜5） |
 | F | xp_granted | number | 付与XP |
 
+
+## 鏡映分析（Insight）の実装方針
+`logs`（自己評価）と `peer_evaluations`（他者評価）の各課題IDごとのスコアを突合し、フロントエンドで平均値を計算・比較する。
+- 自己評価: `logs` (task_idでフィルタ)
+- 他者評価: `peer_evaluations` (target_id=自分のuser_id かつ task_idでフィルタ)
+両者の平均スコアの差分に基づき、過小/過大評価、または明鏡止水の判定を行い、ダッシュボードの分布UI下部に表示する。
 ---
 
 ### `user_achievements`（ユーザー取得実績）★ Phase6 追加

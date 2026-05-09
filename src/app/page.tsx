@@ -55,15 +55,11 @@ export default function DashboardPage() {
   const techMaster = data.techniqueMaster ?? [];
   const level      = calcLevelFromXp(status.total_xp);
 
-  // ★ Phase10: 剣風相性 / 剣友スタイル
   const matchupMaster = data.matchupMaster ?? [];
   const peersStyle    = data.peersStyle    ?? [];
 
   const epithet: EpithetResult = calcEpithet(techniques, em, level, tm);
 
-  const favTechName = resolveTechniqueName(status.favorite_technique, techMaster);
-
-  // 統計
   const today  = new Date(); today.setHours(0,0,0,0);
   const dow    = today.getDay();
   const monday = new Date(today); monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
@@ -119,8 +115,6 @@ export default function DashboardPage() {
 
   return (
     <div className="animate-fade-up" style={{ padding: '1.5rem 1rem 0' }}>
-
-      {/* ── ヘッダー ──────────────────────────────────────────────── */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
         <div>
           <span className="section-title">稽古記録アプリ</span>
@@ -143,39 +137,26 @@ export default function DashboardPage() {
         </button>
       </header>
 
-      {/* リセットパネル */}
       {showReset && (
         <div className="hud-card animate-fade-up" style={{ marginBottom: '0.75rem', border: '1px solid rgba(239,68,68,0.3)' }}>
           <p style={{ fontWeight: 700, color: '#f87171', fontSize: '0.85rem', margin: '0 0 6px' }}>⚠️ レベルリセット</p>
-          <p style={{ fontSize: '0.75rem', color: 'rgba(129,140,248,0.5)', margin: '0 0 12px' }}>
-            XP・レベル・称号を初期値に戻します。稽古ログは削除されません。
-          </p>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setShowReset(false)} style={{
               flex: 1, padding: '8px', borderRadius: 8,
               border: '1px solid rgba(99,102,241,0.2)',
               background: 'rgba(15,14,42,0.6)', cursor: 'pointer',
-              fontSize: '0.8rem', fontFamily: 'inherit', fontWeight: 600,
-              color: 'rgba(129,140,248,0.6)',
+              fontSize: '0.8rem', color: 'rgba(129,140,248,0.6)',
             }}>キャンセル</button>
             <button onClick={handleReset} disabled={resetting} style={{
               flex: 1, padding: '8px', borderRadius: 8,
               border: '1px solid rgba(239,68,68,0.4)',
               background: 'rgba(239,68,68,0.15)', color: '#f87171',
-              cursor: 'pointer', fontSize: '0.8rem',
-              fontFamily: 'inherit', fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}>
-              {resetting
-                ? <Loader2 style={{ width: 14, height: 14, animation: 'spin .8s linear infinite' }} />
-                : 'リセットする'}
-              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-            </button>
+              cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700,
+            }}>リセットする</button>
           </div>
         </div>
       )}
 
-      {/* 減衰警告 */}
       {isDecaying && (
         <div className="animate-fade-up" style={{
           marginBottom: '0.75rem', borderRadius: 14,
@@ -183,41 +164,16 @@ export default function DashboardPage() {
           border: `1.5px solid ${decayPerDay >= 100 ? 'rgba(239,68,68,0.3)' : 'rgba(251,191,36,0.25)'}`,
           padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: 10,
         }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: decayPerDay >= 100 ? 'rgba(239,68,68,0.12)' : 'rgba(251,191,36,0.1)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: decayPerDay >= 100 ? 'rgba(239,68,68,0.12)' : 'rgba(251,191,36,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <TrendingDown style={{ width: 18, height: 18, color: decayPerDay >= 100 ? '#f87171' : '#fbbf24' }} />
           </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: '0.8rem', fontWeight: 700, color: decayPerDay >= 100 ? '#f87171' : '#fbbf24', margin: '0 0 2px' }}>
-              {decay?.days_absent}日間稽古していません
-            </p>
-            <p style={{ fontSize: '0.68rem', color: decayPerDay >= 100 ? 'rgba(248,113,113,0.7)' : 'rgba(251,191,36,0.6)', margin: 0 }}>
-              現在 <span style={{ fontWeight: 700 }}>-{decayPerDay} XP/日</span> ペースで減少中
-              {appliedToday > 0 && ` （本日 -${appliedToday} XP 適用済み）`}
-            </p>
+          <div>
+            <p style={{ fontSize: '0.8rem', fontWeight: 700, color: decayPerDay >= 100 ? '#f87171' : '#fbbf24', margin: 0 }}>{decay?.days_absent}日間稽古していません</p>
           </div>
         </div>
       )}
 
-      {/* ── ★ 共通ステータスカード ────────────────────────────────── */}
       <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-        {/* プロフィール編集ボタン（カード右上に配置） */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-          <a href="/settings/profile" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '4px 10px', borderRadius: 8,
-            background: 'rgba(99,102,241,0.08)',
-            border: '1px solid rgba(129,140,248,0.2)',
-            color: 'rgba(167,139,250,0.7)',
-            textDecoration: 'none', fontSize: '0.62rem', fontWeight: 700,
-            letterSpacing: '0.04em',
-          }}>
-            ✏️ プロフィール編集
-          </a>
-        </div>
         <UserStatusCard
           userName={user?.name ?? '剣士'}
           epithet={epithet}
@@ -229,179 +185,33 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* ── 得意技バッジ ──────────────────────────────────────────── */}
-{/*       {favTechName && (
-        <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '5px 14px', borderRadius: 999,
-            background: 'rgba(120,53,15,0.2)',
-            border: '1px solid rgba(251,191,36,0.3)',
-            boxShadow: '0 0 8px rgba(251,191,36,0.1)',
-          }}>
-            <span style={{ fontSize: 13, filter: 'drop-shadow(0 0 4px rgba(251,191,36,0.8))' }}>★</span>
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'rgba(251,191,36,0.7)', letterSpacing: '0.06em' }}>得意技</span>
-            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#fde68a' }}>{favTechName}</span>
-          </div>
-        </div>
-      )}
- */}
-      {/* ── HUDカウンター群 ───────────────────────────────────────── */}
-      <div className="hud-card hud-scanline animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-        <span className="section-title">STATS</span>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
-          {[
-            { value: String(streak),        unit: '日', label: 'STREAK',    variant: streak >= 7 ? 'gold' : '' },
-            { value: String(thisWeek),      unit: '回', label: 'THIS WEEK', variant: 'cyan' },
-            { value: String(totalSessions), unit: '回', label: 'TOTAL',     variant: '' },
-            { value: String(avgScore),      unit: '',   label: 'AVG SCORE', variant: '' },
-          ].map(({ value, unit, label, variant }) => (
-            <div key={label} style={{ padding: '10px 4px', textAlign: 'center', borderRight: '1px solid rgba(99,102,241,0.1)' }}>
-              <div className={`hud-counter-value ${variant}`} style={{ fontSize: '1.4rem' }}>
-                {value}
-                {unit && <span style={{ fontSize: '0.65rem', marginLeft: 1, opacity: 0.7 }}>{unit}</span>}
-              </div>
-              <div className="hud-counter-label">{label}</div>
-            </div>
-          ))}
-        </div>
-        {isDecaying && (
-          <div style={{
-            marginTop: 10, padding: '6px 10px', borderRadius: 8,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-            display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-            <TrendingDown style={{ width: 12, height: 12, color: '#f87171', flexShrink: 0 }} />
-            <span style={{ fontSize: '0.68rem', color: 'rgba(248,113,113,0.7)', fontWeight: 700 }}>
-              現在 -{decayPerDay} XP/日 ペナルティ中
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* ── 現在の評価項目 ───────────────────────────────────────── */}
-      <div className="hud-card animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
-          <div>
-            <span className="section-title">現在の評価項目</span>
-            <p style={{ margin: 0, fontSize: '0.7rem', color: 'rgba(99,102,241,0.35)' }}>稽古記録で毎日1〜5評価する課題。</p>
-          </div>
-          <a href="/settings/tasks" style={{
-            padding: '0.45rem 0.7rem', fontSize: '0.72rem', borderRadius: 10,
-            border: '1px solid rgba(129,140,248,0.3)', color: 'rgba(167,139,250,0.7)',
-            background: 'rgba(99,102,241,0.08)', textDecoration: 'none', flexShrink: 0,
-            fontWeight: 700, fontFamily: 'inherit',
-          }}>課題を編集する</a>
-        </div>
-        {activeTasks.length > 0 ? (
-          <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {activeTasks.map(t => (
-              <li key={t.id} style={{ color: 'rgba(199,210,254,0.85)', fontWeight: 700, lineHeight: 1.35, fontSize: '0.9rem' }}>
-                {t.task_text}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(99,102,241,0.4)', fontWeight: 700 }}>
-            有効な評価項目がありません
-          </p>
-        )}
-      </div>
-
-      {/* ── スキルグリッド ──────────────────────────────────────── */}
-      <div className="animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
-        <span className="section-title">スキルグリッド</span>
-        {techniques.length > 0 ? (
-          <SkillGrid techniques={techniques} signatureTechId={status.favorite_technique ?? undefined} />
-        ) : (
-          <div style={{
-            padding: '2rem 1rem', textAlign: 'center',
-            border: '1px solid rgba(99,102,241,0.1)', borderRadius: 16,
-            background: 'rgba(99,102,241,0.03)',
-          }}>
-            <p style={{ fontSize: '0.85rem', color: 'rgba(99,102,241,0.4)', margin: 0 }}>
-              技データがありません。technique_master シートにデータを追加してください。
-            </p>
-          </div>
-        )}
-        <p style={{ fontSize: '0.62rem', color: 'rgba(99,102,241,0.35)', marginTop: 5, textAlign: 'right' }}>
-          ピンチ/スクロールで拡大・縮小
-        </p>
-      </div>
-
-      {/* ── XP推移 ─────────────────────────────────────────────── */}
-      {/*
-       * ★ Phase9.5: XpHistoryEntry から title が削除されたため、
-       * XPTimelineChart に titleMaster を渡して Tooltip 内で動的に称号を導出する。
-       */}
-      <div className="hud-card animate-fade-up delay-200" style={{ marginBottom: '0.75rem' }}>
-        <span className="section-title">XP推移</span>
-        <XPTimelineChart xpHistory={xpHistory} compact={true} titleMaster={tm} />
-      </div>
-
-      {/* ── 課題別 評価スコア分布 ─────────────────────────────── */}
-      <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '0.75rem' }}>
+      <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
         <span className="section-title">課題別 評価スコア分布（直近50回）</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {([5,4,3,2,1] as const).map(n => (
-              <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: SCORE_COLORS[n], flexShrink: 0 }} />
-                <span style={{ fontSize: '0.6rem', color: 'rgba(199,210,254,0.5)', fontWeight: 600 }}>{n}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 18, height: 10, borderRadius: 3, background: 'rgba(129,140,248,0.5)' }} />
-              <span style={{ fontSize: '0.58rem', color: 'rgba(199,210,254,0.45)', fontWeight: 600 }}>自己評価</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 18, height: 6, borderRadius: 2, background: 'rgba(129,140,248,0.35)' }} />
-              <span style={{ fontSize: '0.58rem', color: 'rgba(199,210,254,0.45)', fontWeight: 600 }}>剣友評価</span>
-            </div>
-          </div>
-        </div>
         {hasScoreData ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {scoreDistData.map(({ taskText, dist, totalPts, totalCount, peerDist, peerTotalPts, peerTotalCount }) => (
-              <div key={taskText} style={{ width: '100%' }}>
-                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6, width: '100%', marginBottom: peerTotalCount > 0 ? 3 : 0 }}>
-                  <div style={{ flex: '0 0 30%', minWidth: 0, fontSize: '0.72rem', fontWeight: 700, color: 'rgba(199,210,254,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {taskText}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {scoreDistData.map(({ taskText, totalPts, totalCount, peerTotalPts, peerTotalCount }) => {
+              const selfAvg = totalCount > 0 ? totalPts / totalCount : 0;
+              const peerAvg = peerTotalCount > 0 ? peerTotalPts / peerTotalCount : 0;
+              let insight = '';
+              if (peerTotalCount > 0) {
+                if (peerAvg - selfAvg >= 1.0) insight = '【過小評価】剣友評価 >> 自己評価';
+                else if (selfAvg - peerAvg >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
+                else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
+              }
+              return (
+                <div key={taskText}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ flex: 1, fontSize: '0.72rem', fontWeight: 700, color: '#c7d2fe' }}>{taskText}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#818cf8' }}>S:{selfAvg.toFixed(1)} / P:{peerAvg > 0 ? peerAvg.toFixed(1) : '—'}</div>
                   </div>
-                  <div style={{ flex: '0 0 55%', minWidth: 0, height: 10, borderRadius: 5, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', display: 'flex' }}>
-                    {totalCount > 0
-                      ? ([5,4,3,2,1] as const).map(score => {
-                          const pct = (dist[score] / totalCount) * 100;
-                          if (pct <= 0) return null;
-                          return <div key={score} title={`自己評価${score}: ${dist[score]}回`} style={{ width: `${pct}%`, background: SCORE_COLORS[score], flexShrink: 0 }} />;
-                        })
-                      : <div style={{ width: '100%', background: 'rgba(99,102,241,0.08)', borderRadius: 5 }} />}
-                  </div>
-                  <div style={{ flex: '0 0 15%', textAlign: 'right', fontSize: '0.7rem', fontWeight: 700, color: totalCount > 0 ? '#a5b4fc' : 'rgba(99,102,241,0.25)', whiteSpace: 'nowrap' }}>
-                    {totalCount > 0 ? `${totalPts} pt` : '—'}
-                  </div>
+                  {insight && (
+                    <div style={{ fontSize: '10px', color: '#6366f1', marginTop: 2, fontWeight: 600, letterSpacing: '0.02em' }}>
+                      {insight}
+                    </div>
+                  )}
                 </div>
-                {peerTotalCount > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6, width: '100%' }}>
-                    <div style={{ flex: '0 0 30%', minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4 }}>
-                      <span style={{ fontSize: '0.58rem', fontWeight: 800, color: 'rgba(167,139,250,0.5)', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 4, padding: '1px 5px' }}>剣友評価</span>
-                    </div>
-                    <div style={{ flex: '0 0 55%', minWidth: 0, height: 6, borderRadius: 3, overflow: 'hidden', background: 'rgba(99,102,241,0.08)', display: 'flex' }}>
-                      {([5,4,3,2,1] as const).map(score => {
-                        const pct = (peerDist[score] / peerTotalCount) * 100;
-                        if (pct <= 0) return null;
-                        return <div key={score} title={`他者評価${score}: ${peerDist[score]}回`} style={{ width: `${pct}%`, background: SCORE_COLORS[score], opacity: 0.75, flexShrink: 0 }} />;
-                      })}
-                    </div>
-                    <div style={{ flex: '0 0 15%', textAlign: 'right', fontSize: '0.65rem', fontWeight: 700, color: 'rgba(167,139,250,0.5)', whiteSpace: 'nowrap' }}>
-                      {peerTotalPts} pt
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'rgba(99,102,241,0.4)', padding: '1.5rem 0', margin: 0 }}>
@@ -410,72 +220,37 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── プレイスタイル分析 ────────────────────────────────── */}
-      {/*
-       * ★ Phase10: matchupMaster / peersStyle / techniqueMaster を渡して
-       * 剣風相性タグ＋剣風書ポップアップを内部で描画する。
-       */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">プレイスタイル分析</span>
-          <PlaystyleCharts
-            techniques={techniques}
-            matchupMaster={matchupMaster}
-            peersStyle={peersStyle}
-            techniqueMaster={techMaster}
-          />
+          <PlaystyleCharts techniques={techniques} matchupMaster={matchupMaster} peersStyle={peersStyle} techniqueMaster={techMaster} />
         </div>
       )}
-
     </div>
   );
 }
 
-// =====================================================================
-// ユーティリティ
-// =====================================================================
 function calcStreak(dates: string[]): number {
   const unique = [...new Set(dates)].sort().reverse();
   if (!unique.length) return 0;
   const today = new Date(); today.setHours(0,0,0,0);
   let streak = 0;
   for (let i = 0; i < unique.length; i++) {
-    const d        = new Date(unique[i]); d.setHours(0,0,0,0);
-    const expected = new Date(today);     expected.setDate(today.getDate() - i);
-    if (d.getTime() === expected.getTime()) streak++;
-    else break;
+    const d = new Date(unique[i]); d.setHours(0,0,0,0);
+    const expected = new Date(today); expected.setDate(today.getDate() - i);
+    if (d.getTime() === expected.getTime()) streak++; else break;
   }
   return streak;
 }
 
 function ChartSkeleton({ h }: { h: number }) {
-  return <div style={{ height: h, borderRadius: 16, background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.08)' }} />;
+  return <div style={{ height: h, borderRadius: 16, background: 'rgba(99,102,241,0.06)' }} />;
 }
 
 function DashboardSkeleton() {
-  return (
-    <div style={{ padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      {[28, 220, 80, 540, 200, 300].map((h, i) => (
-        <div key={i} style={{
-          height: h, borderRadius: 16,
-          background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.08)',
-          animation: `pulse 1.8s ${i * 0.1}s ease-in-out infinite`,
-        }} />
-      ))}
-      <style>{`@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}`}</style>
-    </div>
-  );
+  return <div style={{ padding: '1.5rem 1rem' }}><div style={{ height: 200, borderRadius: 16, background: 'rgba(99,102,241,0.06)' }} /></div>;
 }
 
 function ErrorState({ message }: { message: string }) {
-  return (
-    <div style={{ padding: '5rem 2rem', textAlign: 'center' }}>
-      <p style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>⚠️</p>
-      <p style={{ fontWeight: 700, color: '#c7d2fe', marginBottom: 8 }}>データ取得に失敗しました</p>
-      <p style={{ fontSize: '0.75rem', color: 'rgba(99,102,241,0.4)' }}>{message}</p>
-      <a href="/debug" style={{ display: 'inline-block', marginTop: 16, fontSize: '0.75rem', color: '#818cf8', fontWeight: 700 }}>
-        🔍 ログを確認する
-      </a>
-    </div>
-  );
+  return <div style={{ padding: '5rem 2rem', textAlign: 'center' }}>{message}</div>;
 }
