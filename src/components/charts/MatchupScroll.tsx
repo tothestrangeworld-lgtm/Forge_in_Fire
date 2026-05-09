@@ -17,8 +17,8 @@ import { getDegreeTheme } from '@/lib/matchupTheme';
 // - マッチングされた剣友リスト
 //
 // ★ Phase10.4 修正:
-//   - 「優位 / 不利」ラベル右側に Degree 3段階の ☆ 評価を追加
-//     Degree 1: ☆・・  Degree 2: ☆☆・  Degree 3: ☆☆☆
+//   - 「優位 / 不利」ラベル右側に Degree 3段階の ★ 評価を追加
+//     Degree 1: ★・・  Degree 2: ★★・  Degree 3: ★★★
 //   - 「この対策を今日の課題にする」ボタンと handleAddTask を削除
 //
 // ★ Phase10.3 継承:
@@ -41,14 +41,14 @@ interface Props {
 }
 
 /**
- * Degree から ☆ 評価文字列を生成する。
- * - Degree 1: ☆・・
- * - Degree 2: ☆☆・
- * - Degree 3: ☆☆☆
+ * Degree から ★ 評価文字列を生成する。
+ * - Degree 1: ★・・
+ * - Degree 2: ★★・
+ * - Degree 3: ★★★
  */
 function buildDegreeStars(degree: number): string {
   const d = Math.max(1, Math.min(3, degree || 1));
-  const filled = '☆'.repeat(d);
+  const filled = '★'.repeat(d);
   const empty  = '・'.repeat(3 - d);
   return filled + empty;
 }
@@ -233,7 +233,7 @@ export default function MatchupScroll({
               />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              {/* ★ Phase10.4: 優位/不利 + ☆評価 */}
+              {/* ★ Phase10.4: 優位/不利 + ★評価 */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2,
               }}>

@@ -9,6 +9,10 @@
 // ★ Phase9.5: SaveLogResponse から title が削除されたため、
 //   titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster) で動的導出
 // ★ リファクタリング: PracticeTab の課題評価UIを TaskEvalCard 共通コンポーネントに置き換え
+// ★ Phase11: 免許皆伝（Mastery）システム
+//   - 各 TaskEvalCard に mastery prop を渡す（dashboard.logs から動的計算）
+//   - 保存前後でログを比較し、新規皆伝到達タスクを MasteryToast で通知
+//   - saveLog 成功後、SWRの mutate でログを即時更新してから差分判定
 // =====================================================================
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
@@ -33,7 +37,7 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import type { Achievement, Technique, UserTask } from '@/types';
+import type { Achievement, Technique, UserTask, LogEntry } from '@/types';
 import { titleForLevel, calcLevelFromXp } from '@/types';
 import {
   saveLog,
@@ -42,6 +46,8 @@ import {
   useTechniquesSWR,
 } from '@/lib/api';
 import { TaskEvalCard } from '@/components/TaskEvalCard';
+import { MasteryToast } from '@/components/MasteryToast';
+import { calcMasteryStatus, detectNewlyMastered } from '@/lib/mastery';
 
 // =====================================================================
 // 共通型・定数
@@ -510,11 +516,13 @@ export default function RecordPage() {
 // =====================================================================
 // タブ①：稽古を記録（XP獲得フォーム）
 // ★ リファクタリング: TaskEvalCard 共通コンポーネントを使用
+// ★ Phase11: TaskEvalCard に mastery prop を渡し、保存後に皆伝判定 → トースト表示
 // =====================================================================
 function PracticeTab() {
   const router = useRouter();
+  const { mutate: globalMutate } = useSWRConfig();
 
-  const { data: swrData, isLoading, error: fetchError } = useDashboardSWR();
+  const { data: swrData, isLoading, error: fetchError, mutate: mutateDashboard } = useDashboardSWR();
   const dashboard = swrData?.dashboard ?? null;
 
   const [scores, setScores]                = useState<ScoreMap>({});
@@ -523,6 +531,8 @@ function PracticeTab() {
   const [result, setResult]                = useState<{xp:number; title:string}|null>(null);
   const [submitError, setSubmitError]      = useState<string|null>(null);
   const [toastAchievements, setToastAchievements] = useState<Achievement[]>([]);
+  // ★ Phase11: 皆伝トースト用のタスクテキスト配列
+  const [masteryToastTexts, setMasteryToastTexts] = useState<string[]>([]);
 
   const error = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
 
@@ -530,9 +540,26 @@ function PracticeTab() {
   const allScored   = activeTasks.length > 0 && activeTasks.every(t => scores[t.id]);
   const canSubmit   = activeTasks.length > 0 && allScored && !submitting;
 
+  // ★ Phase11: 各タスクのMasteryStatusを事前計算（再レンダ最適化のためuseMemo）
+  const masteryMap = useMemo(() => {
+    const map: Record<string, ReturnType<typeof calcMasteryStatus>> = {};
+    if (!dashboard?.logs) return map;
+    activeTasks.forEach(t => {
+      map[t.id] = calcMasteryStatus(dashboard.logs, t.task_text);
+    });
+    return map;
+  }, [dashboard?.logs, activeTasks]);
+
   async function handleSubmit() {
     if (!canSubmit) return;
     setSubmitting(true); setSubmitError(null);
+
+    // ★ Phase11: 保存前のログをスナップショット
+    const prevLogs: LogEntry[] = dashboard?.logs ? [...dashboard.logs] : [];
+
+    // 保存対象タスク（テキスト一覧を保持）
+    const submittedTaskTexts = activeTasks.map(t => t.task_text);
+
     try {
       const res = await saveLog({
         date,
@@ -546,6 +573,30 @@ function PracticeTab() {
       if (res.newAchievements && res.newAchievements.length > 0) {
         setToastAchievements(res.newAchievements);
       }
+
+      // ★ Phase11: ログを最新化してから新規皆伝判定
+      // saveLog レスポンスに logs は含まれないため、optimistic に prev に新規ログを追加
+      // 正確な judgement のため、サーバーから最新を取り直す
+      const refreshed = await mutateDashboard();
+      const nextLogs: LogEntry[] = refreshed?.dashboard?.logs ?? [
+        ...prevLogs,
+        // フォールバック: SWR再取得が失敗した場合は楽観的に追加
+        ...activeTasks.map(t => ({
+          date,
+          item_name: t.task_text,
+          score:     scores[t.id],
+          xp_earned: 0,
+        } as LogEntry)),
+      ];
+
+      const newlyMastered = detectNewlyMastered(prevLogs, nextLogs, submittedTaskTexts);
+      if (newlyMastered.length > 0) {
+        setMasteryToastTexts(newlyMastered);
+      }
+
+      // ホーム画面側のキャッシュも更新
+      void globalMutate(['dashboard']);
+
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
       setSubmitError(e instanceof Error ? e.message : '送信に失敗しました');
@@ -580,7 +631,7 @@ function PracticeTab() {
           <div style={{ display:'flex', gap:12, justifyContent:'center' }}>
             <button className="btn-outline" style={{ width:'auto' }} onClick={() => router.push('/')}>ダッシュボード</button>
             <button className="btn-ai" style={{ width:'auto', padding:'0.8rem 1.5rem' }}
-              onClick={() => { setResult(null); setScores({}); setToastAchievements([]); }}>
+              onClick={() => { setResult(null); setScores({}); setToastAchievements([]); setMasteryToastTexts([]); }}>
               続けて記録
             </button>
           </div>
@@ -590,6 +641,13 @@ function PracticeTab() {
           <AchievementToast
             achievements={toastAchievements}
             onAllDone={() => setToastAchievements([])}
+          />
+        )}
+
+        {masteryToastTexts.length > 0 && (
+          <MasteryToast
+            taskTexts={masteryToastTexts}
+            onAllDone={() => setMasteryToastTexts([])}
           />
         )}
       </>
@@ -646,6 +704,7 @@ function PracticeTab() {
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {activeTasks.map((task, idx) => {
               const current = scores[task.id] ?? null;
+              const mastery = masteryMap[task.id] ?? null;
               return (
                 <div
                   key={task.id}
@@ -657,6 +716,7 @@ function PracticeTab() {
                     score={current}
                     onChange={(s) => setScores(prev => ({ ...prev, [task.id]: s }))}
                     disabled={submitting}
+                    mastery={mastery}
                   />
                 </div>
               );
@@ -701,6 +761,13 @@ function PracticeTab() {
         <AchievementToast
           achievements={toastAchievements}
           onAllDone={() => setToastAchievements([])}
+        />
+      )}
+
+      {masteryToastTexts.length > 0 && (
+        <MasteryToast
+          taskTexts={masteryToastTexts}
+          onAllDone={() => setMasteryToastTexts([])}
         />
       )}
     </>

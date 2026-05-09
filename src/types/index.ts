@@ -29,9 +29,12 @@
 //   - 称号は level + titleMaster から動的に calcTitleFromMaster() で導出する
 // ★ Phase10: 剣風相性＆マッチングシステム
 //   - MatchupMasterEntry 型を追加（MatchupMaster シート A〜F列）
-//   - PeerStyleEntry 型を追加（他の剣友のスタイル把握用）
+//   - PeerStyleEntry 型を追加(他の剣友のスタイル把握用)
 //   - DashboardData に matchupMaster?: MatchupMasterEntry[] を追加
 //   - DashboardData に peersStyle?: PeerStyleEntry[] を追加
+// ★ Phase11: 免許皆伝（Mastery）システム
+//   - MasteryPhase 型を追加（'training' | 'discerning' | 'mastered'）
+//   - MasteryStatus 型を追加（フロントエンド計算結果）
 // =====================================================================
 
 export interface LogEntry {
@@ -259,6 +262,43 @@ export interface Achievement {
   iconType:    string;
   isUnlocked:  boolean;
   unlockedAt:  string | null;
+}
+
+// =====================================================================
+// 免許皆伝（Mastery）システム ★ Phase11
+// =====================================================================
+
+/**
+ * 課題の習熟ステータスフェーズ。
+ *
+ *  - training:    通常訓練中（安定率 < 80% など）
+ *  - discerning:  「見極め」状態（安定率80%以上 + 直近5回中4回以上が★4-5）
+ *  - mastered:    免許皆伝（見極め中に3連続★4-5を達成。永続）
+ */
+export type MasteryPhase = 'training' | 'discerning' | 'mastered';
+
+/**
+ * 課題の習熟ステータス。
+ * フロントエンドが logs から動的計算する（DB保存なし）。
+ */
+export interface MasteryStatus {
+  /** 直近10件の安定率（0〜100） */
+  stability:         number;
+  /** 直近10件のスコア配列（古→新） */
+  recentScores:      number[];
+  /** 現在のフェーズ */
+  phase:             MasteryPhase;
+  /** 「見極め」中の連続★4-5カウント（0〜MASTERY_REQUIRED_COUNT） */
+  breakthroughCount: number;
+  /** phase === 'mastered' の真偽値（便宜的なエイリアス） */
+  isMastered:        boolean;
+  /** 直近10件として参照できた評価数（10未満時の表示用） */
+  evalCount:         number;
+  /**
+   * 最新側から遡って★4-5が連続している回数。
+   * training 状態の COMBO! 演出に使用。
+   */
+  currentStreak:     number;
 }
 
 // =====================================================================
