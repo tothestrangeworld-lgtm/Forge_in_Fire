@@ -133,10 +133,10 @@ export default function DashboardPage() {
       {/* ★復元：設定画面へのリンクボタン群 */}
       <div className="animate-fade-up delay-100" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
         <Link href="/settings/profile" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', color: '#c7d2fe', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none' }}>
-          👤 プロフィール・得意技
+          Profile
         </Link>
         <Link href="/settings/tasks" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', color: '#c7d2fe', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none' }}>
-          📝 課題登録・編集
+          課題登録
         </Link>
       </div>
 
@@ -217,7 +217,7 @@ export default function DashboardPage() {
       {/* ★復元：SkillGrid（技の修練度） */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
-          <span className="section-title">技の修練度（Skill Grid）</span>
+          <span className="section-title">Skill Grid</span>
           <div style={{ height: 500, marginTop: 12 }}>
             <SkillGrid techniques={techniques} />
           </div>
@@ -227,7 +227,7 @@ export default function DashboardPage() {
       {/* プレイスタイル分析 */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
-          <span className="section-title">プレイスタイル分析</span>
+          <span className="section-title">PLAY STYLE</span>
           <PlaystyleCharts techniques={techniques} matchupMaster={matchupMaster} peersStyle={peersStyle} techniqueMaster={techMaster} />
         </div>
       )}
