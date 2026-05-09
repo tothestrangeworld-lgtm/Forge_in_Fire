@@ -73,42 +73,42 @@ export type DegreeTheme = {
         innerGlow:  'inset 0 0 14px rgba(34,211,238,0.10)',
       };
     } else {
-      // ── 苦手（W）: 赤紫 → 警告アンバー → 真紅ネオン ──
+      // ── 苦手（W）: 赤紫 → 警告アンバー → 真紅ネオン　→ 黄色/アンバー（警戒・発光なし） ──
       if (d === 1) {
         return {
-          primary:    '#fda4af',
-          textBright: '#fecdd3',
-          bg:         'rgba(127,29,29,0.24)',
-          bgInner:    'rgba(225,29,72,0.10)',
-          border:     'rgba(225,29,72,0.40)',
-          borderW:    1,
-          glow:       'none',
-          innerGlow:  'inset 0 0 8px rgba(225,29,72,0.06)',
+            primary:    '#fbbf24',
+            textBright: '#fef3c7',
+            bg:         'rgba(180,83,9,0.15)',
+            bgInner:    'rgba(245,158,11,0.10)',
+            border:     'rgba(251,191,36,0.30)',
+            borderW:    1,
+            glow:       'none', // ← 発光なし（影をつけない）
+            innerGlow:  'inset 0 0 8px rgba(251,191,36,0.05)',
         };
       }
       if (d === 2) {
-        // 警告アンバー（黄色系）
+        // 警告アンバー（黄色系） → 赤/クリムゾン（危険・微発光）
         return {
-          primary:    '#fbbf24',
-          textBright: '#fef3c7',
-          bg:         'rgba(180,83,9,0.22)',
-          bgInner:    'rgba(245,158,11,0.18)',
-          border:     'rgba(251,191,36,0.70)',
-          borderW:    1.5,
-          glow:       '0 0 14px rgba(251,191,36,0.36), 0 0 28px rgba(245,158,11,0.18)',
-          innerGlow:  'inset 0 0 14px rgba(251,191,36,0.12)',
+            primary:    '#fb7185',
+            textBright: '#ffe4e6',
+            bg:         'rgba(159,18,57,0.20)',
+            bgInner:    'rgba(225,29,72,0.15)',
+            border:     'rgba(251,113,133,0.60)',
+            borderW:    1.5,
+            glow:       '0 0 12px rgba(225,29,72,0.30)', // ← 単一の光で微発光を表現
+            innerGlow:  'inset 0 0 10px rgba(225,29,72,0.10)',
         };
       }
-      // ★ Phase10.4 抑制: Degree 3 ── 真紅ネオン（最大警戒色）
+      // ★ Phase10.4 抑制: Degree 3 ── 真紅ネオン（最大警戒色）　->紫/フクシア（致命的脅威・強発光）
       return {
-        primary:    '#fb7185',
-        textBright: '#fecaca',
-        bg:         'rgba(159,18,57,0.30)',
-        bgInner:    'rgba(244,63,94,0.20)',
-        border:     'rgba(251,113,133,0.78)',
-        borderW:    1.8,
-        glow:       '0 0 14px rgba(251,113,133,0.40), 0 0 28px rgba(244,63,94,0.20)',
-        innerGlow:  'inset 0 0 14px rgba(251,113,133,0.12)',
+        primary:    '#e879f9',
+        textBright: '#fae8ff',
+        bg:         'rgba(112,26,117,0.30)',
+        bgInner:    'rgba(192,38,212,0.20)',
+        border:     'rgba(217,70,239,0.80)',
+        borderW:    2,
+        glow:       '0 0 18px rgba(217,70,239,0.55), 0 0 36px rgba(192,38,212,0.30)', // ← 2つの光を重ねて禍々しい強発光を表現
+        innerGlow:  'inset 0 0 16px rgba(217,70,239,0.20)',
       };
     }
   }
@@ -149,21 +149,21 @@ export type DegreeTheme = {
     } else {
       if (d === 1) {
         return {
-          bgHover:   'rgba(127,29,29,0.36)',
-          glowHover: '0 0 10px rgba(225,29,72,0.20)',
+            bgHover:   'rgba(180,83,9,0.25)',
+            glowHover: 'none', // ← ホバー時も発光させない
         };
       }
       if (d === 2) {
         // 警告アンバー
         return {
-          bgHover:   'rgba(180,83,9,0.34)',
-          glowHover: '0 0 22px rgba(251,191,36,0.50), 0 0 40px rgba(245,158,11,0.26)',
+            bgHover:   'rgba(159,18,57,0.30)',
+            glowHover: '0 0 16px rgba(225,29,72,0.45)', // ← ホバー時は少しだけ光を強くする
         };
       }
       // ★ Phase10.4 抑制: 真紅ネオン
       return {
-        bgHover:   'rgba(159,18,57,0.42)',
-        glowHover: '0 0 18px rgba(251,113,133,0.50), 0 0 36px rgba(244,63,94,0.26)',
+        bgHover:   'rgba(112,26,117,0.45)',
+        glowHover: '0 0 24px rgba(217,70,239,0.70), 0 0 48px rgba(192,38,212,0.40)', // ← タップしたくなるよう、さらに激しく光らせる
       };
     }
   }
