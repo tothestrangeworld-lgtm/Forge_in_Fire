@@ -19,6 +19,8 @@ import { titleForLevel } from '@/types';
 //   ToolTip の称号表示を titleForLevel(level, titleMaster) で動的導出するよう変更。
 //   titleMaster を optional Props として受け取る。
 // ★ Phase11.1: AreaChart の margin を調整し、X軸ラベルの見切れを解消。
+// ★ Phase11.1 追補: bottom margin を 28 → 40 に増やし、
+//   コンテナ下端での日付ラベル見切れを完全に解消。
 // =====================================================================
 
 interface Props {
@@ -192,11 +194,11 @@ export default function XPTimelineChart({ xpHistory = [], compact = false, title
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer width="100%" height="100%">
         {/*
-          ★ Phase11.1: margin.bottom を 20 → 28 に増やし、
-          X軸の日付ラベルが下端で見切れないよう修正。
+          ★ Phase11.1 追補: margin.bottom を 28 → 40 に増やし、
+          X軸の日付ラベルが下端で見切れないよう完全に修正。
           left も -26 → -20 に微調整してY軸数値の左クリップを緩和。
         */}
-        <AreaChart data={chartData} margin={{ top: 10, right: 6, left: -20, bottom: 28 }}>
+        <AreaChart data={chartData} margin={{ top: 10, right: 6, left: -20, bottom: 40 }}>
           <defs>
             {/* ★ ネオングラデーション（積み上がるオーラ） */}
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">

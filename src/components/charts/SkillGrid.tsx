@@ -2,6 +2,9 @@
 
 // =====================================================================
 // SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.4版：細糸リビジョン）
+// ★ Phase11.1 追補: ReactFlow を囲む div の height を固定値 480 → '100%' に変更。
+//   親コンテナの高さに動的追従させることで、fitView の中心座標計算と
+//   Controls ボタンの配置ズレ／消失を解消。
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -576,8 +579,13 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
         })}
       </div>
 
+      {/*
+        ★ Phase11.1 追補: height を 480 (固定) → '100%' に変更。
+        親コンテナの高さに動的追従させることで、fitView の中心座標計算と
+        Controls ボタンの配置ズレ／消失を解消。
+      */}
       <div style={{
-        width: '100%', height: 480, borderRadius: 16, overflow: 'hidden',
+        width: '100%', height: '100%', borderRadius: 16, overflow: 'hidden',
         background: 'linear-gradient(135deg, #050412 0%, #080717 50%, #0a0918 100%)',
         border: '1px solid rgba(99,102,241,0.15)', position: 'relative',
       }}>
