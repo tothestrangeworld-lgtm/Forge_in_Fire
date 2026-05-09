@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { RotateCcw, Loader2, TrendingDown } from 'lucide-react';
+import Link from 'next/link'; // ★復元：Linkコンポーネント
 import type { EpithetMasterEntry, UserTask, Achievement } from '@/types';
 import {
   calcLevelFromXp, calcNextLevel, levelColor, resolveTechniqueName,
@@ -63,6 +64,7 @@ export default function DashboardPage() {
   const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
   const peerLogs = data.peerLogs ?? [];
 
+  // スコア分布データの算出
   const scoreDistData = activeTasks.map(t => {
     const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let selfTotalPts = 0, selfTotalCount = 0;
@@ -85,8 +87,8 @@ export default function DashboardPage() {
     return { taskText: t.task_text, dist: selfDist, totalPts: selfTotalPts, totalCount: selfTotalCount,
              peerDist, peerTotalPts, peerTotalCount };
   });
+  
   const hasScoreData = scoreDistData.some(d => d.totalCount > 0 || d.peerTotalCount > 0);
-
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
 
   async function handleReset() {
@@ -118,10 +120,31 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ★復元：減衰警告 */}
+      {isDecaying && (
+        <div className="hud-card animate-fade-up" style={{ marginBottom: '0.75rem', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <TrendingDown color="#f87171" size={20} />
+          <p style={{ color: '#f87171', fontSize: '0.8rem', margin: 0, fontWeight: 700 }}>
+            稽古の間隔が空いているため、XPが減衰しています。
+          </p>
+        </div>
+      )}
+
+      {/* ★復元：設定画面へのリンクボタン群 */}
+      <div className="animate-fade-up delay-100" style={{ display: 'flex', gap: '8px', marginBottom: '1rem' }}>
+        <Link href="/settings/profile" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', color: '#c7d2fe', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none' }}>
+          👤 プロフィール・得意技
+        </Link>
+        <Link href="/settings/tasks" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', color: '#c7d2fe', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none' }}>
+          📝 課題登録・編集
+        </Link>
+      </div>
+
       <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
         <UserStatusCard userName={user?.name ?? '剣士'} epithet={epithet} totalXp={status.total_xp} level={level} realRank={status.real_rank} motto={status.motto} achiev={achiev} />
       </div>
 
+      {/* ★完全版：課題別評価スコア分布（ダブルバー＋インサイト） */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
         <span className="section-title">課題別 評価スコア分布（直近50回）</span>
         {hasScoreData ? (
@@ -137,28 +160,36 @@ export default function DashboardPage() {
                 else if (s - p >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
                 else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
               }
+              
               return (
                 <div key={taskText} style={{ width: '100%' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#e0e7ff' }}>{taskText}</span>
-                    <span style={{ fontSize: '0.65rem', color: '#818cf8' }}>自己:{selfAvg} / 剣友:{peerAvg}</span>
+                  {/* タイトルと平均点 */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#e0e7ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{taskText}</span>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#818cf8', flexShrink: 0 }}>自己:{selfAvg} {peerTotalCount > 0 ? `/ 剣友:${peerAvg}` : ''}</span>
                   </div>
-                  <div style={{ height: 8, borderRadius: 4, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', display: 'flex' }}>
-                    {([5,4,3,2,1] as const).map(score => {
-                      const pct = totalCount > 0 ? (dist[score] / totalCount) * 100 : 0;
-                      return pct > 0 ? <div key={score} style={{ width: `${pct}%`, background: SCORE_COLORS[score] }} /> : null;
+                  
+                  {/* 1段目：自己評価バー（太め・メイン） */}
+                  <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', marginBottom: peerTotalCount > 0 ? 3 : 0 }}>
+                    {totalCount > 0 && ([5,4,3,2,1] as const).map(score => {
+                      const pct = (dist[score] / totalCount) * 100;
+                      return pct > 0 ? <div key={`self-${score}`} style={{ width: `${pct}%`, background: SCORE_COLORS[score] }} title={`★${score}: ${dist[score]}回`} /> : null;
                     })}
                   </div>
+
+                  {/* 2段目：剣友評価バー（細め・サブ） */}
                   {peerTotalCount > 0 && (
-                    <div style={{ height: 4, borderRadius: 2, overflow: 'hidden', background: 'rgba(99,102,241,0.05)', display: 'flex', marginTop: 3, opacity: 0.85 }}>
+                    <div style={{ display: 'flex', height: 4, borderRadius: 2, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', opacity: 0.85 }}>
                       {([5,4,3,2,1] as const).map(score => {
                         const pct = (peerDist[score] / peerTotalCount) * 100;
-                        return pct > 0 ? <div key={score} style={{ width: `${pct}%`, background: SCORE_COLORS[score] }} /> : null;
+                        return pct > 0 ? <div key={`peer-${score}`} style={{ width: `${pct}%`, background: SCORE_COLORS[score] }} title={`★${score}: ${peerDist[score]}回`} /> : null;
                       })}
                     </div>
                   )}
+
+                  {/* 3段目：インサイト（差分コメント） */}
                   {insight && (
-                    <div style={{ fontSize: '10px', color: '#fbbf24', marginTop: 4, textAlign: 'right', fontWeight: 600, letterSpacing: '0.02em' }}>
+                    <div style={{ fontSize: '10px', color: '#fbbf24', marginTop: 5, textAlign: 'right', fontWeight: 700, letterSpacing: '0.04em' }}>
                       {insight}
                     </div>
                   )}
@@ -173,6 +204,27 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* ★復元：XP推移グラフ */}
+      {xpHistory && xpHistory.length > 0 && (
+        <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
+          <span className="section-title">XP獲得推移</span>
+          <div style={{ height: 220, marginTop: 12 }}>
+            <XPTimelineChart xpHistory={xpHistory} />
+          </div>
+        </div>
+      )}
+
+      {/* ★復元：SkillGrid（技の修練度） */}
+      {techniques.length > 0 && (
+        <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
+          <span className="section-title">技の修練度（Skill Grid）</span>
+          <div style={{ height: 500, marginTop: 12 }}>
+            <SkillGrid techniques={techniques} />
+          </div>
+        </div>
+      )}
+
+      {/* プレイスタイル分析 */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">プレイスタイル分析</span>
@@ -183,6 +235,7 @@ export default function DashboardPage() {
   );
 }
 
+// ユーティリティ・スケルトン等
 function calcStreak(dates: string[]): number {
   const unique = [...new Set(dates)].sort().reverse();
   if (!unique.length) return 0;
