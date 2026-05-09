@@ -533,7 +533,7 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
   const maxedCount    = safeTechniques.filter(t => (t.points ?? 0) >= TECH_SCORE_CAP).length;
 
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <style>{KEYFRAMES}</style>
 
       {signatureTech && (
