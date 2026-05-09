@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2, Save, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 import type { TaskDiff, UserTask } from '@/types';
 import { fetchDashboard, updateTasks } from '@/lib/api';
 
@@ -91,11 +92,21 @@ export default function TaskSettingsPage() {
 
   return (
     <div className="animate-fade-up" style={{ padding: '1.5rem 1rem 0' }}>
-      <header style={{ marginBottom: '1rem' }}>
-        <span className="section-title">設定</span>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--ai)', margin: 0, letterSpacing: '-0.02em' }}>
-          評価項目の設定
-        </h1>
+      <header style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <Link href="/" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 36, height: 36, borderRadius: 10,
+          background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(129,140,248,0.2)',
+          color: '#a5b4fc', textDecoration: 'none', flexShrink: 0,
+        }} title="ホームへ戻る">
+          <ArrowLeft style={{ width: 18, height: 18 }} />
+        </Link>
+        <div>
+          <span className="section-title" style={{ display: 'block' }}>SETTINGS</span>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--ai)', margin: 0, letterSpacing: '-0.02em' }}>
+            評価項目の設定
+          </h1>
+        </div>
       </header>
 
       <div className="wa-card" style={{
@@ -104,8 +115,7 @@ export default function TaskSettingsPage() {
         border: '1px solid rgba(139,92,246,0.25)',
       }}>
         <p style={{ margin: '0 0 10px', fontSize: '0.8rem', fontWeight: 700, color: 'rgba(199,210,254,0.55)' }}>
-          稽古記録（/record）で毎日 1〜5 評価する項目です（最大 {INPUT_COUNT} 件）。
-          テキストを変更して保存すると新しいIDで別項目として登録されます。元のテキストに戻した場合は変更なし扱いになります。
+          稽古記録で評価する項目（最大 {INPUT_COUNT} 件）。
         </p>
 
         {loading ? (

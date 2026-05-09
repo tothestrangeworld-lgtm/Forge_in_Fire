@@ -55,10 +55,10 @@ export default function PlaystyleCharts({
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // ★ Phase10: モーダル開閉ステート
+  // モーダル開閉ステート
   const [selectedMatchup, setSelectedMatchup] = useState<MatchupMasterEntry | null>(null);
 
-  // ★ Phase10.5: baseStyles を「純粋に subTotals の上位3件」で抽出
+  // baseStyles を「純粋に subTotals の上位3件」で抽出
   const { actionData, subData, totalPts, baseStyles } = useMemo(() => {
     const actionTotals: Record<string, number> = {};
     const subTotals:    Record<string, number> = {};
@@ -78,9 +78,6 @@ export default function PlaystyleCharts({
 
     const totalPts = techniques.reduce((s, t) => s + t.points, 0);
 
-    // ── ★ Phase10.5: subTotals（SubCategory = 技の種類）から、純粋に XP 上位3件を抽出 ──
-    // matchupMaster の存在有無による優先・並び替えロジックは廃止。
-    // ユーザーの真のステータス上位3つをそのまま baseStyles として返す。
     const baseStyles: string[] = Object.entries(subTotals)
       .filter(([, pts]) => pts > 0)
       .sort(([, a], [, b]) => b - a)
@@ -90,7 +87,7 @@ export default function PlaystyleCharts({
     return { actionData, subData, totalPts, baseStyles };
   }, [techniques]);
 
-  // ★ Phase10.4: 各 baseStyle ごとに該当する matchupMaster データをグルーピング
+  // 各 baseStyle ごとに該当する matchupMaster データをグルーピング
   const matchupGroups = useMemo(() => {
     if (baseStyles.length === 0 || matchupMaster.length === 0) return [];
     return baseStyles.map(style => ({
@@ -104,7 +101,7 @@ export default function PlaystyleCharts({
     })).filter(g => g.matchups.length > 0);
   }, [baseStyles, matchupMaster]);
 
-  // モーダル表示時の baseStyle（クリックされた matchup の baseStyle を使う）
+  // モーダル表示時の baseStyle
   const modalBaseStyle = selectedMatchup?.baseStyle ?? (baseStyles[0] ?? '');
 
   if (!mounted) return null;
@@ -118,7 +115,6 @@ export default function PlaystyleCharts({
 
   return (
     <>
-      {/* ── flex横並び（スマホでも1行） ── */}
       <div style={{
         display: 'flex',
         flexDirection: 'row',
@@ -127,7 +123,7 @@ export default function PlaystyleCharts({
         width: '100%',
       }}>
 
-        {/* ── ドーナツチャート（ActionType）: 幅40% ── */}
+        {/* ドーナツチャート（ActionType） */}
         <div style={{
           flex: '0 0 40%',
           minWidth: 0,
@@ -172,7 +168,7 @@ export default function PlaystyleCharts({
           </div>
         </div>
 
-        {/* ── レーダーチャート（SubCategory）: 幅60% ── */}
+        {/* レーダーチャート（SubCategory） */}
         <div style={{
           flex: '0 0 calc(60% - 8px)',
           minWidth: 0,
@@ -215,7 +211,7 @@ export default function PlaystyleCharts({
 
       </div>
 
-      {/* ── ★ Phase10.4: BaseStyle 複数バッジ ─────────────────────── */}
+      {/* BaseStyle バッジ */}
       {baseStyles.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <div style={{
@@ -246,7 +242,6 @@ export default function PlaystyleCharts({
                     boxShadow: idx === 0 ? '0 0 10px rgba(99,102,241,0.22)' : 'none',
                   }}
                 >
-                  {idx === 0 && <span style={{ fontSize: 10 }}>⚔︎</span>}
                   <span style={{
                     fontSize: '0.55rem', fontWeight: 700,
                     color: 'rgba(165,180,252,0.6)',
@@ -260,7 +255,7 @@ export default function PlaystyleCharts({
             </div>
           </div>
 
-          {/* ── 相性タグ：BaseStyle ごとのグループ枠 ── */}
+          {/* 相性タグ */}
           {matchupGroups.length > 0 ? (
             <>
               <p style={{
@@ -284,7 +279,6 @@ export default function PlaystyleCharts({
                       padding: '7px 9px 8px',
                     }}
                   >
-                    {/* グループラベル */}
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 5,
                       marginBottom: 6,
@@ -310,7 +304,6 @@ export default function PlaystyleCharts({
                         ({group.matchups.length})
                       </span>
                     </div>
-                    {/* タグ群 */}
                     <div style={{
                       display: 'flex',
                       flexWrap: 'wrap',
@@ -341,7 +334,6 @@ export default function PlaystyleCharts({
         </div>
       )}
 
-      {/* ── 剣風書ポップアップ ──────────────────────── */}
       <MatchupScroll
         open={!!selectedMatchup}
         onClose={() => setSelectedMatchup(null)}
@@ -355,18 +347,8 @@ export default function PlaystyleCharts({
 }
 
 // =====================================================================
-// MatchupTag ★ Phase10 / 10.5
-// 相性タグ（matchType / degree によって色と発光が変化）
-// matchupTheme.ts の getDegreeTheme / getTagHoverStyles を使用。
-//
-// ★ Phase10.5 修正:
-//   - 「得意」「苦手」テキストラベルを削除
-//   - 区切り線（縦棒）を削除
-//   - シンボルアイコン + TargetStyle名 のシンプル構成に
-//
-// 配色:
-//   S (得意): 青緑 / エメラルド / ネオンシアン
-//   W (苦手): 赤紫 / 警告アンバー / 真紅ネオン
+// MatchupTag ★ Phase11.1 最終調整版
+// 「文字ラベル」を撤廃し、色と Glow のみで相性を表現する。
 // =====================================================================
 interface TagProps {
   matchup: MatchupMasterEntry;
@@ -379,17 +361,9 @@ function MatchupTag({ matchup, onClick }: TagProps) {
   const theme    = getDegreeTheme(matchup.matchType, degree);
   const hover    = getTagHoverStyles(matchup.matchType, degree);
 
-  // 苦手 D3 のみ警告マーク、それ以外は剣/盾
-  const symbol = isStrong
-    ? '⚔︎'
-    : (degree === 3 ? '⚠' : '⛨');
-  const label = isStrong ? '得意' : '苦手';
-
-  // padding と minHeight（スマホでの圧迫感軽減）
-  const padX = degree === 3 ? 11 : 10;
+  const padX = degree === 3 ? 12 : 10;
   const padY = degree === 3 ? 6 : 5;
 
-  // 一意なアニメーション名（degree 3 のみ脈動）
   const pulseName = `tagPulse_${isStrong ? 'S' : 'W'}_${degree}`;
   const baseShadow  = `${theme.glow}${theme.glow !== 'none' ? ', ' : ''}${theme.innerGlow}`.replace(/^,\s*/, '');
   const hoverShadow = `${hover.glowHover}, ${theme.innerGlow}`;
@@ -398,7 +372,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
     <button
       onClick={onClick}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         padding: `${padY}px ${padX}px`,
         minHeight: 30,
         borderRadius: 999,
@@ -427,9 +401,8 @@ function MatchupTag({ matchup, onClick }: TagProps) {
       onTouchEnd={(e) => {
         e.currentTarget.style.transform = 'translateY(0) scale(1)';
       }}
-      title={`${label} (Degree ${degree}) vs ${matchup.targetStyle}`}
+      title={`${isStrong ? '得意' : '苦手'} (Degree ${degree}) vs ${matchup.targetStyle}`}
     >
-      {/* degree 3 専用 keyframes */}
       {degree === 3 && (
         <style>{`
           @keyframes ${pulseName} {
@@ -439,31 +412,13 @@ function MatchupTag({ matchup, onClick }: TagProps) {
         `}</style>
       )}
 
-      {/*
-        ★ Phase10.5 修正: シンボル + TargetStyle名 のみのシンプル構成。
-        「得意 / 苦手」テキストラベルと区切り線は削除。
-        色（青緑系/赤系）とアイコンで matchType を表現する。
-      */}
-
-      {/* シンボル */}
-      <span style={{
-        fontSize: degree === 3 ? 12 : 11,
-        color: theme.primary,
-        filter: degree >= 2
-          ? `drop-shadow(0 0 ${degree === 3 ? 5 : 3}px ${theme.primary})`
-          : 'none',
-        lineHeight: 1,
-      }}>
-        {symbol}
-      </span>
-
-      {/* TargetStyle 名 */}
+      {/* TargetStyle 名（色とGlowで属性を表現） */}
       <span style={{
         fontSize: degree === 3 ? '0.78rem' : degree === 2 ? '0.74rem' : '0.72rem',
         fontWeight: degree === 3 ? 800 : 700,
         color: theme.textBright,
-        letterSpacing: '0.02em',
-        textShadow: degree === 3 ? `0 0 4px ${theme.primary}` : 'none',
+        letterSpacing: '0.04em',
+        textShadow: degree >= 2 ? `0 0 5px ${theme.primary}` : 'none',
       }}>
         {matchup.targetStyle}
       </span>
