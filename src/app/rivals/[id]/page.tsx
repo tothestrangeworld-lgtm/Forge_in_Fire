@@ -8,21 +8,19 @@ import { ArrowLeft, Swords, Star, TrendingUp, Trophy, CheckCircle } from 'lucide
 import { useRivalDashboardSWR, evaluatePeer } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import type { EpithetResult } from '@/lib/epithet';
+import { calcMasteryStatus } from '@/lib/mastery';
 import { getCurrentUserId } from '@/lib/auth';
 import { calcLevelFromXp } from '@/types';
 import type { PeerEvalItem, UserTask } from '@/types';
 import { UserStatusCard } from '@/components/UserStatusCard';
 import { TaskEvalCard } from '@/components/TaskEvalCard';
+import { TaskScoreDistCard } from '@/components/TaskScoreDistCard';
 
 export const runtime = 'edge';
 
 const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false });
 const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleCharts'), { ssr: false });
 const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),       { ssr: false });
-
-const SCORE_COLORS: Record<number, string> = {
-  5: '#4f46e5', 4: '#6366f1', 3: '#818cf8', 2: '#c7d2fe', 1: '#e0e7ff',
-};
 
 export default function RivalDashboardPage({
   params,
@@ -127,20 +125,34 @@ export default function RivalDashboardPage({
     ? calcEpithet(techniques, epithetMaster, level, tm)
     : null;
 
-  // 課題別スコア分布
+  // ★ Phase-ex3: 自己評価 + 剣友評価のダブル分布を算出
+  const peerLogs = dashboard.peerLogs ?? [];
   const scoreDistData = activeTasks.map(t => {
-    const dist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
-    let totalPts = 0, totalCount = 0;
-    logs.slice(-50).forEach(l => {
+    const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
+    let selfTotalPts = 0, selfTotalCount = 0;
+    (logs ?? []).slice(-50).forEach(l => {
       if (l.item_name === t.task_text) {
         const s = l.score as number;
-        if (s >= 1 && s <= 5) dist[s] = (dist[s] ?? 0) + 1;
-        totalPts += s; totalCount++;
+        if (s >= 1 && s <= 5) selfDist[s] = (selfDist[s] ?? 0) + 1;
+        selfTotalPts += s; selfTotalCount++;
       }
     });
-    return { taskText: t.task_text, dist, totalPts, totalCount };
+    const peerDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
+    let peerTotalPts = 0, peerTotalCount = 0;
+    peerLogs.slice(-50).forEach(l => {
+      if (l.item_name === t.task_text) {
+        const s = l.score as number;
+        if (s >= 1 && s <= 5) peerDist[s] = (peerDist[s] ?? 0) + 1;
+        peerTotalPts += s; peerTotalCount++;
+      }
+    });
+    return {
+      taskText: t.task_text,
+      selfDist, selfTotalPts, selfTotalCount,
+      peerDist, peerTotalPts, peerTotalCount,
+    };
   });
-  const hasScoreData = scoreDistData.some(d => d.totalCount > 0);
+  const hasScoreData = scoreDistData.some(d => d.selfTotalCount > 0 || d.peerTotalCount > 0);
 
   const hasSelectableItems  = activeTasks.some(t => !evaluatedTaskIds.has(t.id) && taskScores[t.id] != null);
   const hasUnevaluatedTasks = activeTasks.some(t => !evaluatedTaskIds.has(t.id));
@@ -379,42 +391,49 @@ export default function RivalDashboardPage({
           </div>
         )}
 
-        {/* ── 4. 課題別 評価スコア分布 ───────────────────────── */}
+        {/* ── 4. 課題別 評価スコア分布（★ Phase-ex3: TaskScoreDistCard へ統一） ───── */}
         {mounted && (
           <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
               <Star style={{ width: 15, height: 15, color: '#a78bfa' }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>課題別 評価スコア分布（直近50回）</span>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-              {([5,4,3,2,1] as const).map(n => (
-                <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 2, background: SCORE_COLORS[n], flexShrink: 0 }} />
-                  <span style={{ fontSize: '0.6rem', color: 'rgba(199,210,254,0.5)', fontWeight: 600 }}>{n}</span>
-                </div>
-              ))}
-            </div>
+
             {hasScoreData ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {scoreDistData.map(({ taskText, dist, totalPts, totalCount }) => (
-                  <div key={taskText} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <div style={{ flex: '0 0 30%', minWidth: 0, fontSize: '0.72rem', fontWeight: 700, color: 'rgba(199,210,254,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {taskText}
-                    </div>
-                    <div style={{ flex: '0 0 55%', minWidth: 0, height: 12, borderRadius: 6, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', display: 'flex' }}>
-                      {totalCount > 0
-                        ? ([5,4,3,2,1] as const).map(score => {
-                            const pct = (dist[score] / totalCount) * 100;
-                            if (pct <= 0) return null;
-                            return <div key={score} title={`評価${score}: ${dist[score]}回`} style={{ width: `${pct}%`, background: SCORE_COLORS[score], flexShrink: 0 }} />;
-                          })
-                        : <div style={{ width: '100%', background: 'rgba(99,102,241,0.08)', borderRadius: 6 }} />}
-                    </div>
-                    <div style={{ flex: '0 0 15%', textAlign: 'right', fontSize: '0.7rem', fontWeight: 700, color: totalCount > 0 ? '#a5b4fc' : 'rgba(99,102,241,0.25)', whiteSpace: 'nowrap' }}>
-                      {totalCount > 0 ? `${totalPts} pt` : '—'}
-                    </div>
-                  </div>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {scoreDistData.map(({
+                  taskText,
+                  selfDist, selfTotalPts, selfTotalCount,
+                  peerDist, peerTotalPts, peerTotalCount,
+                }) => {
+                  // インサイト判定
+                  let insight = '';
+                  if (peerTotalCount > 0 && selfTotalCount > 0) {
+                    const s = selfTotalPts / selfTotalCount;
+                    const p = peerTotalPts / peerTotalCount;
+                    if (p - s >= 1.0) insight = '【過小評価】剣友評価 >> 自己評価';
+                    else if (s - p >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
+                    else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
+                  }
+
+                  // 進捗ステータス
+                  const mastery = calcMasteryStatus(logs ?? [], taskText);
+
+                  return (
+                    <TaskScoreDistCard
+                      key={taskText}
+                      taskText={taskText}
+                      selfDist={selfDist}
+                      selfTotalPts={selfTotalPts}
+                      selfTotalCount={selfTotalCount}
+                      peerDist={peerDist}
+                      peerTotalPts={peerTotalPts}
+                      peerTotalCount={peerTotalCount}
+                      mastery={mastery}
+                      insight={insight}
+                    />
+                  );
+                })}
               </div>
             ) : (
               <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'rgba(99,102,241,0.4)', padding: '1.5rem 0', margin: 0 }}>

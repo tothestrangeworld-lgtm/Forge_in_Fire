@@ -11,17 +11,15 @@ import {
 import { useDashboardSWR, resetStatus, fetchAchievements } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import type { EpithetResult } from '@/lib/epithet';
+import { calcMasteryStatus } from '@/lib/mastery';
 import { getAuthUser } from '@/lib/auth';
 import { UserStatusCard } from '@/components/UserStatusCard';
+import { TaskScoreDistCard } from '@/components/TaskScoreDistCard';
 import dynamic from 'next/dynamic';
 
 const XPTimelineChart = dynamic(() => import('@/components/charts/XPTimelineChart'), { ssr: false });
 const SkillGrid       = dynamic(() => import('@/components/charts/SkillGrid'),       { ssr: false, loading: () => <ChartSkeleton h={380} /> });
 const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleCharts'), { ssr: false, loading: () => <ChartSkeleton h={180} /> });
-
-const SCORE_COLORS: Record<number, string> = {
-  5: '#4f46e5', 4: '#6366f1', 3: '#818cf8', 2: '#c7d2fe', 1: '#e0e7ff',
-};
 
 export default function DashboardPage() {
   const [resetting, setReset]     = useState(false);
@@ -84,11 +82,14 @@ export default function DashboardPage() {
         peerTotalPts += s; peerTotalCount++;
       }
     });
-    return { taskText: t.task_text, dist: selfDist, totalPts: selfTotalPts, totalCount: selfTotalCount,
-             peerDist, peerTotalPts, peerTotalCount };
+    return {
+      taskText: t.task_text,
+      selfDist, selfTotalPts, selfTotalCount,
+      peerDist, peerTotalPts, peerTotalCount,
+    };
   });
 
-  const hasScoreData = scoreDistData.some(d => d.totalCount > 0 || d.peerTotalCount > 0);
+  const hasScoreData = scoreDistData.some(d => d.selfTotalCount > 0 || d.peerTotalCount > 0);
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
 
   async function handleReset() {
@@ -150,12 +151,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/*
-        ★ Phase11.1: 「Profile」「課題登録」ボタン群を削除。
-        Profile → UserStatusCard 右上の歯車アイコンへ移動（showSettingsLink prop）。
-        課題登録 → 「課題別 評価スコア分布」カードのヘッダー右上の歯車アイコンへ移動。
-      */}
-
       {/* UserStatusCard（showSettingsLink=true で歯車アイコンを表示） */}
       <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
         <UserStatusCard
@@ -170,10 +165,9 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* ★ Phase11.1: 課題別評価スコア分布 — ヘッダー右上に課題登録歯車アイコンを追加 */}
+      {/* ★ Phase-ex3: 課題別評価スコア分布 — TaskScoreDistCard へ移譲 */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
-        {/* カードヘッダー */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hasScoreData ? 0 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="section-title">課題別 評価スコア分布（直近50回）</span>
           <Link
             href="/settings/tasks"
@@ -195,52 +189,38 @@ export default function DashboardPage() {
         </div>
 
         {hasScoreData ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
-            {scoreDistData.map(({ taskText, dist, totalCount, peerDist, peerTotalCount, totalPts, peerTotalPts }) => {
-              const selfAvg = totalCount > 0 ? (totalPts / totalCount).toFixed(1) : '—';
-              const peerAvg = peerTotalCount > 0 ? (peerTotalPts / peerTotalCount).toFixed(1) : '—';
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+            {scoreDistData.map(({
+              taskText,
+              selfDist, selfTotalPts, selfTotalCount,
+              peerDist, peerTotalPts, peerTotalCount,
+            }) => {
+              // インサイト判定
               let insight = '';
-              if (peerTotalCount > 0 && totalCount > 0) {
-                const s = totalPts / totalCount;
+              if (peerTotalCount > 0 && selfTotalCount > 0) {
+                const s = selfTotalPts / selfTotalCount;
                 const p = peerTotalPts / peerTotalCount;
                 if (p - s >= 1.0) insight = '【過小評価】剣友評価 >> 自己評価';
                 else if (s - p >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
                 else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
               }
 
+              // 進捗ステータス
+              const mastery = calcMasteryStatus(logs ?? [], taskText);
+
               return (
-                <div key={taskText} style={{ width: '100%' }}>
-                  {/* タイトルと平均点 */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#e0e7ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{taskText}</span>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#818cf8', flexShrink: 0 }}>自己:{selfAvg} {peerTotalCount > 0 ? `/ 剣友:${peerAvg}` : ''}</span>
-                  </div>
-
-                  {/* 1段目：自己評価バー（太め・メイン） */}
-                  <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', marginBottom: peerTotalCount > 0 ? 3 : 0 }}>
-                    {totalCount > 0 && ([5,4,3,2,1] as const).map(score => {
-                      const pct = (dist[score] / totalCount) * 100;
-                      return pct > 0 ? <div key={`self-${score}`} style={{ width: `${pct}%`, background: SCORE_COLORS[score] }} title={`★${score}: ${dist[score]}回`} /> : null;
-                    })}
-                  </div>
-
-                  {/* 2段目：剣友評価バー（細め・サブ） */}
-                  {peerTotalCount > 0 && (
-                    <div style={{ display: 'flex', height: 4, borderRadius: 2, overflow: 'hidden', background: 'rgba(99,102,241,0.1)', opacity: 0.85 }}>
-                      {([5,4,3,2,1] as const).map(score => {
-                        const pct = (peerDist[score] / peerTotalCount) * 100;
-                        return pct > 0 ? <div key={`peer-${score}`} style={{ width: `${pct}%`, background: SCORE_COLORS[score] }} title={`★${score}: ${peerDist[score]}回`} /> : null;
-                      })}
-                    </div>
-                  )}
-
-                  {/* 3段目：インサイト（差分コメント） */}
-                  {insight && (
-                    <div style={{ fontSize: '10px', color: '#fbbf24', marginTop: 5, textAlign: 'right', fontWeight: 700, letterSpacing: '0.04em' }}>
-                      {insight}
-                    </div>
-                  )}
-                </div>
+                <TaskScoreDistCard
+                  key={taskText}
+                  taskText={taskText}
+                  selfDist={selfDist}
+                  selfTotalPts={selfTotalPts}
+                  selfTotalCount={selfTotalCount}
+                  peerDist={peerDist}
+                  peerTotalPts={peerTotalPts}
+                  peerTotalCount={peerTotalCount}
+                  mastery={mastery}
+                  insight={insight}
+                />
               );
             })}
           </div>
@@ -255,10 +235,6 @@ export default function DashboardPage() {
       {xpHistory && xpHistory.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">XP獲得推移</span>
-          {/*
-            ★ Phase11.1: height を 220 → 160 に縮小。
-            XPTimelineChart 側の margin.bottom 調整と合わせてラベル見切れを解消。
-          */}
           <div style={{ height: 160, marginTop: 12 }}>
             <XPTimelineChart xpHistory={xpHistory} />
           </div>
@@ -269,10 +245,6 @@ export default function DashboardPage() {
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">Skill Grid</span>
-          {/*
-            ★ Phase11.1: height を 500 → 380 に縮小。
-            上下の余白を詰めてHUD密度を向上。
-          */}
           <div style={{ height: 380, marginTop: 12 }}>
             <SkillGrid techniques={techniques} />
           </div>
