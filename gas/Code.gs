@@ -42,6 +42,10 @@
 //     '剣友からの評価（...）' と記録する。
 //   - 既存の名前入りログはフロント側で正規表現マスクするため、本ファイルでは
 //     新規書き込みのみ匿名化する。
+// ★ Phase-ex4: 剣風相性マッチングの「上位4スタイル」対応
+//   - getPeersStyleData を拡張。user_techniques の Points を SubCategory 別に
+//     集計し、ユーザーごとの上位最大4件を topStyles として返却する。
+//   - favorite_technique はフェイルセーフとしてそのまま残す。
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -1062,6 +1066,7 @@ function getTodayEvaluations(params) {
 // ★ Phase8 Step3-1: peerLogs を追加（他者から受けた評価ログ）
 // ★ Phase9.5: user_status / xp_history の列インデックス修正。title を返さない。
 // ★ Phase10: matchupMaster / peersStyle を追加
+// ★ Phase-ex4: peersStyle に topStyles を含めて返却（getPeersStyleData 内で集計）
 //
 // user_status 新列構成（Phase9.5）:
 //   [0]=user_id, [1]=total_xp, [2]=level, [3]=last_practice_date,
@@ -1177,7 +1182,7 @@ function getDashboard(params) {
   // ── 11. matchupMaster（剣風相性マスタ全件）★ Phase10 ──
   var matchupMaster = getMatchupMasterData(ss);
 
-  // ── 12. peersStyle（自分以外の剣友のスタイル一覧）★ Phase10 ──
+  // ── 12. peersStyle（自分以外の剣友のスタイル一覧）★ Phase10 / Phase-ex4 ──
   var peersStyle = getPeersStyleData(ss, userId);
 
   return createResponse({
@@ -1192,7 +1197,7 @@ function getDashboard(params) {
     techniqueMaster: techniqueMaster,
     peerLogs:        peerLogs,
     matchupMaster:   matchupMaster,   // ★ Phase10
-    peersStyle:      peersStyle,      // ★ Phase10
+    peersStyle:      peersStyle,      // ★ Phase10 / Phase-ex4
   });
 }
 
@@ -1310,10 +1315,21 @@ function getMatchupMasterData(ss) {
 }
 
 // =====================================================================
-// L3. 剣友スタイル取得（自分以外のユーザーの favorite_technique）★ Phase10
+// L3. 剣友スタイル取得 ★ Phase10 / Phase-ex4 拡張
 //
-// UserMaster (user_id, name, password, role) と
-// user_status ([0]=user_id, [7]=favorite_technique) を JOIN する。
+// ★ Phase10:    UserMaster + user_status を JOIN して
+//                自分以外の剣友の favorite_technique を返す
+// ★ Phase-ex4: 修練データ（user_techniques）を SubCategory 別ポイント順に集計し、
+//                上位最大4件の SubCategory を topStyles として返却する。
+//                favorite_technique はフェイルセーフとしてそのまま残す。
+//
+// 出力例:
+//   {
+//     userId: 'U0002',
+//     name:   '剣友A',
+//     favoriteTechnique: 'T001',
+//     topStyles: ['出端技', '払い技', '基本', '返し技'],
+//   }
 // =====================================================================
 
 function getPeersStyleData(ss, currentUserId) {
@@ -1325,13 +1341,13 @@ function getPeersStyleData(ss, currentUserId) {
     return [];
   }
 
-  // user_status から user_id -> favorite_technique のマップを構築
-  var statSheet     = ss.getSheetByName(SHEET_STATUS);
-  var favTechMap    = {};
+  // ── (A) user_status から user_id -> favorite_technique のマップを構築（フェイルセーフ） ──
+  var statSheet  = ss.getSheetByName(SHEET_STATUS);
+  var favTechMap = {};
   if (statSheet) {
     var statRows = statSheet.getDataRange().getValues();
     for (var i = 1; i < statRows.length; i++) {
-      var sr = statRows[i];
+      var sr  = statRows[i];
       var uid = String(sr[0] || '');
       if (!uid) continue;
       // ★ Phase9.5: favorite_technique は H列（index 7）
@@ -1340,26 +1356,84 @@ function getPeersStyleData(ss, currentUserId) {
     }
   }
 
-  // UserMaster を走査して自分以外のユーザーをリストアップ
+  // ── (B) ★ Phase-ex4: technique_master から techId -> subCategory のマップを構築 ──
+  var techMaster = getTechniqueMasterData(ss);
+  var techToSubMap = {};
+  techMaster.forEach(function(m) {
+    if (m.id && m.subCategory) {
+      techToSubMap[m.id] = m.subCategory;
+    }
+  });
+
+  // ── (C) ★ Phase-ex4: user_techniques を走査し、ユーザー × SubCategory のポイント合計を集計 ──
+  // userPointsMap: { userId: { subCategory: totalPoints } }
+  var userPointsMap = {};
+  var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
+  if (utSheet) {
+    var utRows = utSheet.getDataRange().getValues();
+    // 列: user_id(0), technique_id(1), Points(2), LastRating(3), ...
+    for (var u = 1; u < utRows.length; u++) {
+      var ur          = utRows[u];
+      var ownerId     = String(ur[0] || '');
+      var techId      = String(ur[1] || '');
+      var points      = Number(ur[2]) || 0;
+      if (!ownerId || !techId || points <= 0) continue;
+      var subCategory = techToSubMap[techId];
+      if (!subCategory) continue;
+
+      if (!userPointsMap[ownerId]) userPointsMap[ownerId] = {};
+      userPointsMap[ownerId][subCategory] =
+        (userPointsMap[ownerId][subCategory] || 0) + points;
+    }
+  }
+
+  // ── (D) UserMaster を走査して自分以外のユーザーをリストアップ ──
   var umRows = umSheet.getDataRange().getValues();
   var peers  = [];
   for (var j = 1; j < umRows.length; j++) {
-    var ur     = umRows[j];
-    var uid    = String(ur[0] || '');
-    var name   = String(ur[1] || '');
-    if (!uid || uid === String(currentUserId)) continue;
+    var urow = umRows[j];
+    var uid2 = String(urow[0] || '');
+    var name = String(urow[1] || '');
+    if (!uid2 || uid2 === String(currentUserId)) continue;
 
     var entry = {
-      userId: uid,
+      userId: uid2,
       name:   name,
     };
-    if (favTechMap[uid]) {
-      entry.favoriteTechnique = favTechMap[uid];
+
+    // フェイルセーフ: favoriteTechnique
+    if (favTechMap[uid2]) {
+      entry.favoriteTechnique = favTechMap[uid2];
     }
+
+    // ★ Phase-ex4: 上位最大4件の SubCategory を topStyles として付与
+    var subPoints = userPointsMap[uid2];
+    if (subPoints) {
+      var sortedSubs = Object.keys(subPoints).sort(function(a, b) {
+        return subPoints[b] - subPoints[a];     // ポイント降順
+      });
+      // 同点時は五十音昇順に整える（出力安定化）
+      var maxPts = sortedSubs.length > 0 ? subPoints[sortedSubs[0]] : 0;
+      sortedSubs.sort(function(a, b) {
+        var diff = subPoints[b] - subPoints[a];
+        if (diff !== 0) return diff;
+        return String(a).localeCompare(String(b), 'ja');
+      });
+      var top4 = sortedSubs.slice(0, 4);
+      if (top4.length > 0) {
+        entry.topStyles = top4;
+      }
+    }
+
     peers.push(entry);
   }
 
-  gasLog('INFO', 'getPeersStyleData', peers.length + '人 ロード成功 (currentUser=' + currentUserId + ')');
+  gasLog('INFO', 'getPeersStyleData',
+    peers.length + '人 ロード成功 (currentUser=' + currentUserId + ')',
+    {
+      withTopStyles: peers.filter(function(p){ return p.topStyles && p.topStyles.length > 0; }).length,
+      withFavTech:   peers.filter(function(p){ return p.favoriteTechnique; }).length,
+    });
   return peers;
 }
 

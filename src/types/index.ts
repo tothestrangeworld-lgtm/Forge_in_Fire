@@ -35,6 +35,9 @@
 // ★ Phase11: 免許皆伝（Mastery）システム
 //   - MasteryPhase 型を追加（'training' | 'discerning' | 'mastered'）
 //   - MasteryStatus 型を追加（フロントエンド計算結果）
+// ★ Phase-ex4: 剣風相性マッチングの「上位4スタイル」対応
+//   - PeerStyleEntry に topStyles?: string[] を追加
+//     （user_techniques から SubCategory 別ポイント上位4件を集計）
 // =====================================================================
 
 export interface LogEntry {
@@ -134,15 +137,22 @@ export interface MatchupMasterEntry {
 }
 
 // =====================================================================
-// PeerStyleEntry ★ Phase10
+// PeerStyleEntry ★ Phase10 / Phase-ex4 拡張
 // 他の剣友のスタイル把握用エントリ
-// UserMaster + user_status を JOIN して GAS が返却する
+// UserMaster + user_status + user_techniques を JOIN して GAS が返却する
 // =====================================================================
 export interface PeerStyleEntry {
-  userId:            string;
-  name:              string;
+  userId:             string;
+  name:               string;
   /** 得意技ID（例: "T001"）。未設定の場合 undefined */
   favoriteTechnique?: string;
+  /**
+   * ★ Phase-ex4: user_techniques の Points を SubCategory 別に集計し、
+   * 上位最大4件の SubCategory 文字列を降順で格納。
+   * 修練実績がない剣友は undefined または空配列。
+   * 例: ['出端技', '払い技', '基本', '返し技']
+   */
+  topStyles?:         string[];
 }
 
 export interface DashboardData {
@@ -172,8 +182,8 @@ export interface DashboardData {
    */
   matchupMaster?:   MatchupMasterEntry[];
   /**
-   * ★ Phase10: 自分以外の剣友のスタイル一覧。
-   * targetStyle に該当する favoriteTechnique を持つ剣友を検索するために使用。
+   * ★ Phase10 / Phase-ex4: 自分以外の剣友のスタイル一覧。
+   * targetStyle に該当する topStyles を持つ剣友を検索するために使用。
    */
   peersStyle?:      PeerStyleEntry[];
 }
