@@ -1,41 +1,14 @@
 // src/components/TaskEvalCard.tsx
 // =====================================================================
 // 百錬自得 - 課題評価カード（共通コンポーネント）
-// 自己評価（record画面）/ 他者評価（rivals/[id]画面）の両方で使用する。
-//
-// ★ Phase11: 免許皆伝（Mastery）システムの中段UIを追加
-//   - mastery prop を受け取り、3段構成（上段=課題テキスト・中段=Mastery表示・下段=星評価）に拡張
-//   - training:    安定率バー + 履歴ドット + COMBO!演出（無言の予告：熱色変化＆脈動）
-//   - discerning:  「皆伝ノ刻」+ 金色ドット ◉◉○（静かな緊張感）
-//   - mastered:    【免許皆伝】バッジ（黒背景＋金文字＋朱印アクセント）
-//   - mastery prop を省略した場合は中段非表示（rivals画面など現行UI維持）
-//
-// 【設計方針：コンパクト＆ユニファイド】
-//   - 「引き算の美学」: 四角い枠ボタンを廃止し、星アイコンのみで評価UIを構成
-//   - 上段: indexBadge（任意） + taskText
-//   - 中段: ★Phase11 Mastery表示（mastery が渡された場合のみ）
-//   - 下段: 星アイコン5つ（左寄せ） + 評価テキストカプセル（右寄せ）
-//   - isEvaluated 時はグリーン系の薄い背景で完了表現
-//
-// 【Props】
-//   - taskText:     課題テキスト
-//   - score:        現在の選択スコア（null = 未選択）
-//   - onChange:     スコア変更時のコールバック
-//   - disabled:     タップ不可状態（送信中など）
-//   - isEvaluated:  既に評価完了済みか（背景色とopacityが変化）
-//   - indexBadge:   左上のバッジテキスト（例: "課題 1" / "評価済"）。省略時は非表示
-//   - mastery:      ★ Phase11: 免許皆伝ステータス（省略時は中段非表示）
+// 【Phase-ex2】評価入力カードの極限シンプル化
+//   - Mastery表示UIの完全削除
+//   - 選択スコアに応じた星のカラー動的化（1:赤, 2:オレンジ, 3:黄, 4:緑, 5:ゴールド）
 // =====================================================================
 
 'use client';
 
 import { Star } from 'lucide-react';
-import type { MasteryStatus } from '@/types';
-import {
-  MASTERY_REQUIRED_COUNT,
-  isNearDiscern,
-  shouldShowCombo,
-} from '@/lib/mastery';
 
 const SCORE_LABELS_SHORT: Record<number, string> = {
   1: '少し',
@@ -53,10 +26,7 @@ const SCORE_BADGE_COLORS: Record<number, { bg: string; fg: string; border: strin
   5: { bg: 'rgba(251,191,36,0.18)',  fg: '#fde68a', border: 'rgba(251,191,36,0.55)'  },
 };
 
-// ---------------------------------------------------------------------
-// ★ Phase11: 履歴ドット用カラーマップ
-// ---------------------------------------------------------------------
-const DOT_COLORS: Record<number, string> = {
+const STAR_COLORS: Record<number, string> = {
   1: '#f87171',
   2: '#fb923c',
   3: '#fbbf24',
@@ -71,8 +41,6 @@ export interface TaskEvalCardProps {
   disabled?:   boolean;
   isEvaluated?: boolean;
   indexBadge?: string;
-  /** ★ Phase11: 免許皆伝ステータス。省略時は中段を表示しない */
-  mastery?:    MasteryStatus | null;
 }
 
 export function TaskEvalCard({
@@ -82,13 +50,10 @@ export function TaskEvalCard({
   disabled    = false,
   isEvaluated = false,
   indexBadge,
-  mastery,
 }: TaskEvalCardProps) {
 
   const badgeStyle = score != null ? SCORE_BADGE_COLORS[score] : null;
-
-  // 中段の表示要否
-  const showMastery = mastery != null && mastery.evalCount > 0;
+  const starColor = score != null ? STAR_COLORS[score] : '#fbbf24';
 
   return (
     <div
@@ -110,7 +75,7 @@ export function TaskEvalCard({
         display:     'flex',
         alignItems:  'flex-start',
         gap:         8,
-        marginBottom: 8,
+        marginBottom: 12,
       }}>
         {indexBadge && (
           <span style={{
@@ -145,11 +110,6 @@ export function TaskEvalCard({
           {taskText}
         </p>
       </div>
-
-      {/* ── ★ Phase11 中段: Mastery 表示 ── */}
-      {showMastery && mastery && (
-        <MasteryRow mastery={mastery} />
-      )}
 
       {/* ── 下段: 星5つ（左） + 評価テキストカプセル（右） ── */}
       <div style={{
@@ -192,10 +152,10 @@ export function TaskEvalCard({
                 <Star
                   size={22}
                   strokeWidth={filled ? 0 : 1.6}
-                  fill={filled ? '#fbbf24' : 'none'}
-                  color={filled ? '#fbbf24' : 'rgba(167,139,250,0.4)'}
+                  fill={filled ? starColor : 'none'}
+                  color={filled ? starColor : 'rgba(167,139,250,0.4)'}
                   style={{
-                    filter: filled ? 'drop-shadow(0 0 3px rgba(251,191,36,0.5))' : 'none',
+                    filter: filled ? `drop-shadow(0 0 3px ${starColor}66)` : 'none',
                   }}
                 />
               </button>
@@ -233,388 +193,6 @@ export function TaskEvalCard({
         </div>
       </div>
     </div>
-  );
-}
-
-// =====================================================================
-// ★ Phase11: 中段Masteryロウ
-// 状態に応じて 3パターンを切り替える
-// =====================================================================
-
-function MasteryRow({ mastery }: { mastery: MasteryStatus }) {
-  if (mastery.phase === 'mastered') {
-    return <MasteryRowMastered mastery={mastery} />;
-  }
-  if (mastery.phase === 'discerning') {
-    return <MasteryRowDiscerning mastery={mastery} />;
-  }
-  return <MasteryRowTraining mastery={mastery} />;
-}
-
-// ---------------------------------------------------------------------
-// 履歴ドット（共通）
-// ---------------------------------------------------------------------
-
-function HistoryDots({ scores }: { scores: number[] }) {
-  // 直近10件の枠を確保し、未到達分は薄い空丸で表現
-  const slots: (number | null)[] = [];
-  const start = Math.max(0, 10 - scores.length);
-  for (let i = 0; i < start; i++) slots.push(null);
-  scores.forEach(s => slots.push(s));
-
-  return (
-    <div style={{ display: 'flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
-      {slots.map((s, i) => {
-        if (s == null) {
-          return (
-            <span
-              key={i}
-              style={{
-                width:        7,
-                height:       7,
-                borderRadius: '50%',
-                background:   'transparent',
-                border:       '1px solid rgba(167,139,250,0.25)',
-                display:      'inline-block',
-              }}
-            />
-          );
-        }
-        const color   = DOT_COLORS[s] ?? '#a78bfa';
-        const isHigh5 = s === 5;
-        return (
-          <span
-            key={i}
-            style={{
-              width:        7,
-              height:       7,
-              borderRadius: '50%',
-              background:   color,
-              boxShadow:    isHigh5 ? `0 0 4px ${color}` : 'none',
-              display:      'inline-block',
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------
-// 訓練状態の中段
-// ---------------------------------------------------------------------
-
-function MasteryRowTraining({ mastery }: { mastery: MasteryStatus }) {
-  const showCombo = shouldShowCombo(mastery);
-  const isHot     = isNearDiscern(mastery);
-
-  // 安定率バーの色
-  const stability = mastery.stability;
-  const barColor  =
-    stability >= 80 ? '#fbbf24' :
-    stability >= 60 ? '#60a5fa' : '#a78bfa';
-
-  // 「見極めが近い」状態の安定率バー脈動
-  const barAnim = isHot ? 'masteryHotPulse 1.6s ease-in-out infinite' : 'none';
-
-  // COMBO! テキストの色（通常 → 緑系 / 熱色 → オレンジ・ゴールド）
-  const comboColor = isHot ? '#fbbf24' : '#86efac';
-  const comboGlow  = isHot ? '#fb923c' : '#10b981';
-
-  return (
-    <>
-      <style>{`
-        @keyframes masteryHotPulse {
-          0%, 100% { opacity: 1;   filter: brightness(1); }
-          50%      { opacity: 0.85; filter: brightness(1.25); }
-        }
-        @keyframes masteryComboGlow {
-          0%, 100% { text-shadow: 0 0 4px var(--combo-glow), 0 0 8px var(--combo-glow); opacity: 1; }
-          50%      { text-shadow: 0 0 8px var(--combo-glow), 0 0 16px var(--combo-glow); opacity: 0.92; }
-        }
-      `}</style>
-
-      <div style={{
-        display:      'flex',
-        alignItems:   'center',
-        gap:          8,
-        marginBottom: 8,
-        paddingTop:   4,
-        paddingBottom: 4,
-        borderTop:    '1px dashed rgba(139,92,246,0.18)',
-        borderBottom: '1px dashed rgba(139,92,246,0.18)',
-      }}>
-        {/* 安定率ミニバー + % */}
-        <div style={{
-          display:    'flex',
-          alignItems: 'center',
-          gap:        5,
-          flexShrink: 0,
-          animation:  barAnim,
-        }}>
-          <div style={{
-            width:        46,
-            height:       5,
-            borderRadius: 3,
-            background:   'rgba(99,102,241,0.18)',
-            overflow:     'hidden',
-            position:     'relative',
-          }}>
-            <div style={{
-              width:      `${stability}%`,
-              height:     '100%',
-              background: `linear-gradient(90deg, ${barColor}aa, ${barColor})`,
-              boxShadow:  isHot ? `0 0 6px ${barColor}` : 'none',
-              transition: 'width 0.4s ease',
-            }} />
-          </div>
-          <span style={{
-            fontSize:   10,
-            fontWeight: 800,
-            color:      barColor,
-            fontVariantNumeric: 'tabular-nums',
-            minWidth:   24,
-            textAlign:  'right',
-          }}>
-            {stability}%
-          </span>
-        </div>
-
-        {/* 履歴ドット */}
-        <HistoryDots scores={mastery.recentScores} />
-
-        {/* COMBO! テキスト（右寄せ） */}
-        <div style={{ marginLeft: 'auto', flexShrink: 0, minWidth: 0 }}>
-          {showCombo && (
-            <span
-              style={{
-                fontSize:      11,
-                fontWeight:    900,
-                fontStyle:     'italic',
-                letterSpacing: '0.05em',
-                color:         comboColor,
-                whiteSpace:    'nowrap',
-                animation:     'masteryComboGlow 1.4s ease-in-out infinite',
-                ['--combo-glow' as never]: comboGlow,
-              } as React.CSSProperties}
-            >
-              {mastery.currentStreak} COMBO!
-            </span>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------
-// 見極め状態の中段（静かな緊張感）
-// ---------------------------------------------------------------------
-
-function MasteryRowDiscerning({ mastery }: { mastery: MasteryStatus }) {
-  const stability = mastery.stability;
-
-  return (
-    <>
-      <style>{`
-        @keyframes discernShimmer {
-          0%, 100% { opacity: 0.85; }
-          50%      { opacity: 1; }
-        }
-        @keyframes discernDotGlow {
-          0%, 100% { box-shadow: 0 0 3px #fbbf24aa, inset 0 0 2px #fef3c7; }
-          50%      { box-shadow: 0 0 8px #fbbf24, inset 0 0 3px #fef9c3; }
-        }
-      `}</style>
-
-      <div style={{
-        display:        'flex',
-        alignItems:     'center',
-        gap:            8,
-        marginBottom:   8,
-        paddingTop:     5,
-        paddingBottom:  5,
-        borderTop:      '1px solid rgba(251,191,36,0.22)',
-        borderBottom:   '1px solid rgba(251,191,36,0.22)',
-        background:     'linear-gradient(90deg, rgba(251,191,36,0.04), rgba(251,191,36,0.08), rgba(251,191,36,0.04))',
-      }}>
-        {/* 安定率ミニバー（金色） */}
-        <div style={{
-          display:    'flex',
-          alignItems: 'center',
-          gap:        5,
-          flexShrink: 0,
-        }}>
-          <div style={{
-            width:        46,
-            height:       5,
-            borderRadius: 3,
-            background:   'rgba(251,191,36,0.15)',
-            overflow:     'hidden',
-          }}>
-            <div style={{
-              width:      `${stability}%`,
-              height:     '100%',
-              background: 'linear-gradient(90deg, #fbbf24aa, #fbbf24)',
-              boxShadow:  '0 0 5px #fbbf24aa',
-            }} />
-          </div>
-          <span style={{
-            fontSize:   10,
-            fontWeight: 800,
-            color:      '#fbbf24',
-            fontVariantNumeric: 'tabular-nums',
-            minWidth:   24,
-            textAlign:  'right',
-          }}>
-            {stability}%
-          </span>
-        </div>
-
-        {/* 履歴ドット */}
-        <HistoryDots scores={mastery.recentScores} />
-
-        {/* 「皆伝ノ刻」+ 進捗ドット */}
-        <div style={{
-          marginLeft: 'auto',
-          flexShrink: 0,
-          display:    'flex',
-          alignItems: 'center',
-          gap:        6,
-          animation:  'discernShimmer 2.4s ease-in-out infinite',
-        }}>
-          <span style={{
-            fontSize:      10,
-            fontWeight:    900,
-            color:         '#fde68a',
-            letterSpacing: '0.18em',
-            textShadow:    '0 0 4px #fbbf2466',
-            whiteSpace:    'nowrap',
-          }}>
-            【皆伝ノ刻】
-          </span>
-          <ProgressDots
-            count={mastery.breakthroughCount}
-            total={MASTERY_REQUIRED_COUNT}
-          />
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------
-// 進捗ドット（◉◉○）
-// ---------------------------------------------------------------------
-
-function ProgressDots({ count, total }: { count: number; total: number }) {
-  return (
-    <div style={{ display: 'flex', gap: 3 }}>
-      {Array.from({ length: total }).map((_, i) => {
-        const filled = i < count;
-        return (
-          <span
-            key={i}
-            style={{
-              width:        9,
-              height:       9,
-              borderRadius: '50%',
-              background:   filled
-                ? 'radial-gradient(circle at 30% 30%, #fef3c7, #fbbf24 70%)'
-                : 'transparent',
-              border:       filled
-                ? '1px solid #fbbf24'
-                : '1px solid rgba(251,191,36,0.45)',
-              display:      'inline-block',
-              animation:    filled ? 'discernDotGlow 1.8s ease-in-out infinite' : 'none',
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------
-// 免許皆伝バッジ（黒背景＋金文字＋朱印アクセント）
-// ---------------------------------------------------------------------
-
-function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
-  return (
-    <>
-      <style>{`
-        @keyframes masteredShimmer {
-          0%, 100% { box-shadow: 0 0 12px rgba(251,191,36,0.35), inset 0 0 8px rgba(251,191,36,0.12); }
-          50%      { box-shadow: 0 0 20px rgba(251,191,36,0.55), inset 0 0 10px rgba(251,191,36,0.20); }
-        }
-        @keyframes masteredScan {
-          0%   { background-position: -200% 0; }
-          100% { background-position:  200% 0; }
-        }
-      `}</style>
-
-      <div style={{
-        display:      'flex',
-        alignItems:   'center',
-        gap:          8,
-        marginBottom: 8,
-        paddingTop:   6,
-        paddingBottom: 6,
-      }}>
-        {/* 皆伝バッジ */}
-        <div style={{
-          position:     'relative',
-          display:      'inline-flex',
-          alignItems:   'center',
-          gap:          7,
-          background:   'linear-gradient(135deg, #0a0a0a 0%, #1a1410 50%, #0a0a0a 100%)',
-          border:       '1px solid #fbbf24',
-          borderRadius: 4,
-          padding:      '4px 12px 4px 10px',
-          animation:    'masteredShimmer 2.4s ease-in-out infinite',
-          overflow:     'hidden',
-          flexShrink:   0,
-        }}>
-          {/* スキャンライン */}
-          <div style={{
-            position:       'absolute',
-            inset:          0,
-            background:     'linear-gradient(105deg, transparent 30%, rgba(251,191,36,0.18) 50%, transparent 70%)',
-            backgroundSize: '200% 100%',
-            animation:      'masteredScan 3s linear infinite',
-            pointerEvents:  'none',
-          }} />
-
-          {/* 朱印風アクセント（左の小さな赤丸） */}
-          <span style={{
-            width:        7,
-            height:       7,
-            borderRadius: '50%',
-            background:   'radial-gradient(circle at 30% 30%, #ef4444, #991b1b)',
-            border:       '1px solid #fbbf24',
-            boxShadow:    '0 0 4px rgba(239,68,68,0.6)',
-            flexShrink:   0,
-            zIndex:       1,
-          }} />
-
-          {/* テキスト */}
-          <span style={{
-            fontSize:      10.5,
-            fontWeight:    900,
-            color:         '#fbbf24',
-            letterSpacing: '0.32em',
-            textShadow:    '0 0 6px rgba(251,191,36,0.55)',
-            whiteSpace:    'nowrap',
-            zIndex:        1,
-          }}>
-            免 許 皆 伝
-          </span>
-        </div>
-
-        {/* 履歴ドット（皆伝後も継続記録の可視化） */}
-        <HistoryDots scores={mastery.recentScores} />
-      </div>
-    </>
   );
 }
 
