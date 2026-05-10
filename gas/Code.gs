@@ -37,6 +37,11 @@
 //   - getPeersStyleData(ss, currentUserId) を新設し、UserMaster と user_status を
 //     JOIN して自分以外の剣友の favorite_technique を返す
 //   - getDashboard レスポンスに matchupMaster / peersStyle を追加
+// ★ Phase-ex1: 他者評価イベントの匿名化（プライバシー保護）
+//   - evaluatePeer の writeXpHistory に渡す reason から評価者名を排除し、
+//     '剣友からの評価（...）' と記録する。
+//   - 既存の名前入りログはフロント側で正規表現マスクするため、本ファイルでは
+//     新規書き込みのみ匿名化する。
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -841,6 +846,9 @@ function updateTechniqueRating(body) {
 // I3. 他者評価（peer_evaluations）
 // ★ Phase7: 課題単位配列評価対応
 // ★ Phase9.5: title 関連を削除
+// ★ Phase-ex1: 匿名化（プライバシー保護）
+//   xp_history.reason に評価者名を保存しないよう、
+//   '剣友からの評価（...）' 形式で記録する。
 //
 // peer_evaluations スキーマ（6列）:
 //   A: evaluator_id
@@ -868,6 +876,7 @@ function getPeerLevelMultiplier(level) {
  * evaluatePeer
  * ★ Phase7: items 配列（{ taskId, score }[]）を受け取り、課題単位で記録する。
  * ★ Phase9.5: title 関連を削除。user_status インデックス修正。
+ * ★ Phase-ex1: writeXpHistory.reason から評価者名を排除し匿名化。
  */
 function evaluatePeer(body) {
   var evaluatorId = body.user_id;
@@ -919,6 +928,7 @@ function evaluatePeer(body) {
   var evalLevel = evalRows.length > 0 ? (parseInt(evalRows[0][2]) || 1) : 1;
   var mult      = getPeerLevelMultiplier(evalLevel);
 
+  // ★ Phase-ex1: evalName は内部ログ（gasLog）専用とし、xp_history には保存しない
   var umSheet  = ss.getSheetByName(SHEET_USER_MASTER);
   var evalName = String(evaluatorId);
   if (umSheet) {
@@ -987,9 +997,9 @@ function evaluatePeer(body) {
       statSheet.appendRow([targetId, newXp, newLevel, '', today, '', '', '']);
     }
 
-    // ★ Phase9.5: title 引数なし
+    // ★ Phase-ex1: 評価者名を含めず、'剣友からの評価（...）' で匿名化して記録
     writeXpHistory(ss, targetId, 'peer_eval', xpGranted,
-      evalName + 'からの評価（' + evaluatedTasks.length + '課題・合計スコア: ' + totalScoreSum + '）',
+      '剣友からの評価（' + evaluatedTasks.length + '課題・合計スコア: ' + totalScoreSum + '）',
       newXp, newLevel);
   }
 

@@ -6,7 +6,6 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import type { XpHistoryEntry, TitleMasterEntry } from '@/types';
-import { titleForLevel } from '@/types';
 
 // =====================================================================
 // XPTimelineChart（改修2）
@@ -21,12 +20,21 @@ import { titleForLevel } from '@/types';
 // ★ Phase11.1: AreaChart の margin を調整し、X軸ラベルの見切れを解消。
 // ★ Phase11.1 追補: bottom margin を 28 → 40 に増やし、
 //   コンテナ下端での日付ラベル見切れを完全に解消。
+// ★ Phase-ex1:
+//   (1) ツールチップから称号(段位)表示を削除（titleLabel 関連を全廃止）
+//   (2) 他者評価のプライバシー保護:
+//       過去データに対し reason 文字列の「〇〇からの評価」を
+//       「剣友からの評価」に動的にマスクして表示。
+//   ※ titleMaster Props は呼び出し元互換のため Optional で残置（未使用）。
 // =====================================================================
 
 interface Props {
   xpHistory?:   XpHistoryEntry[];
   compact?:     boolean;
-  /** ★ Phase9.5: 称号の動的導出に使用。未指定時はフォールバック称号テーブルを使用。 */
+  /**
+   * ★ Phase-ex1: 称号表示を廃止したため未使用。
+   * 呼び出し元の互換性維持のため Optional で残置する。
+   */
   titleMaster?: TitleMasterEntry[];
 }
 
@@ -57,14 +65,13 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 // ===== カスタム Tooltip =====
+// ★ Phase-ex1: titleLabel フィールドを削除
 interface PayloadItem {
   payload?: {
     type?:   string;
     reason?: string;
     level?:  number;
     amount?: number;
-    /** ★ Phase9.5: 動的に計算した称号名 */
-    titleLabel?: string;
   };
   value?: number;
 }
@@ -79,10 +86,14 @@ function CustomTooltip({
   if (!active || !payload?.length) return null;
   const item   = payload[0];
   const xp     = item.value ?? 0;
-  const { type, reason, level, amount, titleLabel } = item.payload ?? {};
+  const { type, reason, level, amount } = item.payload ?? {};
   const typeLabel = TYPE_LABEL[type ?? ''] ?? type ?? '';
   const sign      = (amount ?? 0) >= 0 ? '+' : '';
   const amtColor  = (amount ?? 0) >= 0 ? '#34d399' : '#f87171';
+
+  // ★ Phase-ex1: 過去データに残っている「〇〇からの評価」表記を
+  // 「剣友からの評価」に動的にマスクしてプライバシーを保護する。
+  const displayReason = reason?.replace(/^.+からの評価/, '剣友からの評価');
 
   return (
     <div style={{
@@ -108,12 +119,11 @@ function CustomTooltip({
       {level !== undefined && level > 0 && (
         <div style={{ color: 'rgba(129,140,248,0.7)' }}>
           Lv {level}
-          {/* ★ Phase9.5: 動的導出した称号を表示 */}
-          {titleLabel ? ` ・ ${titleLabel}` : ''}
+          {/* ★ Phase-ex1: 称号(段位)表示を削除 */}
         </div>
       )}
-      {reason && (
-        <div style={{ color: 'rgba(99,102,241,0.7)', fontSize: 10, marginTop: 2 }}>{reason}</div>
+      {displayReason && (
+        <div style={{ color: 'rgba(99,102,241,0.7)', fontSize: 10, marginTop: 2 }}>{displayReason}</div>
       )}
     </div>
   );
@@ -154,7 +164,7 @@ function CustomDot({ cx, cy, payload }: DotProps) {
   );
 }
 
-export default function XPTimelineChart({ xpHistory = [], compact = false, titleMaster }: Props) {
+export default function XPTimelineChart({ xpHistory = [], compact = false }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
@@ -175,6 +185,7 @@ export default function XPTimelineChart({ xpHistory = [], compact = false, title
   const height = compact ? 160 : 220;
   const xTicks = buildXTicks(xpHistory);
 
+  // ★ Phase-ex1: titleLabel フィールドを廃止（titleForLevel 呼び出しを削除）
   const chartData = xpHistory.map(e => ({
     label:          toDisplayDate(e.date),
     total_xp_after: Math.max(0, e.total_xp_after),
@@ -182,9 +193,6 @@ export default function XPTimelineChart({ xpHistory = [], compact = false, title
     type:           e.type,
     reason:         e.reason,
     level:          e.level,
-    // ★ Phase9.5: title フィールドが XpHistoryEntry から削除されたため
-    //   titleForLevel() で動的に称号ラベルを計算してチャートデータに埋め込む
-    titleLabel:     titleForLevel(e.level, titleMaster),
   }));
 
   // グラデーション ID（複数インスタンスの衝突防止）
