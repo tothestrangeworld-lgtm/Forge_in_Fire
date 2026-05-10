@@ -716,7 +716,7 @@ function PracticeTab() {
                     score={current}
                     onChange={(s) => setScores(prev => ({ ...prev, [task.id]: s }))}
                     disabled={submitting}
-                    mastery={mastery}
+//                    mastery={mastery} 
                   />
                 </div>
               );
