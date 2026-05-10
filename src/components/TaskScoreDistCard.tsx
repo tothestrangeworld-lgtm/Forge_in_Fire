@@ -4,29 +4,21 @@
 // 自分のダッシュボード / 剣友ダッシュボードの両方で使用する。
 //
 // ★ Phase-ex3 Step1: 新規作成
-//   - TaskEvalCard が「評価入力」専用となったため、
-//     「ダッシュボードでの分布表示・分析」は本コンポーネントが担う（関心の分離）。
+// ★ Phase-ex3 修正:
+//   - ヘッダーを縦積みレイアウトへ変更（モバイル時の縦割れ防止）
+//   - Mastery表示を flexWrap で折り返し対応
+//   - スマホでも反応するカスタムツールチップ（State駆動）を実装
 //
 // 【設計方針】
 //   - 4行構成（ヘッダー / 自己分布バー / 剣友分布バー / インサイト）
 //   - 自己と剣友のスコア分布を100%積み上げバーで可視化
 //   - mastery データが渡された場合は、ヘッダー右側に免許皆伝ステータスを表示
-//   - 各セグメントには `title` 属性でツールチップ（★5: 3回 など）を付与
-//
-// 【Props】
-//   - taskText:       課題テキスト
-//   - selfDist:       自己評価スコア(1〜5)ごとの回数 Record
-//   - selfTotalPts:   自己評価の合計ポイント
-//   - selfTotalCount: 自己評価の合計回数
-//   - peerDist:       剣友評価スコア(1〜5)ごとの回数 Record（任意）
-//   - peerTotalPts:   剣友評価の合計ポイント（任意）
-//   - peerTotalCount: 剣友評価の合計回数（任意）
-//   - mastery:        免許皆伝ステータス（任意）
-//   - insight:        分析テキスト（明鏡止水 等。任意）
+//   - 各セグメントタップで吹き出しを表示
 // =====================================================================
 
 'use client';
 
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { MasteryStatus } from '@/types';
 import {
   MASTERY_REQUIRED_COUNT,
@@ -55,6 +47,19 @@ const DOT_COLORS: Record<number, string> = {
   4: '#86efac',
   5: '#fde68a',
 };
+
+// =====================================================================
+// ツールチップ State 型
+// =====================================================================
+
+interface TooltipState {
+  score: number;   // 1〜5
+  count: number;   // 何回
+  pct:   string;   // "23.5%" のような表示用文字列
+  x:     number;   // カード基準のX座標 (px)
+  y:     number;   // カード基準のY座標 (px)
+  label: string;   // "自分" / "剣友"
+}
 
 // =====================================================================
 // Props
@@ -98,9 +103,79 @@ export function TaskScoreDistCard({
     ? (peerTotalPts / peerTotalCount).toFixed(2)
     : '—';
 
+  // ── ★ ツールチップ State ─────────────────────────────────
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // 外側クリック / Esc で閉じる
+  useEffect(() => {
+    if (!tooltip) return;
+
+    const handleDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // バー内部のクリックは onClick で別処理されるため、ここでは
+      // カード外（または余白）をクリックしたときに閉じるだけでよい
+      if (cardRef.current && !cardRef.current.contains(target)) {
+        setTooltip(null);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTooltip(null);
+    };
+
+    // capture=true で一度コンテナで処理した後に届くように
+    document.addEventListener('mousedown', handleDocClick);
+    document.addEventListener('touchstart', handleDocClick as unknown as EventListener);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleDocClick);
+      document.removeEventListener('touchstart', handleDocClick as unknown as EventListener);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [tooltip]);
+
+  // セグメントクリック共通ハンドラ
+  const handleSegmentClick = useCallback((args: {
+    score: number;
+    count: number;
+    total: number;
+    label: string;
+    event: React.MouseEvent<HTMLDivElement>;
+  }) => {
+    const { score, count, total, label, event } = args;
+    if (!cardRef.current) return;
+
+    const cardRect    = cardRef.current.getBoundingClientRect();
+    const segmentRect = event.currentTarget.getBoundingClientRect();
+
+    // セグメントの中央上端を、カード基準の相対座標に変換
+    const x = segmentRect.left + segmentRect.width / 2 - cardRect.left;
+    const y = segmentRect.top - cardRect.top;
+
+    const pct = total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '0%';
+
+    setTooltip(prev => {
+      // 同じセグメントを再タップ → 閉じる
+      if (prev && prev.score === score && prev.label === label) return null;
+      return { score, count, pct, x, y, label };
+    });
+  }, []);
+
+  // カード余白クリックで閉じる（バー以外）
+  const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // バー要素 / ツールチップ自体をクリックしたときは無視
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-bar-segment]')) return;
+    if (target.closest('[data-tooltip]'))     return;
+    setTooltip(null);
+  };
+
   return (
     <div
+      ref={cardRef}
+      onClick={handleCardClick}
       style={{
+        position:     'relative',
         padding:      '12px 14px',
         borderRadius: 12,
         background:   'rgba(49,46,129,0.35)',
@@ -108,12 +183,13 @@ export function TaskScoreDistCard({
         transition:   'all 0.2s ease',
       }}
     >
-      {/* ── 1行目 ヘッダー: 課題テキスト + Mastery表示 ── */}
+      {/* ── 1行目 ヘッダー: 課題テキスト → Mastery表示（縦積み） ── */}
       <div style={{
-        display:      'flex',
-        alignItems:   'flex-start',
-        gap:          10,
-        marginBottom: 10,
+        display:        'flex',
+        flexDirection:  'column',
+        alignItems:     'stretch',
+        gap:            8,
+        marginBottom:   10,
       }}>
         <p style={{
           margin:     0,
@@ -122,13 +198,12 @@ export function TaskScoreDistCard({
           color:      '#ede9fe',
           lineHeight: 1.4,
           wordBreak:  'break-word',
-          flex:       1,
         }}>
           {taskText}
         </p>
 
         {showMastery && mastery && (
-          <div style={{ flexShrink: 0 }}>
+          <div>
             <MasteryHeaderRow mastery={mastery} />
           </div>
         )}
@@ -146,6 +221,8 @@ export function TaskScoreDistCard({
           total={selfTotalCount}
           height={12}
           ariaLabel="自己評価のスコア分布"
+          label="自分"
+          onSegmentClick={handleSegmentClick}
         />
       </div>
 
@@ -163,6 +240,8 @@ export function TaskScoreDistCard({
             total={peerTotalCount}
             height={8}
             ariaLabel="剣友評価のスコア分布"
+            label="剣友"
+            onSegmentClick={handleSegmentClick}
           />
         </div>
       )}
@@ -180,11 +259,127 @@ export function TaskScoreDistCard({
           {insight}
         </div>
       )}
+
+      {/* ── ★ カスタムツールチップ ── */}
+      {tooltip && (
+        <Tooltip tooltip={tooltip} />
+      )}
     </div>
   );
 }
 
 export default TaskScoreDistCard;
+
+// =====================================================================
+// ツールチップ（吹き出し）
+// =====================================================================
+
+function Tooltip({ tooltip }: { tooltip: TooltipState }) {
+  const accent = SCORE_COLORS[tooltip.score] ?? '#a78bfa';
+
+  return (
+    <div
+      data-tooltip
+      role="tooltip"
+      style={{
+        position:       'absolute',
+        left:           tooltip.x,
+        top:            tooltip.y,
+        transform:      'translate(-50%, calc(-100% - 10px))',
+        zIndex:         50,
+        pointerEvents:  'none',
+        animation:      'distTooltipPop 0.18s ease-out',
+      }}
+    >
+      <style>{`
+        @keyframes distTooltipPop {
+          0%   { opacity: 0; transform: translate(-50%, calc(-100% - 4px)) scale(0.92); }
+          100% { opacity: 1; transform: translate(-50%, calc(-100% - 10px)) scale(1); }
+        }
+      `}</style>
+
+      <div style={{
+        position:       'relative',
+        background:     'linear-gradient(135deg, rgba(13,11,42,0.97), rgba(30,27,75,0.95))',
+        border:         `1px solid ${accent}`,
+        borderRadius:   8,
+        padding:        '6px 10px',
+        boxShadow:      `0 4px 14px rgba(0,0,0,0.45), 0 0 12px ${accent}55`,
+        minWidth:       110,
+        backdropFilter: 'blur(6px)',
+      }}>
+        {/* ラベル行（自分 / 剣友） */}
+        <div style={{
+          display:       'flex',
+          alignItems:    'center',
+          gap:           6,
+          marginBottom:  3,
+          fontSize:      9,
+          fontWeight:    800,
+          color:         'rgba(199,210,254,0.7)',
+          letterSpacing: '0.08em',
+        }}>
+          <span style={{
+            width:        8,
+            height:       8,
+            borderRadius: 2,
+            background:   accent,
+            display:      'inline-block',
+            boxShadow:    `0 0 4px ${accent}`,
+          }} />
+          {tooltip.label}
+        </div>
+
+        {/* スコア★ + 回数 */}
+        <div style={{
+          display:    'flex',
+          alignItems: 'baseline',
+          gap:        6,
+          fontSize:   12,
+          fontWeight: 800,
+          color:      '#ede9fe',
+        }}>
+          <span style={{ color: accent, fontSize: 13 }}>★{tooltip.score}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {tooltip.count}回
+          </span>
+          <span style={{
+            marginLeft:         'auto',
+            fontSize:           10,
+            color:              '#fde68a',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            {tooltip.pct}
+          </span>
+        </div>
+
+        {/* 吹き出し三角（下向き） */}
+        <div style={{
+          position:    'absolute',
+          left:        '50%',
+          bottom:      -6,
+          transform:   'translateX(-50%)',
+          width:       0,
+          height:      0,
+          borderLeft:  '6px solid transparent',
+          borderRight: '6px solid transparent',
+          borderTop:   `6px solid ${accent}`,
+        }} />
+        <div style={{
+          position:    'absolute',
+          left:        '50%',
+          bottom:      -4,
+          transform:   'translateX(-50%)',
+          width:       0,
+          height:      0,
+          borderLeft:  '5px solid transparent',
+          borderRight: '5px solid transparent',
+          borderTop:   '5px solid rgba(13,11,42,0.97)',
+        }} />
+      </div>
+    </div>
+  );
+}
 
 // =====================================================================
 // 小コンポーネント群
@@ -228,7 +423,7 @@ function DistRowLabel({
 }
 
 // ---------------------------------------------------------------------
-// 100%積み上げバー（ツールチップ付き）
+// 100%積み上げバー（カスタムツールチップ対応）
 // ---------------------------------------------------------------------
 
 function StackedBar({
@@ -236,11 +431,21 @@ function StackedBar({
   total,
   height,
   ariaLabel,
+  label,
+  onSegmentClick,
 }: {
-  dist:      Record<number, number>;
-  total:     number;
-  height:    number;
-  ariaLabel: string;
+  dist:           Record<number, number>;
+  total:          number;
+  height:         number;
+  ariaLabel:      string;
+  label:          string;
+  onSegmentClick: (args: {
+    score: number;
+    count: number;
+    total: number;
+    label: string;
+    event: React.MouseEvent<HTMLDivElement>;
+  }) => void;
 }) {
   if (total <= 0) {
     return (
@@ -281,12 +486,16 @@ function StackedBar({
         return (
           <div
             key={score}
-            title={`★${score}: ${count}回`}
+            data-bar-segment
+            onClick={(e) => {
+              e.stopPropagation();
+              onSegmentClick({ score, count, total, label, event: e });
+            }}
             style={{
               width:      `${widthPct}%`,
               height:     '100%',
               background: SCORE_COLORS[score],
-              cursor:     'help',
+              cursor:     'pointer',
               transition: 'opacity 0.15s ease',
             }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
@@ -394,7 +603,9 @@ function MasteryRowTraining({ mastery }: { mastery: MasteryStatus }) {
       <div style={{
         display:    'flex',
         alignItems: 'center',
+        flexWrap:   'wrap',
         gap:        8,
+        rowGap:     6,
       }}>
         {/* 安定率ミニバー + % */}
         <div style={{
@@ -480,8 +691,10 @@ function MasteryRowDiscerning({ mastery }: { mastery: MasteryStatus }) {
       <div style={{
         display:    'flex',
         alignItems: 'center',
+        flexWrap:   'wrap',
         gap:        8,
-        padding:    '3px 8px',
+        rowGap:     6,
+        padding:    '4px 8px',
         borderRadius: 8,
         background: 'linear-gradient(90deg, rgba(251,191,36,0.04), rgba(251,191,36,0.10), rgba(251,191,36,0.04))',
         border:     '1px solid rgba(251,191,36,0.22)',
@@ -603,7 +816,9 @@ function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
       <div style={{
         display:    'flex',
         alignItems: 'center',
+        flexWrap:   'wrap',
         gap:        8,
+        rowGap:     6,
       }}>
         {/* 皆伝バッジ */}
         <div style={{
