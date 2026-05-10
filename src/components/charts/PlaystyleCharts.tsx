@@ -58,7 +58,7 @@ export default function PlaystyleCharts({
   // モーダル開閉ステート
   const [selectedMatchup, setSelectedMatchup] = useState<MatchupMasterEntry | null>(null);
 
-  // baseStyles を「純粋に subTotals の上位3件」で抽出
+  // ★ Phase-ex4: baseStyles を「subTotals の上位4件」で抽出
   const { actionData, subData, totalPts, baseStyles } = useMemo(() => {
     const actionTotals: Record<string, number> = {};
     const subTotals:    Record<string, number> = {};
@@ -78,10 +78,11 @@ export default function PlaystyleCharts({
 
     const totalPts = techniques.reduce((s, t) => s + t.points, 0);
 
+    // ★ Phase-ex4: 上位3件 → 上位4件に拡張
     const baseStyles: string[] = Object.entries(subTotals)
       .filter(([, pts]) => pts > 0)
       .sort(([, a], [, b]) => b - a)
-      .slice(0, 3)
+      .slice(0, 4)
       .map(([key]) => key);
 
     return { actionData, subData, totalPts, baseStyles };

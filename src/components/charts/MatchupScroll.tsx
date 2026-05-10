@@ -9,17 +9,22 @@ import { resolveTechniqueName } from '@/types';
 import { getDegreeTheme } from '@/lib/matchupTheme';
 
 // =====================================================================
-// MatchupScroll（剣風書）★ Phase10 / 10.4
+// MatchupScroll（剣風書）★ Phase10 / 10.4 / Phase-ex4
 //
 // 相性タグをタップしたときに開くグラスモーフィズム調モーダル。
 // - 相性関係（あなたの BaseStyle vs TargetStyle）
 // - 理由（reason）/ 対策（advice）
 // - マッチングされた剣友リスト
 //
-// ★ Phase10.4 修正:
-//   - 「優位 / 不利」ラベル右側に Degree 3段階の ★ 評価を追加
-//     Degree 1: ★・・  Degree 2: ★★・  Degree 3: ★★★
-//   - 「この対策を今日の課題にする」ボタンと handleAddTask を削除
+// ★ Phase-ex4: 剣友マッチングロジックを「topStyles ベース」に刷新
+//   - 第一優先: peer.topStyles に matchup.targetStyle が含まれるか
+//   - フェイルセーフ: 旧来の favoriteTechnique → technique_master 検索
+//   - 剣友タグの右側表示を resolveTechniqueName から
+//     「／ {matchup.targetStyle}」のスタイル名直接表示に変更
+//
+// ★ Phase10.4 継承:
+//   - 「優位 / 不利」ラベル右側に Degree 3段階の ★ 評価
+//   - 「この対策を今日の課題にする」ボタンと handleAddTask は削除済み
 //
 // ★ Phase10.3 継承:
 //   - createPortal で document.body 直下にテレポートレンダリング
@@ -84,17 +89,31 @@ export default function MatchupScroll({
   const theme    = getDegreeTheme(matchup.matchType, degree);
   const stars    = buildDegreeStars(degree);
 
-  // peersStyle の中から、得意技（technique_id）のスタイルが targetStyle と一致する剣友を抽出
+  // ★ Phase-ex4: マッチングロジック刷新
+  //   第一優先 → peer.topStyles に matchup.targetStyle が含まれる剣友
+  //   フェイルセーフ → 旧来の favoriteTechnique 経由で technique_master の各列と照合
   const matchedPeers = peers.filter(p => {
-    if (!p.favoriteTechnique) return false;
-    const tech = techniqueMaster.find(t => t.id === p.favoriteTechnique);
-    if (!tech) return false;
-    return (
-      tech.subCategory === matchup.targetStyle ||
-      tech.bodyPart    === matchup.targetStyle ||
-      tech.actionType  === matchup.targetStyle ||
-      tech.name        === matchup.targetStyle
-    );
+    // 第一優先: 修練データから集計された topStyles でマッチ判定
+    if (p.topStyles && p.topStyles.length > 0) {
+      if (p.topStyles.includes(matchup.targetStyle)) return true;
+    }
+
+    // フェイルセーフ: 旧来の favoriteTechnique による技マスタ照合
+    if (p.favoriteTechnique) {
+      const tech = techniqueMaster.find(t => t.id === p.favoriteTechnique);
+      if (tech) {
+        if (
+          tech.subCategory === matchup.targetStyle ||
+          tech.bodyPart    === matchup.targetStyle ||
+          tech.actionType  === matchup.targetStyle ||
+          tech.name        === matchup.targetStyle
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   });
 
   const relationLabel = isStrong ? '優位' : '不利';
@@ -353,42 +372,38 @@ export default function MatchupScroll({
 
           {matchedPeers.length > 0 ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {matchedPeers.map(p => {
-                const techName = resolveTechniqueName(p.favoriteTechnique, techniqueMaster);
-                return (
-                  <div
-                    key={p.userId}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '5px 10px',
-                      borderRadius: 999,
-                      background: 'rgba(99,102,241,0.1)',
-                      border: '1px solid rgba(129,140,248,0.3)',
-                    }}
-                  >
-                    <span style={{
-                      width: 18, height: 18, borderRadius: '50%',
-                      background: 'rgba(129,140,248,0.25)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.6rem', fontWeight: 800, color: '#c7d2fe',
-                    }}>
-                      {p.name.slice(0, 1)}
-                    </span>
-                    <span style={{
-                      fontSize: '0.74rem', fontWeight: 700, color: '#c7d2fe',
-                    }}>
-                      {p.name}
-                    </span>
-                    {techName && (
-                      <span style={{
-                        fontSize: '0.58rem', fontWeight: 700, color: 'rgba(167,139,250,0.7)',
-                      }}>
-                        ／{techName}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+              {matchedPeers.map(p => (
+                <div
+                  key={p.userId}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '5px 10px',
+                    borderRadius: 999,
+                    background: 'rgba(99,102,241,0.1)',
+                    border: '1px solid rgba(129,140,248,0.3)',
+                  }}
+                >
+                  <span style={{
+                    width: 18, height: 18, borderRadius: '50%',
+                    background: 'rgba(129,140,248,0.25)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.6rem', fontWeight: 800, color: '#c7d2fe',
+                  }}>
+                    {p.name.slice(0, 1)}
+                  </span>
+                  <span style={{
+                    fontSize: '0.74rem', fontWeight: 700, color: '#c7d2fe',
+                  }}>
+                    {p.name}
+                  </span>
+                  {/* ★ Phase-ex4: マッチング根拠となった TargetStyle を直接表示 */}
+                  <span style={{
+                    fontSize: '0.58rem', fontWeight: 700, color: 'rgba(167,139,250,0.7)',
+                  }}>
+                    ／{matchup.targetStyle}
+                  </span>
+                </div>
+              ))}
             </div>
           ) : (
             <p style={{
