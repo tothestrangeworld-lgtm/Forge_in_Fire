@@ -189,6 +189,31 @@ export default function RivalDashboardPage({
 
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px 16px 0' }}>
 
+        {/* ── ★★★ DEBUG PANEL（原因特定用：後で削除） ★★★ ───────── */}
+        <div style={{
+          background: '#000',
+          color: '#0f0',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+          fontSize: 11,
+          lineHeight: 1.6,
+          padding: '12px 14px',
+          borderRadius: 8,
+          border: '2px solid #0f0',
+          marginBottom: 14,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          boxShadow: '0 0 12px rgba(0,255,0,0.4)',
+        }}>
+          <div style={{ fontWeight: 800, marginBottom: 6, letterSpacing: '0.1em' }}>
+            === DEBUG PANEL (SkillGrid not rendering) ===
+          </div>
+          <div>mounted: {String(mounted)}</div>
+          <div>techniques.length: {techniques.length}</div>
+          <div>techniques: {JSON.stringify(techniques).slice(0, 50) + '...'}</div>
+          <div>status.favorite_technique: {String(status.favorite_technique)}</div>
+        </div>
+        {/* ── ★★★ /DEBUG PANEL ★★★ ──────────────────────────────── */}
+
         {/* ── ★ 共通ステータスカード ────────────────────────────── */}
         {epithet ? (
           <div style={{ marginBottom: 14 }}>
