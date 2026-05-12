@@ -14,24 +14,33 @@ const mplus = M_PLUS_Rounded_1c({
 export const metadata: Metadata = {
   title:       '百錬自得 | 剣道稽古記録',
   description: '剣道の稽古を記録し、成長を可視化する稽古管理アプリ',
-  manifest:    '/manifest.json',
+  // ★ 修正: Next.js App Router の manifest.ts は /manifest.webmanifest として配信される
+  manifest:    '/manifest.webmanifest',
   appleWebApp: {
     capable:        true,
     statusBarStyle: 'black-translucent',
     title:          '百錬自得',
-    startupImage:   '/icon/icon-512x512.png',
+    // ★ 修正: パスを実ファイルと一致させる（旧: /icon/...）
+    startupImage:   '/icon-512x512.png',
   },
   icons: {
+    // ★ 修正: パスを manifest.ts と完全一致させる（ルート直下）
     icon: [
-      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
-      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      // ★ 修正: パスを実ファイルに一致させる
+      //   180x180 が iOS 推奨だが、無ければ 192x192 でも動作する
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
     ],
   },
   other: {
-    'mobile-web-app-capable': 'yes',
+    'mobile-web-app-capable':         'yes',
+    // ★ 追加: Apple 専用メタタグ（iOS PWA の信頼性を最大化）
+    'apple-mobile-web-app-capable':   'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'apple-mobile-web-app-title':     '百錬自得',
   },
 };
 
