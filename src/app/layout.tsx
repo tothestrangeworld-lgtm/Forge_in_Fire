@@ -20,27 +20,25 @@ export const metadata: Metadata = {
     capable:        true,
     statusBarStyle: 'black-translucent',
     title:          '百錬自得',
-    // ★ 修正: パスを実ファイルと一致させる（旧: /icon/...）
-    startupImage:   '/icon-512x512.png',
+    // ★ 修正: パスを実ファイル位置（/icons/）と一致させる
+    startupImage:   '/icons/icon-512x512.png',
   },
   icons: {
-    // ★ 修正: パスを manifest.ts と完全一致させる（ルート直下）
+    // ★ 修正: パスを実ファイル位置（/icons/）と一致（元のlayoutが正しかった）
     icon: [
-      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
-      // ★ 修正: パスを実ファイルに一致させる
-      //   180x180 が iOS 推奨だが、無ければ 192x192 でも動作する
-      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
     ],
   },
   other: {
-    'mobile-web-app-capable':         'yes',
+    'mobile-web-app-capable':                'yes',
     // ★ 追加: Apple 専用メタタグ（iOS PWA の信頼性を最大化）
-    'apple-mobile-web-app-capable':   'yes',
+    'apple-mobile-web-app-capable':          'yes',
     'apple-mobile-web-app-status-bar-style': 'black-translucent',
-    'apple-mobile-web-app-title':     '百錬自得',
+    'apple-mobile-web-app-title':            '百錬自得',
   },
 };
 
