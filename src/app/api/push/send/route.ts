@@ -2,33 +2,28 @@
 // =====================================================================
 // PWAプッシュ通知 - 送信API ★ Phase12
 //
-// 役割:
-//   GAS の毎日21時トリガーが、通知対象ユーザー（優先度1〜3で1人1通）を
-//   判定し、subscription 情報と共に targets[] として POST してくる。
-//   このエンドポイントは web-push ライブラリで VAPID 認証付きの
-//   Web Push を逐次送信し、結果をまとめて返却する。
+// ★ 重要: Cloudflare Pages 制約のため Edge Runtime で動作する。
+//   web-push パッケージは Node.js crypto に依存し Edge では動かないため、
+//   src/lib/webpush-edge.ts に Web Crypto API ベースの自前実装を用意。
 //
 // リクエスト形式:
 //   POST /api/push/send
 //   Body: PushSendRequest = { token, targets[] }
 //
 // 認証:
-//   ボディ内の token と環境変数 PUSH_INTERNAL_TOKEN の一致を要求。
+//   x-push-token ヘッダ または body.token と環境変数 PUSH_INTERNAL_TOKEN の一致を要求
 //
-// 重要な実行環境注意:
-//   web-push は Node.js の crypto に依存するため Edge Runtime では
-//   動作しない。本ファイルは export const runtime = 'nodejs' を明示。
-//   Cloudflare Pages にデプロイする場合は wrangler.toml に
-//   compatibility_flags = ["nodejs_compat"] を設定すること。
-//
-// 410/404 応答:
-//   購読が失効しているため、results[].expired = true を返す。
-//   GAS 側はこの結果を受けて push_subscriptions シートから該当行を
-//   削除すべき（後続フェーズで実装）。
+// 失効検出:
+//   404/410 が返ったら results[].expired = true として返却。
+//   GAS 側はこれをもとに push_subscriptions シートから該当行を削除する。
 // =====================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import webpush from 'web-push';
+import {
+  sendWebPushEdge,
+  type VapidKeys,
+  type PushSubscriptionForSend,
+} from '@/lib/webpush-edge';
 import type {
   PushSendRequest,
   PushSendResponse,
@@ -36,9 +31,8 @@ import type {
   PushSendTarget,
 } from '@/types';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 // ---------------------------------------------------------------------
 // 環境変数
@@ -48,17 +42,15 @@ const VAPID_PRIVATE_KEY   = process.env.VAPID_PRIVATE_KEY            ?? '';
 const VAPID_SUBJECT       = process.env.VAPID_SUBJECT                ?? 'mailto:admin@example.com';
 const PUSH_INTERNAL_TOKEN = process.env.PUSH_INTERNAL_TOKEN          ?? '';
 
-// ---------------------------------------------------------------------
-// VAPID 初期化（プロセス起動時に1回）
-// ---------------------------------------------------------------------
-let vapidConfigured = false;
-function ensureVapid(): void {
-  if (vapidConfigured) return;
+function getVapidKeys(): VapidKeys {
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     throw new Error('VAPID keys are not configured.');
   }
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-  vapidConfigured = true;
+  return {
+    publicKey:  VAPID_PUBLIC_KEY,
+    privateKey: VAPID_PRIVATE_KEY,
+    subject:    VAPID_SUBJECT,
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -69,9 +61,7 @@ interface PushPayloadJson {
   body:     string;
   url:      string;
   category: string;
-  /** 通知 tag。同種通知の重複表示を抑止する */
   tag:      string;
-  /** ServiceWorker 側で使うアイコン */
   icon:     string;
   badge:    string;
 }
@@ -92,36 +82,45 @@ function buildPayload(target: PushSendTarget): string {
 // ---------------------------------------------------------------------
 // 個別送信
 // ---------------------------------------------------------------------
-async function sendOne(target: PushSendTarget): Promise<PushSendResultEntry> {
+async function sendOne(
+  target:  PushSendTarget,
+  vapid:   VapidKeys,
+): Promise<PushSendResultEntry> {
   try {
-    const payload = buildPayload(target);
-    const result = await webpush.sendNotification(
-      {
-        endpoint: target.subscription.endpoint,
-        keys:     target.subscription.keys,
+    const sub: PushSubscriptionForSend = {
+      endpoint: target.subscription.endpoint,
+      keys: {
+        p256dh: target.subscription.keys.p256dh,
+        auth:   target.subscription.keys.auth,
       },
-      payload,
-      {
-        TTL:     60 * 60 * 12, // 12時間
-        urgency: 'normal',
-      },
-    );
-    return {
-      userId:  target.userId,
-      success: true,
-      status:  result.statusCode,
     };
-  } catch (err: unknown) {
-    // web-push のエラーは statusCode を持つ
-    const e = err as { statusCode?: number; body?: string; message?: string };
-    const status = typeof e.statusCode === 'number' ? e.statusCode : 0;
-    const expired = status === 404 || status === 410;
+    const result = await sendWebPushEdge(sub, vapid, {
+      payload: buildPayload(target),
+      ttl:     60 * 60 * 12,
+      urgency: 'normal',
+    });
+
+    if (result.ok) {
+      return {
+        userId:  target.userId,
+        success: true,
+        status:  result.status,
+      };
+    }
     return {
       userId:  target.userId,
       success: false,
-      expired,
-      status,
-      message: e.body ?? e.message ?? 'unknown error',
+      expired: result.expired,
+      status:  result.status,
+      message: result.body?.slice(0, 200) ?? `HTTP ${result.status}`,
+    };
+  } catch (err) {
+    return {
+      userId:  target.userId,
+      success: false,
+      expired: false,
+      status:  0,
+      message: err instanceof Error ? err.message : 'unknown error',
     };
   }
 }
@@ -151,7 +150,6 @@ function isValidTarget(t: unknown): t is PushSendTarget {
 // ---------------------------------------------------------------------
 export async function POST(req: NextRequest): Promise<NextResponse<PushSendResponse>> {
   try {
-    // 認証: ヘッダ or ボディの token を確認
     const headerToken = req.headers.get('x-push-token') ?? '';
 
     let body: PushSendRequest;
@@ -186,9 +184,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<PushSendRespo
       );
     }
 
-    // VAPID 初期化（鍵未設定時はここで例外）
+    let vapid: VapidKeys;
     try {
-      ensureVapid();
+      vapid = getVapidKeys();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'VAPID init failed';
       return NextResponse.json(
@@ -235,12 +233,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<PushSendRespo
       );
     }
 
-    // 並列送信（同時実行数を制限してエンドポイント側のレート制御に配慮）
-    const CONCURRENCY = 10;
+    // 並列送信（CPU時間制約のため小ロット）
+    const CONCURRENCY = 8;
     const results: PushSendResultEntry[] = [];
     for (let i = 0; i < validTargets.length; i += CONCURRENCY) {
       const chunk = validTargets.slice(i, i + CONCURRENCY);
-      const chunkResults = await Promise.all(chunk.map(sendOne));
+      const chunkResults = await Promise.all(chunk.map(t => sendOne(t, vapid)));
       results.push(...chunkResults);
     }
 
