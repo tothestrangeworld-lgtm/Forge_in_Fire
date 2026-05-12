@@ -29,7 +29,7 @@ import type {
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
-const GAS_WEBAPP_URL = process.env.GAS_WEBAPP_URL ?? '';
+const GAS_URL = process.env.GAS_URL ?? '';
 const PUSH_INTERNAL_TOKEN = process.env.PUSH_INTERNAL_TOKEN ?? '';
 
 function isValidSubscription(sub: unknown): sub is PushSubscriptionPayload {
@@ -45,9 +45,9 @@ function isValidSubscription(sub: unknown): sub is PushSubscriptionPayload {
 
 export async function POST(req: NextRequest): Promise<NextResponse<PushSubscribeResponse>> {
   try {
-    if (!GAS_WEBAPP_URL) {
+    if (!GAS_URL) {
       return NextResponse.json(
-        { status: 'error', message: 'GAS_WEBAPP_URL is not configured.' },
+        { status: 'error', message: 'GAS_URL is not configured.' },
         { status: 500 },
       );
     }
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<PushSubscribe
     }
 
     // GAS Web App へ転送（GAS 側で push_subscriptions シートへ upsert）
-    const gasRes = await fetch(GAS_WEBAPP_URL, {
+    const gasRes = await fetch(GAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

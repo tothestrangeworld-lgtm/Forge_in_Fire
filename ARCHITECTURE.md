@@ -12,13 +12,14 @@
 |---|---|
 | フレームワーク | Next.js 15（App Router / TypeScript） |
 | ホスティング | Cloudflare Pages（`@cloudflare/next-on-pages` ビルド / `wrangler.toml` 管理） |
-| スタイリング | Tailwind CSS + インラインスタイル（サイバー和風テーマ） |
+| スタイリング | Tailwind CSS + インラインスタイル(サイバー和風テーマ) |
 | フォント | M PLUS Rounded 1c |
-| グラフ | Recharts（AreaChart / RadarChart） |
-| スキルグリッド | @xyflow/react v12（六角形カスタムノード・アニメーションエッジ） ★ Phase5更新 |
+| グラフ | Recharts(AreaChart / RadarChart) |
+| スキルグリッド | @xyflow/react v12（六角形カスタムノード・アニメーションエッジ）★ Phase5更新 |
 | アイコン | lucide-react |
 | データフェッチ/キャッシュ | SWR（ホーム・門下生一覧/詳細・記録画面の GET キャッシュ化）★ Phase6追加 |
-| PWA | @ducanh2912/next-pwa（サービスワーカー自動生成・オフラインキャッシュ）★ Phase7追加 |
+| PWA | @ducanh2912/next-pwa（サービスワーカー自動生成・オフラインキャッシュ・カスタムワーカー結合）★ Phase7追加 / Phase12拡張 |
+| Push通知 | Web Push API + 自前 VAPID 実装（Web Crypto API）★ Phase12新規 |
 
 ### バックエンド・データベース
 
@@ -27,6 +28,7 @@
 | バックエンド | Google Apps Script（GAS）Web App（doGet / doPost） |
 | データベース | Google Sheets（スプレッドシート ID: `1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I`） |
 | CORS回避 | Next.js の `/api/gas` プロキシルート経由 |
+| Push通知配信 | Next.js API Routes (`/api/push/send`) を Edge Runtime で実装。GASは21時トリガーで対象判定のみを担当し、暗号化送信はNext.jsへ委譲 ★ Phase12 |
 
 ---
 
@@ -34,7 +36,7 @@
 
 ```text
 Forge_in_Fire/
-├── DB_SCHEMA.md                        # DBテーブルとカラムの定義書
+├── DB_SCHEMA.md                        # DBテーブルとカラムの定義書（Phase12: push_subscriptions 追加）
 ├── ROADMAP.md                          # 開発ロードマップとフェーズ管理
 ├── DEPLOY_GUIDE.md                     # デプロイ手順書
 ├── README.md                           # プロジェクト概要
@@ -42,11 +44,15 @@ Forge_in_Fire/
 ├── tailwind.config.ts                  # Tailwind CSS 設定（サイバー和風カラートークン）
 ├── postcss.config.js                   # PostCSS 設定
 ├── package.json                        # 依存パッケージ管理
-├── tsconfig.json                       # TypeScript 設定
-├── next.config.ts                      # Next.js設定（PWA設定を @ducanh2912/next-pwa でラップ）★ Phase7更新
+├── tsconfig.json                       # TypeScript 設定（worker/**/*.ts を include に追加 ★ Phase12）
+├── next.config.ts                      # Next.js設定（PWA設定 + customWorkerSrc='worker' ★ Phase12更新）
 │
 ├── gas/
-│   └── Code.gs                         # GASバックエンド全処理 ★ Phase9.1 bugfix
+│   └── Code.gs                         # GASバックエンド全処理 ★ Phase12 では未更新（Step3で実装予定）
+│
+├── worker/                             # ★ Phase12 新規: カスタムService Worker
+│   └── index.ts                        # push / notificationclick / pushsubscriptionchange ハンドラ
+│                                       # ビルド時に next-pwa が自動生成 sw.js 末尾へ結合する
 │
 ├── src/
 │   ├── app/
@@ -63,23 +69,27 @@ Forge_in_Fire/
 │   │   │   └── [id]/page.tsx           # 他ユーザー閲覧 + 他者評価（UserStatusCard使用）
 │   │   ├── settings/
 │   │   │   ├── tasks/page.tsx          # カスタム評価項目設定
-│   │   │   └── profile/page.tsx        # プロフィール設定（段位・座右の銘・得意技ID選択）
+│   │   │   └── profile/page.tsx        # プロフィール設定（段位・座右の銘・得意技ID選択・★Phase12 Push通知トグル）
 │   │   ├── achievements/
 │   │   │   └── page.tsx                # 実績バッジ一覧画面
 │   │   ├── debug/page.tsx              # ログビューア
-│   │   └── api/gas/route.ts            # GASプロキシ
+│   │   └── api/
+│   │       ├── gas/route.ts            # GASプロキシ
+│   │       └── push/                   # ★ Phase12 新規
+│   │           ├── subscribe/route.ts  # サブスクリプション登録API（Edge Runtime / GASプロキシ）
+│   │           └── send/route.ts       # Push送信API（Edge Runtime / VAPID自前実装）
 │   │
 │   ├── components/
 │   │   ├── Navigation.tsx              # ボトムナビ（4ボタン: ホーム・稽古記録・門下生・ログアウト）
 │   │   ├── AuthGuard.tsx               # 未ログイン時リダイレクト
 │   │   ├── UserStatusCard.tsx          # ユーザーステータス共通コンポーネント（7行レイアウト）★ Phase11.1更新
-│   │   ├── TaskEvalCard.tsx            # 【評価入力用】 record / rivals 画面で使用される、星評価による課題スコア入力カード。極限までシンプル化された「上段：課題テキスト」「下段：星5つ」の2行構成。選択スコアに応じて星のカラーが動的に変化する。
-│   │   ├── MasteryToast.tsx            # 免許皆伝トースト（黒×金×朱印） ★ Phase11新規
-│   │   ├── TaskScoreDistCard.tsx       # 【ダッシュボード分析表示用】 自分／剣友のダッシュボードで使用される、課題別スコア分布カード。100%積み上げバーで自己評価・剣友評価それぞれのスコア分布を可視化し、各セグメントにツールチップ（★N: M回）を持つ。免許皆伝（Mastery）ステータスや分析インサイト（明鏡止水 等）も併せて表示する。
+│   │   ├── TaskEvalCard.tsx            # 課題スコア入力カード（星評価）
+│   │   ├── MasteryToast.tsx            # 免許皆伝トースト（黒×金×朱印） ★ Phase11
+│   │   ├── TaskScoreDistCard.tsx       # 課題別スコア分布カード（自己/他者評価突合）
 │   │   └── charts/
 │   │       ├── RadarChart.tsx          # 稽古スコアバランス（横型プログレスバー）
 │   │       ├── TechniqueRadarChart.tsx # 技の傾向・習熟度バランスを表示するレーダーチャート
-│   │       ├── XPTimelineChart.tsx     # XP累積推移（ステップライン・ネオングラデーション）★ Phase11.1更新
+│   │       ├── XPTimelineChart.tsx     # XP累積推移（ステップライン・ネオングラデーション）
 │   │       ├── ActivityHeatmap.tsx     # 稽古カレンダー
 │   │       ├── SkillGrid.tsx           # スキルグリッド（六角形ノード・アニメーションエッジ）
 │   │       ├── PlaystyleCharts.tsx     # プレイスタイル分析
@@ -88,17 +98,19 @@ Forge_in_Fire/
 │   │
 │   ├── lib/
 │   │   ├── api.ts                      # GAS APIクライアント
-│   │   ├── auth.ts                     # 認証ユーティリティ
+│   │   ├── auth.ts                     # 認証ユーティリティ（getAuthUser / getCurrentUserId 等）
 │   │   ├── epithet.ts                  # 3層称号判定ロジック
-│   │   ├── mastery.ts                  # 免許皆伝（Mastery）判定ロジック ★ Phase11新規
-│   │   ├── matchupTheme.ts             # 相性（S/W）のサイバー和風カラーパレット定義 ★ Phase10
+│   │   ├── mastery.ts                  # 免許皆伝（Mastery）判定ロジック ★ Phase11
+│   │   ├── matchupTheme.ts             # 相性（S/W）のサイバー和風カラーパレット ★ Phase10
+│   │   ├── webpush-edge.ts             # ★ Phase12 新規: Edge Runtime互換 Web Push送信ライブラリ
+│   │   │                                #   （VAPID JWT + aes128gcm 暗号化を Web Crypto API で自前実装）
 │   │   └── logger.ts                   # クライアントロガー
 │   │
 │   └── types/
-│       └── index.ts                    # 全型定義・XP/レベル計算関数 ★ xpMultiplier統合 / Phase11更新
+│       └── index.ts                    # 全型定義・XP/レベル計算関数 ★ Phase12: Push通知関連型を追加
 │
 └── public/                             # (treeコマンド除外対象だが運用上存在)
-    ├── sw.js                           # サービスワーカー（ビルド時に自動生成）
+    ├── sw.js                           # サービスワーカー（ビルド時に自動生成）★ worker/index.ts が結合される
     ├── workbox-*.js                    # Workboxランタイム（ビルド時に自動生成）
-    ├── icon-192x192.png                # PWAアイコン（要手動配置）
+    ├── icon-192x192.png                # PWAアイコン（要手動配置・通知アイコンにも使用）
     └── icon-512x512.png                # PWAアイコン（要手動配置）

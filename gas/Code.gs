@@ -46,6 +46,15 @@
 //   - getPeersStyleData を拡張。user_techniques の Points を SubCategory 別に
 //     集計し、ユーザーごとの上位最大4件を topStyles として返却する。
 //   - favorite_technique はフェイルセーフとしてそのまま残す。
+// ★ Phase12: PWAプッシュ通知システム
+//   - push_subscriptions シート新設（A=user_id, B=subscription_json, C=updated_at）
+//   - doPost に savePushSubscription アクション追加（PUSH_INTERNAL_TOKEN 認証）
+//   - dailyPushJob(): 毎日21時実行、優先度1〜3で通知対象判定
+//     優先度1: XP減衰警告（last_practice_date がちょうど2日前）
+//     優先度2: 実績リーチ（streak_days の condition_value -1 と一致）
+//     優先度3: 他者評価サマリー（今日の peer_evaluations.target_id に該当）
+//   - setupDailyPushTrigger(): 21時トリガー初回設定用ヘルパー
+//   - 失効した購読(results[].expired===true)の自動クリーンアップ
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -60,6 +69,7 @@ var SHEET_PEER_EVALS        = 'peer_evaluations';   // evaluator_id, target_id, 
 var SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Points, LastRating, last_quantity, last_quality, last_feedback ★ Phase8
 var SHEET_TECH_LOGS         = 'technique_logs';     // user_id, date, technique_id, quantity, quality, xp_earned, feedback ★ Phase8 新設
 var SHEET_USER_ACHIEVEMENTS = 'user_achievements';  // user_id, achievement_id, unlocked_at ★ Phase6
+var SHEET_PUSH_SUBS         = 'push_subscriptions'; // user_id, subscription_json, updated_at ★ Phase12
 
 // 全ユーザー共通マスタ（user_id なし）
 var SHEET_TECH_MASTER         = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name
@@ -203,14 +213,15 @@ function doPost(e) {
     action = body.action;
     gasLog('INFO', action, 'doPost', { user_id: body.user_id || '' });
     switch (action) {
-      case 'login':                 return login(body);
-      case 'saveLog':               return saveLog(body);
-      case 'updateProfile':         return updateProfile(body);
-      case 'resetStatus':           return resetStatus(body);
-      case 'updateTechniqueRating': return updateTechniqueRating(body);
-      case 'updateTasks':           return updateTasks(body);
-      case 'archiveTask':           return archiveTask(body);
-      case 'evaluatePeer':          return evaluatePeer(body);
+      case 'login':                  return login(body);
+      case 'saveLog':                return saveLog(body);
+      case 'updateProfile':          return updateProfile(body);
+      case 'resetStatus':            return resetStatus(body);
+      case 'updateTechniqueRating':  return updateTechniqueRating(body);
+      case 'updateTasks':            return updateTasks(body);
+      case 'archiveTask':            return archiveTask(body);
+      case 'evaluatePeer':           return evaluatePeer(body);
+      case 'savePushSubscription':   return savePushSubscription(body); // ★ Phase12
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -1728,4 +1739,508 @@ function checkAndUnlockAchievements(ss, userId, date, logSheet) {
   }
 
   return newlyUnlocked;
+}
+
+// =====================================================================
+// P. PWA Push通知システム ★ Phase12
+//
+// 概要:
+//   - push_subscriptions シートに user_id ↔ subscription_json を upsert
+//   - 毎日21時に dailyPushJob() がトリガー実行
+//   - 優先度1〜3で各ユーザーの通知対象を判定し、
+//     Next.js の /api/push/send へ POST してWeb Push送信を委譲
+//   - 失効した購読は results[].expired===true をもとに自動クリーンアップ
+//
+// スクリプトプロパティ（要設定）:
+//   PUSH_INTERNAL_TOKEN: Cloudflare側と一致する共有シークレット
+//   NEXT_API_BASE:       Next.js のベースURL（例: https://forge-in-fire.pages.dev）
+//                        末尾スラッシュなし
+//
+// 通知文（仕様書通り）:
+//   優先度1 [decay_warning]: 'XP減衰警告' / '【警告】最終稽古記録から48時間経過。明日からXPが減衰します。'
+//   優先度2 [achievement]:   '実績リーチ' / '実績解除の予兆あり。'
+//   優先度3 [peer_eval]:     '他者評価サマリー' / 'あなたの稽古が評価されました。'
+// =====================================================================
+
+/**
+ * push_subscriptions シートを取得（なければ自動作成）
+ * 列: user_id(0), subscription_json(1), updated_at(2)
+ */
+function getPushSubscriptionsSheet(ss) {
+  var sheet = ss.getSheetByName(SHEET_PUSH_SUBS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_PUSH_SUBS);
+    sheet.appendRow(['user_id', 'subscription_json', 'updated_at']);
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.setFrozenRows(1);
+    gasLog('INFO', 'getPushSubscriptionsSheet', 'push_subscriptions シートを自動作成しました');
+  }
+  return sheet;
+}
+
+/**
+ * savePushSubscription
+ * ★ Phase12: フロント（Next.js /api/push/subscribe 経由）から購読情報を upsert
+ *
+ * body: {
+ *   action:       'savePushSubscription',
+ *   token:        共有シークレット,
+ *   userId:       string,
+ *   subscription: { endpoint, keys: { p256dh, auth }, ... }
+ * }
+ */
+function savePushSubscription(body) {
+  var token        = body.token;
+  var userId       = body.userId;
+  var subscription = body.subscription;
+
+  // ── 1. 認証 ──
+  var expectedToken = PropertiesService.getScriptProperties().getProperty('PUSH_INTERNAL_TOKEN');
+  if (!expectedToken) {
+    gasLog('ERROR', 'savePushSubscription', 'PUSH_INTERNAL_TOKEN がスクリプトプロパティに未設定');
+    return createError('Server token not configured', 500);
+  }
+  if (!token || String(token) !== String(expectedToken)) {
+    gasLog('WARN', 'savePushSubscription', 'token不一致（不正アクセスの可能性）',
+      { providedTokenLength: token ? String(token).length : 0 });
+    return createError('Unauthorized', 401);
+  }
+
+  // ── 2. 入力検証 ──
+  if (!userId) return createError('userId は必須です', 400);
+  if (!subscription || typeof subscription !== 'object') {
+    return createError('subscription オブジェクトは必須です', 400);
+  }
+  if (!subscription.endpoint || !subscription.keys ||
+      !subscription.keys.p256dh || !subscription.keys.auth) {
+    return createError('subscription の構造が不正です（endpoint/keys.p256dh/keys.auth 必須）', 400);
+  }
+
+  // ── 3. シート取得 ──
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = getPushSubscriptionsSheet(ss);
+  var rows  = sheet.getDataRange().getValues();
+  var ts    = nowJstTs();
+  var subJsonStr = JSON.stringify(subscription);
+
+  // ── 4. upsert ──
+  var foundRow = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === String(userId)) {
+      foundRow = i + 1; // シート行番号は1-indexed
+      break;
+    }
+  }
+
+  if (foundRow > 0) {
+    // 既存行を上書き
+    sheet.getRange(foundRow, 1, 1, 3).setValues([[userId, subJsonStr, ts]]);
+    gasLog('INFO', 'savePushSubscription', 'UPDATE user=' + userId);
+  } else {
+    // 新規行を追加
+    sheet.appendRow([userId, subJsonStr, ts]);
+    gasLog('INFO', 'savePushSubscription', 'INSERT user=' + userId);
+  }
+
+  return createResponse({ saved: true, userId: String(userId) });
+}
+
+/**
+ * push_subscriptions から userId に該当する行を削除
+ * 失効した購読のクリーンアップに使用
+ */
+function deletePushSubscriptionByUserId(sheet, userId) {
+  var lastRow = sheet.getLastRow();
+  for (var r = lastRow; r >= 2; r--) {
+    if (String(sheet.getRange(r, 1).getValue()) === String(userId)) {
+      sheet.deleteRow(r);
+      gasLog('INFO', 'deletePushSubscriptionByUserId', 'EXPIRED subscription removed user=' + userId);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 指定された YYYY-MM-DD の日付 から N日前の YYYY-MM-DD を返す
+ */
+function dateMinusDays(baseStr, daysBack) {
+  var base = new Date(baseStr);
+  base.setHours(0, 0, 0, 0);
+  base.setDate(base.getDate() - daysBack);
+  return Utilities.formatDate(base, 'Asia/Tokyo', 'yyyy-MM-dd');
+}
+
+/**
+ * 2つの YYYY-MM-DD 文字列の日数差（後 - 前）を返す
+ */
+function daysDiff(fromStr, toStr) {
+  if (!fromStr || !toStr) return -1;
+  var from = new Date(fromStr);
+  var to   = new Date(toStr);
+  from.setHours(0, 0, 0, 0);
+  to.setHours(0, 0, 0, 0);
+  return Math.floor((to - from) / 86400000);
+}
+
+/**
+ * 優先度1判定: XP減衰警告
+ * last_practice_date がちょうど2日前ならtrue
+ *
+ * 仕様: 最終稽古記録から48時間経過 = 2日経過 = 明日からXP減衰開始
+ *       （applyDecay は daysAbsent > 3 で発動するが、警告は2日目で送る）
+ */
+function checkDecayWarning(statusRow, todayStr) {
+  // ★ Phase9.5: last_practice_date は index 3
+  var lastPractice = toDateStr(statusRow[3]);
+  if (!lastPractice) return false;
+  var diff = daysDiff(lastPractice, todayStr);
+  return diff === 2;
+}
+
+/**
+ * 優先度2判定: 実績リーチ
+ * 現在の連続稽古日数が、いずれかの streak_days 系実績の condition_value -1 と一致するか
+ */
+function checkAchievementReach(ss, userId, todayStr, masterCache, logSheet) {
+  if (!logSheet) return false;
+
+  var streak = calcCurrentStreak(logSheet, userId, todayStr);
+  if (streak <= 0) return false;
+
+  // ただし「今日もう稽古済み」なら streak は伸びるが、リーチ通知は不要
+  // calcCurrentStreak は内部で todayStr を必ず含めるため、
+  // 「実際の連続稽古日数（今日含めず）」を別途算出する
+  var actualStreak = calcStreakWithoutToday(logSheet, userId, todayStr);
+
+  // actualStreak が「いずれかの streak_days 実績の condition_value - 1」と一致するか
+  for (var i = 0; i < masterCache.length; i++) {
+    var m = masterCache[i];
+    if (m.conditionType !== 'streak_days') continue;
+    if (m.conditionValue - 1 === actualStreak && actualStreak > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 「今日を含めない」現在の連続稽古日数
+ * 昨日から遡って連続稽古した日数を返す
+ */
+function calcStreakWithoutToday(logSheet, userId, todayStr) {
+  var rows = filterRowsByUserId(logSheet, userId);
+  var dateSet = {};
+  rows.forEach(function(r) {
+    var d = toDateStr(r[1]);
+    if (d) dateSet[d] = true;
+  });
+
+  var streak = 0;
+  var cursor = new Date(todayStr);
+  cursor.setHours(0, 0, 0, 0);
+  // 昨日から遡る
+  cursor.setDate(cursor.getDate() - 1);
+
+  while (true) {
+    var ds = Utilities.formatDate(cursor, 'Asia/Tokyo', 'yyyy-MM-dd');
+    if (dateSet[ds]) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+/**
+ * 優先度3判定: 他者評価サマリー
+ * 今日の peer_evaluations に target_id === userId のレコードがあるか
+ */
+function checkPeerEvalToday(peeRows, userId, todayStr) {
+  for (var i = 1; i < peeRows.length; i++) {
+    var pe = peeRows[i];
+    // 列: evaluator_id(0), target_id(1), task_id(2), date(3)
+    if (String(pe[1]) === String(userId) && toDateStr(pe[3]) === todayStr) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * dailyPushJob ★ Phase12 メインバッチ
+ * 毎日21時に時間ベーストリガーから自動実行される。
+ *
+ * 処理フロー:
+ *   1. push_subscriptions の全行をロード
+ *   2. 各ユーザーについて優先度1〜3を順に判定
+ *   3. 該当した最初の優先度の通知を1件 targets[] へ追加
+ *   4. targets が1件以上あれば /api/push/send へ POST
+ *   5. results[].expired===true の userId を push_subscriptions から削除
+ */
+function dailyPushJob() {
+  var jobStartedAt = nowJstTs();
+  gasLog('INFO', 'dailyPushJob', 'START at ' + jobStartedAt);
+
+  try {
+    // ── A. スクリプトプロパティ取得 ──
+    var props = PropertiesService.getScriptProperties();
+    var token        = props.getProperty('PUSH_INTERNAL_TOKEN');
+    var nextApiBase  = props.getProperty('NEXT_API_BASE');
+    if (!token) {
+      gasLog('ERROR', 'dailyPushJob', 'PUSH_INTERNAL_TOKEN が未設定');
+      return;
+    }
+    if (!nextApiBase) {
+      gasLog('ERROR', 'dailyPushJob', 'NEXT_API_BASE が未設定');
+      return;
+    }
+    var sendUrl = String(nextApiBase).replace(/\/+$/, '') + '/api/push/send';
+
+    // ── B. 各シートをロード ──
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var subSheet = getPushSubscriptionsSheet(ss);
+    var subRows  = subSheet.getDataRange().getValues();
+    if (subRows.length < 2) {
+      gasLog('INFO', 'dailyPushJob', 'No subscriptions registered');
+      return;
+    }
+
+    var statSheet = ss.getSheetByName(SHEET_STATUS);
+    var statRows  = statSheet ? statSheet.getDataRange().getValues() : [];
+    var statusMap = {};   // user_id -> row配列
+    for (var s = 1; s < statRows.length; s++) {
+      var srow = statRows[s];
+      if (srow[0]) statusMap[String(srow[0])] = srow;
+    }
+
+    var logSheet = ss.getSheetByName(SHEET_LOGS);
+
+    var peSheet = ss.getSheetByName(SHEET_PEER_EVALS);
+    var peRows  = peSheet ? peSheet.getDataRange().getValues() : [];
+
+    var achievementMaster = getAchievementMasterData(ss);
+
+    var todayStr = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+
+    // ── C. 各ユーザーの通知対象を判定 ──
+    var targets = [];
+    var stats   = { total: 0, decay: 0, achievement: 0, peer_eval: 0, skipped: 0, invalid_sub: 0 };
+
+    for (var r = 1; r < subRows.length; r++) {
+      var row    = subRows[r];
+      var userId = String(row[0] || '');
+      var subStr = String(row[1] || '');
+      if (!userId || !subStr) {
+        stats.invalid_sub++;
+        continue;
+      }
+      stats.total++;
+
+      var subscription;
+      try {
+        subscription = JSON.parse(subStr);
+      } catch (e) {
+        gasLog('WARN', 'dailyPushJob', 'subscription JSON parse error user=' + userId);
+        stats.invalid_sub++;
+        continue;
+      }
+      if (!subscription || !subscription.endpoint ||
+          !subscription.keys || !subscription.keys.p256dh || !subscription.keys.auth) {
+        stats.invalid_sub++;
+        continue;
+      }
+
+      var statusRow = statusMap[userId];
+      var category  = null;
+      var title     = '';
+      var bodyText  = '';
+      var url       = '/';
+
+      // 優先度1: XP減衰警告
+      if (statusRow && checkDecayWarning(statusRow, todayStr)) {
+        category = 'decay_warning';
+        title    = 'XP減衰警告';
+        bodyText = '【警告】最終稽古記録から48時間経過。明日からXPが減衰します。';
+        url      = '/record';
+        stats.decay++;
+      }
+      // 優先度2: 実績リーチ
+      else if (logSheet && checkAchievementReach(ss, userId, todayStr, achievementMaster, logSheet)) {
+        category = 'achievement';
+        title    = '実績リーチ';
+        bodyText = '実績解除の予兆あり。';
+        url      = '/achievements';
+        stats.achievement++;
+      }
+      // 優先度3: 他者評価サマリー
+      else if (peRows.length > 1 && checkPeerEvalToday(peRows, userId, todayStr)) {
+        category = 'peer_eval';
+        title    = '他者評価サマリー';
+        bodyText = 'あなたの稽古が評価されました。';
+        url      = '/';
+        stats.peer_eval++;
+      }
+      else {
+        stats.skipped++;
+        continue;
+      }
+
+      targets.push({
+        userId:       userId,
+        subscription: subscription,
+        category:     category,
+        title:        title,
+        body:         bodyText,
+        url:          url,
+      });
+    }
+
+    gasLog('INFO', 'dailyPushJob', 'judgment done', {
+      total: stats.total,
+      decay: stats.decay,
+      achievement: stats.achievement,
+      peer_eval: stats.peer_eval,
+      skipped: stats.skipped,
+      invalid: stats.invalid_sub,
+      targets: targets.length,
+    });
+
+    if (targets.length === 0) {
+      gasLog('INFO', 'dailyPushJob', 'No targets to notify. END');
+      return;
+    }
+
+    // ── D. /api/push/send へ POST ──
+    var payload = {
+      token:   token,
+      targets: targets,
+    };
+    var response;
+    try {
+      response = UrlFetchApp.fetch(sendUrl, {
+        method:             'post',
+        contentType:        'application/json',
+        headers:            { 'x-push-token': token },
+        payload:            JSON.stringify(payload),
+        muteHttpExceptions: true,
+        followRedirects:    true,
+      });
+    } catch (fetchErr) {
+      gasLog('ERROR', 'dailyPushJob', 'fetch failed: ' + fetchErr.message,
+        { sendUrl: sendUrl, targetsCount: targets.length });
+      return;
+    }
+
+    var resCode = response.getResponseCode();
+    var resText = response.getContentText() || '';
+    gasLog('INFO', 'dailyPushJob', 'send API response code=' + resCode,
+      { bodyHead: resText.slice(0, 300) });
+
+    if (resCode < 200 || resCode >= 300) {
+      gasLog('ERROR', 'dailyPushJob', 'send API non-2xx',
+        { status: resCode, body: resText.slice(0, 500) });
+      return;
+    }
+
+    // ── E. 失効した購読のクリーンアップ ──
+    var resJson;
+    try {
+      resJson = JSON.parse(resText);
+    } catch (e) {
+      gasLog('WARN', 'dailyPushJob', 'response JSON parse error');
+      return;
+    }
+
+    var results = resJson && resJson.results;
+    if (!Array.isArray(results)) {
+      gasLog('INFO', 'dailyPushJob', 'no results array; END',
+        { succeeded: resJson ? resJson.succeeded : 0, failed: resJson ? resJson.failed : 0 });
+      return;
+    }
+
+    var expiredUserIds = [];
+    results.forEach(function(rr) {
+      if (rr && rr.expired === true && rr.userId) {
+        expiredUserIds.push(String(rr.userId));
+      }
+    });
+
+    if (expiredUserIds.length > 0) {
+      gasLog('INFO', 'dailyPushJob', 'cleaning up expired subscriptions',
+        { count: expiredUserIds.length, userIds: expiredUserIds });
+
+      // シートを再取得（POST中にレースが起きている可能性は低いが念のため）
+      var freshSubSheet = getPushSubscriptionsSheet(ss);
+      expiredUserIds.forEach(function(uid) {
+        deletePushSubscriptionByUserId(freshSubSheet, uid);
+      });
+    }
+
+    gasLog('INFO', 'dailyPushJob', 'END SUCCESS',
+      {
+        targets:   targets.length,
+        succeeded: resJson.succeeded || 0,
+        failed:    resJson.failed    || 0,
+        expired:   expiredUserIds.length,
+      });
+
+  } catch (err) {
+    gasLog('ERROR', 'dailyPushJob', err.message, { stack: err.stack });
+  }
+}
+
+/**
+ * setupDailyPushTrigger ★ Phase12
+ * 毎日21時にdailyPushJobを実行する時間ベーストリガーを設定する。
+ *
+ * 使い方:
+ *   GASエディタでこの関数を選択して「実行」を1回だけ押す。
+ *   既存の dailyPushJob トリガーがあれば全削除してから1つだけ作り直す（冪等）。
+ *
+ * 確認:
+ *   GASエディタ「トリガー」タブで dailyPushJob が日次21時で登録されていればOK。
+ */
+function setupDailyPushTrigger() {
+  // 既存の dailyPushJob トリガーを全削除（重複防止）
+  var existingTriggers = ScriptApp.getProjectTriggers();
+  var deletedCount = 0;
+  existingTriggers.forEach(function(t) {
+    if (t.getHandlerFunction() === 'dailyPushJob') {
+      ScriptApp.deleteTrigger(t);
+      deletedCount++;
+    }
+  });
+
+  // 新規作成: 毎日21時実行（実際は21:00〜21:59のいずれか、GAS仕様）
+  ScriptApp.newTrigger('dailyPushJob')
+    .timeBased()
+    .atHour(21)
+    .everyDays(1)
+    .inTimezone('Asia/Tokyo')
+    .create();
+
+  var msg = 'dailyPushJob トリガーを設定しました。' +
+            (deletedCount > 0 ? '（既存 ' + deletedCount + ' 件を削除して再作成）' : '');
+  gasLog('INFO', 'setupDailyPushTrigger', msg);
+  console.log(msg);
+  console.log('現在のスクリプトプロパティ:');
+  var props = PropertiesService.getScriptProperties().getProperties();
+  console.log('  PUSH_INTERNAL_TOKEN: ' + (props.PUSH_INTERNAL_TOKEN ? '(設定済み・' + String(props.PUSH_INTERNAL_TOKEN).length + '文字)' : '★未設定★'));
+  console.log('  NEXT_API_BASE: '       + (props.NEXT_API_BASE       || '★未設定★'));
+  return msg;
+}
+
+/**
+ * testPushJobNow ★ Phase12 デバッグ用
+ * dailyPushJob を即座に手動実行するためのヘルパー。
+ * GASエディタで選択→実行で動作確認できる。
+ */
+function testPushJobNow() {
+  console.log('=== Manual dailyPushJob execution ===');
+  dailyPushJob();
+  console.log('=== END ===');
+  console.log('error_logs シートで詳細を確認してください。');
 }
