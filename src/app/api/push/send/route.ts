@@ -73,8 +73,8 @@ function buildPayload(target: PushSendTarget): string {
     url:      target.url ?? '/',
     category: target.category,
     tag:      `forge-${target.category}`,
-    icon:     '/icon-192x192.png',
-    badge:    '/icon-192x192.png',
+    icon:     '/icons/icon-192x192.png',
+    badge:    '/icons/icon-192x192.png',
   };
   return JSON.stringify(payload);
 }

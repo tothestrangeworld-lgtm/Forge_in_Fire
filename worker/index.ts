@@ -54,8 +54,8 @@ self.addEventListener('push', (event: PushEvent) => {
     let url   = '/';
     let category = 'default';
     let tag   = 'forge-default';
-    let icon  = '/icon-192x192.png';
-    let badge = '/icon-192x192.png';
+    let icon  = '/icons/icon-192x192.png';
+    let badge = '/icons/icon-192x192.png';
 
     try {
       if (event.data) {
@@ -67,8 +67,8 @@ self.addEventListener('push', (event: PushEvent) => {
           url      = safeStr(parsed.url,   '/');
           category = safeStr(parsed.category, 'default');
           tag      = safeStr(parsed.tag,   `forge-${category}`);
-          icon     = safeStr(parsed.icon,  '/icon-192x192.png');
-          badge    = safeStr(parsed.badge, '/icon-192x192.png');
+          icon     = safeStr(parsed.icon,  '/icons/icon-192x192.png');
+          badge    = safeStr(parsed.badge, '/icons/icon-192x192.png');
         } catch {
           // JSON でなければ生テキストを body として使う
           body = safeStr(text, FALLBACK_BODY);
