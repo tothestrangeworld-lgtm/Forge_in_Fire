@@ -513,11 +513,10 @@ export default function ProfileSettingsPage() {
           fontSize: '1.05rem', fontWeight: 800, margin: '0 0 6px',
           color: '#e0e7ff', letterSpacing: '-0.01em',
         }}>
-          稽古督促通知
+          プッシュ通知
         </h2>
         <p style={{ margin: '0 0 14px', fontSize: '0.78rem', color: 'rgba(129,140,248,0.5)', lineHeight: 1.6 }}>
-          毎晩21時、剣の道に必要な報せを届けます。<br />
-          XP減衰の警告・実績解除の予兆・他者からの評価。
+          必要な報せを届けます。<br />
         </p>
 
         {/* トグルスイッチ */}
@@ -653,13 +652,13 @@ export default function ProfileSettingsPage() {
         )}
 
         {/* 詳細注釈 */}
-        <div style={{
+{/*         <div style={{
           marginTop: 12, padding: '10px 12px',
           background: 'rgba(15,14,42,0.5)',
           borderLeft: '2px solid rgba(168,85,247,0.4)',
           borderRadius: 6,
-        }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(168,85,247,0.7)', letterSpacing: '0.1em', marginBottom: 4 }}>
+        }}> */}
+{/*           <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(168,85,247,0.7)', letterSpacing: '0.1em', marginBottom: 4 }}>
             通知される内容
           </div>
           <ul style={{
@@ -670,9 +669,9 @@ export default function ProfileSettingsPage() {
             <li>XP減衰警告（最終稽古から48時間経過時）</li>
             <li>実績解除の予兆（連続稽古日数が達成1日前）</li>
             <li>他者評価サマリー（誰かが稽古を評価した日）</li>
-          </ul>
+          </ul> */}
         </div>
       </div>
-    </div>
+/*     </div> */
   );
 }
