@@ -1,32 +1,6 @@
 // worker/index.ts
 // =====================================================================
-// 百錬自得 - Push通知カスタムワーカー ★ Phase12
-//
-// このファイルは @ducanh2912/next-pwa の customWorkerSrc 機能により、
-// ビルド時に自動生成される public/sw.js の末尾へインポート結合される。
-//
-// 役割:
-//   1. push イベント受信 → showNotification で OS 通知を表示
-//   2. notificationclick イベント → 該当 URL を開く（既存タブがあれば
-//      フォーカス、なければ新規オープン）
-//
-// 受信ペイロード仕様（/api/push/send が送信する JSON）:
-//   {
-//     title:    string,
-//     body:     string,
-//     url:      string,
-//     category: 'decay_warning' | 'achievement' | 'peer_eval',
-//     tag:      string,
-//     icon:     string,
-//     badge:    string,
-//   }
-//
-// 注意:
-//   このファイルは Service Worker スコープで実行されるため、
-//   self は ServiceWorkerGlobalScope として扱う。
-//   renotify / vibrate は ServiceWorkerRegistration.showNotification() の
-//   仕様には存在するが TypeScript の lib.dom には未定義のため、
-//   ExtendedNotificationOptions 型でキャストして使用する。
+// 百錬自得 - Push通知カスタムワーカー ★ Phase12 (iOS Safe Mode)
 // =====================================================================
 
 /// <reference lib="webworker" />
@@ -34,9 +8,6 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
-// ---------------------------------------------------------------------
-// 受信ペイロードの型
-// ---------------------------------------------------------------------
 interface PushPayload {
   title:    string;
   body:     string;
@@ -47,27 +18,6 @@ interface PushPayload {
   badge?:   string;
 }
 
-// ---------------------------------------------------------------------
-// 拡張 NotificationOptions
-//   lib.dom の NotificationOptions に未定義の Service Worker 限定
-//   プロパティ（renotify, vibrate, actions 等）を許容するための拡張型。
-//   showNotification() の仕様には存在するため実行時は問題なく動作する。
-//   仕様: https://www.w3.org/TR/notifications/#dictdef-notificationoptions
-// ---------------------------------------------------------------------
-interface ExtendedNotificationOptions extends NotificationOptions {
-  renotify?: boolean;
-  vibrate?:  number | number[];
-  actions?:  Array<{
-    action: string;
-    title:  string;
-    icon?:  string;
-  }>;
-  timestamp?: number;
-}
-
-// ---------------------------------------------------------------------
-// push イベント
-// ---------------------------------------------------------------------
 self.addEventListener('push', (event: PushEvent) => {
   let payload: PushPayload = {
     title: '百錬自得',
@@ -92,37 +42,32 @@ self.addEventListener('push', (event: PushEvent) => {
         payload = { ...payload, body: text };
       }
     } catch {
-      // event.data の取得に失敗した場合はデフォルトのまま表示
+      // ignore
     }
   }
 
   const url = payload.url ?? '/';
   const tag = payload.tag ?? `forge-${payload.category ?? 'default'}`;
 
-  // ★ 修正: ExtendedNotificationOptions として型を確定
-  const options: ExtendedNotificationOptions = {
-    body:    payload.body,
-    icon:    payload.icon  ?? '/icon-192x192.png',
-    badge:   payload.badge ?? '/icon-192x192.png',
-    tag,
-    renotify: true,             // 同一 tag でも再通知
-    vibrate:  [120, 60, 120],   // 短2回バイブレーション
+  // ★ 修正: iOS Safari (WebKit) が確実に処理できるプロパティのみに厳選
+  // renotify, vibrate, requireInteraction などの非対応・不安定なプロパティを排除
+  const options: NotificationOptions = {
+    body:  payload.body,
+    icon:  payload.icon  ?? '/icon-192x192.png',
+    badge: payload.badge ?? '/icon-192x192.png',
+    tag:   tag,
     data: {
       url,
       category: payload.category ?? 'default',
       ts: Date.now(),
     },
-    requireInteraction: false,
   };
 
-  const showPromise = self.registration.showNotification(payload.title, options);
-
-  event.waitUntil(showPromise);
+  event.waitUntil(
+    self.registration.showNotification(payload.title, options)
+  );
 });
 
-// ---------------------------------------------------------------------
-// notificationclick イベント
-// ---------------------------------------------------------------------
 self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close();
 
@@ -135,7 +80,6 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
       includeUncontrolled: true,
     });
 
-    // 完全一致のタブがあればフォーカス
     const exact = allClients.find(c => {
       try {
         const u = new URL(c.url);
@@ -144,19 +88,17 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
         return false;
       }
     });
+
     if (exact) {
       await exact.focus();
       try {
         if ('navigate' in exact && typeof (exact as WindowClient).navigate === 'function') {
           await (exact as WindowClient).navigate(targetPath);
         }
-      } catch {
-        // navigate 失敗は無視
-      }
+      } catch {}
       return;
     }
 
-    // 同オリジンの任意のタブをフォーカス → そのタブを navigate
     const anySameOrigin = allClients[0];
     if (anySameOrigin) {
       try {
@@ -165,12 +107,9 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
           await (anySameOrigin as WindowClient).navigate(targetPath);
           return;
         }
-      } catch {
-        // フォールスルー
-      }
+      } catch {}
     }
 
-    // どのタブもなければ新規ウィンドウ
     if (self.clients.openWindow) {
       await self.clients.openWindow(targetPath);
     }
@@ -179,10 +118,6 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.waitUntil(focusOrOpen());
 });
 
-// ---------------------------------------------------------------------
-// pushsubscriptionchange イベント
-//   ブラウザ側で購読が自動的に rotate された場合に発火する。
-// ---------------------------------------------------------------------
 self.addEventListener('pushsubscriptionchange', (event: Event) => {
   const e = event as ExtendableEvent;
   e.waitUntil(
@@ -193,18 +128,11 @@ self.addEventListener('pushsubscriptionchange', (event: Event) => {
         if (oldSub) {
           await oldSub.unsubscribe().catch(() => undefined);
         }
-        // 再購読には applicationServerKey が必要だが、SW からは
-        // 環境変数を参照できないため、ここではフロント側の再購読に委ねる。
-      } catch {
-        // 失敗時は何もしない
-      }
+      } catch {}
     })(),
   );
 });
 
-// ---------------------------------------------------------------------
-// 即時アクティベート
-// ---------------------------------------------------------------------
 self.addEventListener('activate', (event: ExtendableEvent) => {
   event.waitUntil(self.clients.claim());
 });
