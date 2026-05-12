@@ -13,12 +13,12 @@ import withPWAInit from '@ducanh2912/next-pwa';
 const isDev = process.env.NODE_ENV === 'development';
 
 const withPWA = withPWAInit({
-  dest:         'public',
-  register:     true,
-  cacheOnFrontEndNav: true,
+  dest:                         'public',
+  register:                     true,
+  cacheOnFrontEndNav:           true,
   aggressiveFrontEndNavCaching: true,
-  reloadOnOnline: true,
-  disable:      isDev, // 開発時はSW無効化（Push検証は production build で）
+  reloadOnOnline:               true,
+  disable:                      isDev, // 開発時はSW無効化（Push検証は production build で）
 
   // ★ Phase12: カスタムワーカー
   customWorkerSrc:    'worker',     // worker/index.ts を取り込む
@@ -32,9 +32,12 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // ※ 既存の他設定があればここにマージしてください
   images: {
     unoptimized: true,
   },
-
 };
+
+// ★★★ ここが必須 ★★★
+// withPWA(nextConfig) を export しないと next-pwa の設定が反映されず、
+// Service Worker が生成されない。
+export default withPWA(nextConfig);
