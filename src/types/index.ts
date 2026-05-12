@@ -38,6 +38,9 @@
 // ★ Phase-ex4: 剣風相性マッチングの「上位4スタイル」対応
 //   - PeerStyleEntry に topStyles?: string[] を追加
 //     （user_techniques から SubCategory 別ポイント上位4件を集計）
+// ★ Phase12: PWAプッシュ通知基盤
+//   - PushSubscriptionPayload / PushSubscriptionRecord 型を追加
+//   - PushSendRequest / PushSendResponse 型を追加
 // =====================================================================
 
 export interface LogEntry {
@@ -487,4 +490,100 @@ export function resolveTechniqueName(
   if (!master || master.length === 0) return id;
   const found = master.find(m => m.id === id);
   return found ? found.name : id;
+}
+
+// =====================================================================
+// PWA Push通知システム ★ Phase12
+// =====================================================================
+
+/**
+ * Web Push API 標準の PushSubscription を JSON 化した形（toJSON() の戻り値）。
+ * フロントエンドの ServiceWorkerRegistration.pushManager.subscribe() で取得し、
+ * /api/push/subscribe にこの形のまま POST する。
+ */
+export interface PushSubscriptionPayload {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth:   string;
+  };
+}
+
+/**
+ * /api/push/subscribe へ POST する際のリクエストボディ。
+ * userId と subscription を一緒に送り、GAS の push_subscriptions シートへ
+ * (user_id, subscription_json) として upsert する。
+ */
+export interface PushSubscribeRequest {
+  userId:       string;
+  subscription: PushSubscriptionPayload;
+}
+
+export interface PushSubscribeResponse {
+  status:  'ok' | 'error';
+  message?: string;
+}
+
+/**
+ * push_subscriptions シートの1行を表すレコード。
+ * GAS が getPushTargets() で返却する際の形式。
+ *
+ * DB列構成:
+ *   A: user_id
+ *   B: subscription_json（PushSubscriptionPayload を JSON.stringify したもの）
+ */
+export interface PushSubscriptionRecord {
+  userId:       string;
+  subscription: PushSubscriptionPayload;
+}
+
+/**
+ * 通知の優先度カテゴリ。
+ *  - decay_warning:   優先度1 - XP減衰警告（最終稽古日が2日前）
+ *  - achievement:     優先度2 - 実績リーチ（streak_days 実績の解除条件 -1日）
+ *  - peer_eval:       優先度3 - 他者評価サマリー（今日 peer_evaluations で評価された）
+ */
+export type PushNotificationCategory = 'decay_warning' | 'achievement' | 'peer_eval';
+
+/**
+ * 1ユーザーへの送信単位。GAS の毎日21時トリガーで判定後、
+ * /api/push/send に targets[] としてまとめて POST する。
+ */
+export interface PushSendTarget {
+  userId:       string;
+  subscription: PushSubscriptionPayload;
+  category:     PushNotificationCategory;
+  title:        string;
+  body:         string;
+  /** クリック時に開かせたいパス（例: '/', '/record'） */
+  url?:         string;
+}
+
+/**
+ * /api/push/send への POSTボディ。
+ * GAS ↔ Next.js 間は token ヘッダ or ボディ内の token で認証する。
+ */
+export interface PushSendRequest {
+  /** 共有シークレット（環境変数 PUSH_INTERNAL_TOKEN と一致する必要あり） */
+  token:   string;
+  targets: PushSendTarget[];
+}
+
+export interface PushSendResultEntry {
+  userId:    string;
+  success:   boolean;
+  /** 410/404 等で購読が無効化された場合 true（GAS 側で行削除すべき） */
+  expired?:  boolean;
+  message?:  string;
+  status?:   number;
+}
+
+export interface PushSendResponse {
+  status:    'ok' | 'error';
+  total:     number;
+  succeeded: number;
+  failed:    number;
+  results:   PushSendResultEntry[];
+  message?:  string;
 }

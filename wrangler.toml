@@ -5,3 +5,6 @@ pages_build_output_dir = ".vercel/output/static"
 
 [vars]
 # シークレット（GAS_URL など）は Cloudflare Dashboard > Settings > Environment variables で設定
+
+compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2024-09-23"
