@@ -51,7 +51,7 @@ function EpithetNameButton({ epithet }: EpithetNameButtonProps) {
   const [open, setOpen] = useState(false);
 
   const accentColor =
-    epithet.epithetRarity === 'SR' ? 'rgba(139,46,46,0.5)'  :
+    epithet.epithetRarity === 'SR' ? 'rgba(220,46,46,0.5)'  :
     epithet.epithetRarity === 'R'  ? 'rgba(44,79,124,0.5)'  :
     'rgba(99,102,241,0.3)';
   const accentBg =

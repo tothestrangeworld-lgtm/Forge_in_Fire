@@ -8,3 +8,4 @@ pages_build_output_dir = ".vercel/output/static"
 
 compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2024-09-23"
+NEXT_PUBLIC_VAPID_PUBLIC_KEY = "BJrrhgXPcmrThwLwQWZNuQVUQHb9y7dzF46i5wzXjdbTSKB8PzqIYkJL53JHvs0E3c6oBBEXM5qb0DMBvNE3J54"
