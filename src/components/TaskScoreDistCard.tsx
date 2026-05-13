@@ -820,7 +820,7 @@ function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
         gap:        8,
         rowGap:     6,
       }}>
-        {/* 皆伝バッジ */}
+{/*        {/* 皆伝バッジ *
         <div style={{
           position:     'relative',
           display:      'inline-flex',
@@ -834,7 +834,7 @@ function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
           overflow:     'hidden',
           flexShrink:   0,
         }}>
-          {/* スキャンライン */}
+          {/* スキャンライン 
           <div style={{
             position:       'absolute',
             inset:          0,
@@ -844,7 +844,7 @@ function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
             pointerEvents:  'none',
           }} />
 
-          {/* 朱印風アクセント */}
+          {/* 朱印風アクセント 
           <span style={{
             width:        7,
             height:       7,
@@ -856,7 +856,7 @@ function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
             zIndex:       1,
           }} />
 
-          {/* テキスト */}
+          {/* テキスト 
           <span style={{
             fontSize:      10.5,
             fontWeight:    900,
@@ -868,8 +868,13 @@ function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
           }}>
             免 許 皆 伝
           </span>
-        </div>
-
+        </div> */}
+      <span 
+        className="text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,0.8)] ml-2" 
+        title="免許皆伝"
+      >
+        ★
+      </span>
         {/* 履歴ドット */}
         <HistoryDots scores={mastery.recentScores} />
       </div>
