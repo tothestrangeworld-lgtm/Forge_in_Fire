@@ -37,8 +37,20 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import type { Achievement, Technique, UserTask, LogEntry } from '@/types';
-import { titleForLevel, calcLevelFromXp } from '@/types';
+import type {
+  Achievement,
+  Technique,
+  UserTask,
+  LogEntry,
+  ReceivedTechniqueSelection,
+  ReceivedReason,
+  TechniqueMasterEntry,
+} from '@/types';
+import {
+  titleForLevel,
+  calcLevelFromXp,
+  RECEIVED_REASON_LABELS,
+} from '@/types';
 import {
   saveLog,
   updateTechniqueRating,
@@ -72,6 +84,45 @@ function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+
+// =====================================================================
+// ★ Phase13: 被打入力UI 用の定数・型
+// =====================================================================
+
+/** 与打（積極的に磨きたい技）入力の1件 */
+type GivenTechSelection = {
+  techniqueId: string;
+  quantity:    number;     // 1〜5
+};
+
+/** 被打原因コード → 表示ラベル（プルダウン用） */
+const REASON_OPTION_LABELS: Record<ReceivedReason, string> = {
+  1: '攻め負け (隙あり)',
+  2: '単調 (読まれた)',
+  3: '居着き (反応遅れ)',
+  4: '体勢崩れ (姿勢の乱れ)',
+  5: '⚠️ 手元上がり (致命的)',
+};
+
+/** 被打UI用のサイバー赤テーマ */
+const SHIM_RED = {
+  border:   '#f87171',          // red-400
+  borderSoft: 'rgba(248,113,113,0.35)',
+  fg:       '#fca5a5',          // red-300
+  glow:     'rgba(239,68,68,0.55)',     // red-500
+  bg:       'rgba(127,29,29,0.18)',     // red-900 透過
+  bgInput:  'rgba(60,10,10,0.55)',
+};
+
+/** 与打UI用のサイバー青/紫テーマ（既存のAIカラー寄せ） */
+const SHIM_BLUE = {
+  border:     '#818cf8',                 // indigo-400
+  borderSoft: 'rgba(129,140,248,0.35)',
+  fg:         '#a5b4fc',                 // indigo-300
+  glow:       'rgba(99,102,241,0.55)',
+  bg:         'rgba(30,27,75,0.55)',
+  bgInput:    'rgba(30,27,75,0.55)',
+};
 
 // =====================================================================
 // アチーブメントトースト用 iconType マッピング
@@ -534,6 +585,10 @@ function PracticeTab() {
   // ★ Phase11: 皆伝トースト用のタスクテキスト配列
   const [masteryToastTexts, setMasteryToastTexts] = useState<string[]>([]);
 
+  // ★ Phase13: 与打 / 被打の入力state
+  const [givenTechSelections,    setGivenTechSelections]    = useState<GivenTechSelection[]>([]);
+  const [receivedTechSelections, setReceivedTechSelections] = useState<ReceivedTechniqueSelection[]>([]);
+
   const error = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
 
   const activeTasks: UserTask[] = (dashboard?.tasks ?? []).filter(t => t.status === 'active');
@@ -561,9 +616,17 @@ function PracticeTab() {
     const submittedTaskTexts = activeTasks.map(t => t.task_text);
 
     try {
+      // ★ Phase13: 被打記録を含めて送信
+      //   - receivedTechs は空配列でも問題ないが、送信ペイロードを軽量化するため
+      //     1件以上ある時のみフィールドを付与する
+      const validReceived = receivedTechSelections.filter(r =>
+        r.techniqueId && r.quantity >= 1 && r.quantity <= 5 && r.reason >= 1 && r.reason <= 5
+      );
+
       const res = await saveLog({
         date,
         items: activeTasks.map(t => ({ task_id: t.id, score: scores[t.id] })),
+        ...(validReceived.length > 0 ? { receivedTechs: validReceived } : {}),
       });
       setResult({
         xp:    res.xp_earned,
@@ -631,7 +694,15 @@ function PracticeTab() {
           <div style={{ display:'flex', gap:12, justifyContent:'center' }}>
             <button className="btn-outline" style={{ width:'auto' }} onClick={() => router.push('/')}>ダッシュボード</button>
             <button className="btn-ai" style={{ width:'auto', padding:'0.8rem 1.5rem' }}
-              onClick={() => { setResult(null); setScores({}); setToastAchievements([]); setMasteryToastTexts([]); }}>
+              onClick={() => {
+                setResult(null);
+                setScores({});
+                setToastAchievements([]);
+                setMasteryToastTexts([]);
+                // ★ Phase13: 与打 / 被打入力もリセット
+                setGivenTechSelections([]);
+                setReceivedTechSelections([]);
+              }}>
               続けて記録
             </button>
           </div>
@@ -721,6 +792,27 @@ function PracticeTab() {
                 </div>
               );
             })}
+            {/* ===================================================== */}
+            {/* ★ Phase13: 与打セクション（積極的に磨きたい技） */}
+            {/* ===================================================== */}
+            <TechniqueRecordSection
+              kind="given"
+              techMaster={dashboard?.techniqueMaster ?? []}
+              selections={givenTechSelections}
+              onChange={setGivenTechSelections}
+              disabled={submitting}
+            />
+
+            {/* ===================================================== */}
+            {/* ★ Phase13: 被打セクション（地稽古で打たれた技と原因） */}
+            {/* ===================================================== */}
+            <ReceivedTechniqueRecordSection
+              techMaster={dashboard?.techniqueMaster ?? []}
+              selections={receivedTechSelections}
+              onChange={setReceivedTechSelections}
+              disabled={submitting}
+            />
+
 
             {/* フェッチエラー表示 */}
             {error && (
@@ -1083,6 +1175,521 @@ function TechCard({ technique: t, rating, saveState, onRate, onSave }: TechCardP
           <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </button>
       </div>
+    </div>
+  );
+}
+
+// =====================================================================
+// ★ Phase13: 与打セクション（GivenTechniqueRecord）
+// 既存の TechniqueTab とは独立し、saveLog 送信ペイロードに同梱するための入力UI
+// =====================================================================
+
+interface GivenTechSectionProps {
+  kind:       'given';
+  techMaster: TechniqueMasterEntry[];
+  selections: GivenTechSelection[];
+  onChange:   (next: GivenTechSelection[]) => void;
+  disabled?:  boolean;
+}
+
+function TechniqueRecordSection({
+  techMaster,
+  selections,
+  onChange,
+  disabled,
+}: GivenTechSectionProps) {
+  const theme = SHIM_BLUE;
+
+  function addRow() {
+    if (techMaster.length === 0) return;
+    onChange([...selections, { techniqueId: techMaster[0].id, quantity: 3 }]);
+  }
+  function removeRow(idx: number) {
+    onChange(selections.filter((_, i) => i !== idx));
+  }
+  function updateRow(idx: number, patch: Partial<GivenTechSelection>) {
+    onChange(selections.map((s, i) => i === idx ? { ...s, ...patch } : s));
+  }
+
+  return (
+    <SymmetrySection
+      theme={theme}
+      titleEn="GIVEN STRIKES"
+      titleJa="与打：磨きたい技"
+      caption="今日重点的に振った技を記録（任意）"
+      icon="⚔️"
+    >
+      {selections.length === 0 ? (
+        <p style={{
+          fontSize: '0.75rem',
+          color:    theme.fg,
+          textAlign:'center',
+          padding:  '14px 0',
+          opacity:  0.7,
+        }}>
+          記録なし
+        </p>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap: 8 }}>
+          {selections.map((sel, idx) => (
+            <div
+              key={idx}
+              style={{
+                display:        'flex',
+                alignItems:     'center',
+                gap:            6,
+                padding:        '6px 8px',
+                background:     theme.bg,
+                border:         `1px solid ${theme.borderSoft}`,
+                borderRadius:   8,
+              }}
+            >
+              {/* 技プルダウン */}
+              <select
+                value={sel.techniqueId}
+                disabled={disabled}
+                onChange={e => updateRow(idx, { techniqueId: e.target.value })}
+                style={{
+                  flex:         1,
+                  minWidth:     0,
+                  background:   theme.bgInput,
+                  border:       `1px solid ${theme.borderSoft}`,
+                  color:        '#e0e7ff',
+                  borderRadius: 6,
+                  padding:      '5px 6px',
+                  fontSize:     '0.78rem',
+                  fontWeight:   700,
+                  fontFamily:   'inherit',
+                  outline:      'none',
+                  appearance:   'none',
+                  WebkitAppearance: 'none',
+                }}
+              >
+                {techMaster.map(m => (
+                  <option key={m.id} value={m.id} style={{ background:'#1e1b4b', color:'#e0e7ff' }}>
+                    {m.bodyPart ? `[${m.bodyPart}] ` : ''}{m.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* 量 */}
+              <span style={{ fontSize:'0.55rem', color: theme.fg, fontWeight:700 }}>量</span>
+              <select
+                value={sel.quantity}
+                disabled={disabled}
+                onChange={e => updateRow(idx, { quantity: Number(e.target.value) })}
+                style={{
+                  background:   theme.bgInput,
+                  border:       `1px solid ${theme.borderSoft}`,
+                  color:        '#e0e7ff',
+                  borderRadius: 6,
+                  padding:      '5px 4px',
+                  fontSize:     '0.78rem',
+                  fontWeight:   700,
+                  fontFamily:   'inherit',
+                  outline:      'none',
+                  width:        46,
+                  appearance:   'none',
+                  WebkitAppearance: 'none',
+                  textAlign:    'center',
+                }}
+              >
+                {[1,2,3,4,5].map(v => (
+                  <option key={v} value={v} style={{ background:'#1e1b4b', color:'#e0e7ff' }}>{v}</option>
+                ))}
+              </select>
+
+              {/* 削除ボタン */}
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => removeRow(idx)}
+                style={{
+                  flexShrink: 0,
+                  width:      26,
+                  height:     26,
+                  borderRadius: 6,
+                  border:     `1px solid ${theme.borderSoft}`,
+                  background: 'transparent',
+                  color:      theme.fg,
+                  fontSize:   '0.85rem',
+                  fontWeight: 700,
+                  cursor:     disabled ? 'not-allowed' : 'pointer',
+                  display:    'flex',
+                  alignItems: 'center',
+                  justifyContent:'center',
+                  fontFamily: 'inherit',
+                }}
+                aria-label="削除"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 追加ボタン */}
+      <button
+        type="button"
+        disabled={disabled || techMaster.length === 0}
+        onClick={addRow}
+        style={{
+          marginTop:    10,
+          width:        '100%',
+          padding:      '8px 12px',
+          background:   'transparent',
+          border:       `1px dashed ${theme.border}`,
+          borderRadius: 8,
+          color:        theme.fg,
+          fontSize:     '0.78rem',
+          fontWeight:   700,
+          cursor:       disabled ? 'not-allowed' : 'pointer',
+          fontFamily:   'inherit',
+          letterSpacing:'0.05em',
+          opacity:      disabled ? 0.5 : 1,
+        }}
+      >
+        ＋ 与打を追加
+      </button>
+    </SymmetrySection>
+  );
+}
+
+// =====================================================================
+// ★ Phase13: 被打セクション（ReceivedTechniqueRecord）
+// =====================================================================
+
+interface ReceivedTechSectionProps {
+  techMaster: TechniqueMasterEntry[];
+  selections: ReceivedTechniqueSelection[];
+  onChange:   (next: ReceivedTechniqueSelection[]) => void;
+  disabled?:  boolean;
+}
+
+function ReceivedTechniqueRecordSection({
+  techMaster,
+  selections,
+  onChange,
+  disabled,
+}: ReceivedTechSectionProps) {
+  const theme = SHIM_RED;
+
+  function addRow() {
+    if (techMaster.length === 0) return;
+    onChange([
+      ...selections,
+      { techniqueId: techMaster[0].id, quantity: 1, reason: 1 },
+    ]);
+  }
+  function removeRow(idx: number) {
+    onChange(selections.filter((_, i) => i !== idx));
+  }
+  function updateRow(idx: number, patch: Partial<ReceivedTechniqueSelection>) {
+    onChange(selections.map((s, i) => i === idx ? { ...s, ...patch } : s));
+  }
+
+  return (
+    <SymmetrySection
+      theme={theme}
+      titleEn="RECEIVED STRIKES"
+      titleJa="被打：打たれた技"
+      caption="正直に記録すると +5XP × 量 のボーナス"
+      icon="🛡️"
+      warning
+    >
+      {selections.length === 0 ? (
+        <p style={{
+          fontSize: '0.75rem',
+          color:    theme.fg,
+          textAlign:'center',
+          padding:  '14px 0',
+          opacity:  0.7,
+        }}>
+          記録なし
+        </p>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap: 8 }}>
+          {selections.map((sel, idx) => (
+            <div
+              key={idx}
+              style={{
+                display:        'flex',
+                flexDirection:  'column',
+                gap:            6,
+                padding:        '8px 9px',
+                background:     theme.bg,
+                border:         `1px solid ${theme.borderSoft}`,
+                borderRadius:   8,
+                position:       'relative',
+              }}
+            >
+              {/* 1行目: 技 + 量 + 削除 */}
+              <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
+                <select
+                  value={sel.techniqueId}
+                  disabled={disabled}
+                  onChange={e => updateRow(idx, { techniqueId: e.target.value })}
+                  style={{
+                    flex:         1,
+                    minWidth:     0,
+                    background:   theme.bgInput,
+                    border:       `1px solid ${theme.borderSoft}`,
+                    color:        '#fee2e2',
+                    borderRadius: 6,
+                    padding:      '5px 6px',
+                    fontSize:     '0.78rem',
+                    fontWeight:   700,
+                    fontFamily:   'inherit',
+                    outline:      'none',
+                    appearance:   'none',
+                    WebkitAppearance: 'none',
+                  }}
+                >
+                  {techMaster.map(m => (
+                    <option key={m.id} value={m.id} style={{ background:'#1e1b4b', color:'#fee2e2' }}>
+                      {m.bodyPart ? `[${m.bodyPart}] ` : ''}{m.name}
+                    </option>
+                  ))}
+                </select>
+
+                <span style={{ fontSize:'0.55rem', color: theme.fg, fontWeight:700 }}>量</span>
+                <select
+                  value={sel.quantity}
+                  disabled={disabled}
+                  onChange={e => updateRow(idx, { quantity: Number(e.target.value) })}
+                  style={{
+                    background:   theme.bgInput,
+                    border:       `1px solid ${theme.borderSoft}`,
+                    color:        '#fee2e2',
+                    borderRadius: 6,
+                    padding:      '5px 4px',
+                    fontSize:     '0.78rem',
+                    fontWeight:   700,
+                    fontFamily:   'inherit',
+                    outline:      'none',
+                    width:        46,
+                    appearance:   'none',
+                    WebkitAppearance: 'none',
+                    textAlign:    'center',
+                  }}
+                >
+                  {[1,2,3,4,5].map(v => (
+                    <option key={v} value={v} style={{ background:'#1e1b4b', color:'#fee2e2' }}>{v}</option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => removeRow(idx)}
+                  style={{
+                    flexShrink: 0,
+                    width:      26,
+                    height:     26,
+                    borderRadius: 6,
+                    border:     `1px solid ${theme.borderSoft}`,
+                    background: 'transparent',
+                    color:      theme.fg,
+                    fontSize:   '0.85rem',
+                    fontWeight: 700,
+                    cursor:     disabled ? 'not-allowed' : 'pointer',
+                    display:    'flex',
+                    alignItems: 'center',
+                    justifyContent:'center',
+                    fontFamily: 'inherit',
+                  }}
+                  aria-label="削除"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* 2行目: 原因（Reason） */}
+              <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
+                <span style={{
+                  fontSize:      '0.6rem',
+                  color:         theme.fg,
+                  fontWeight:    700,
+                  letterSpacing: '0.08em',
+                  flexShrink:    0,
+                }}>
+                  原因
+                </span>
+                <select
+                  value={sel.reason}
+                  disabled={disabled}
+                  onChange={e =>
+                    updateRow(idx, { reason: Number(e.target.value) as ReceivedReason })
+                  }
+                  style={{
+                    flex:         1,
+                    background:   theme.bgInput,
+                    border:       `1px solid ${theme.borderSoft}`,
+                    color:        '#fee2e2',
+                    borderRadius: 6,
+                    padding:      '5px 6px',
+                    fontSize:     '0.76rem',
+                    fontWeight:   700,
+                    fontFamily:   'inherit',
+                    outline:      'none',
+                    appearance:   'none',
+                    WebkitAppearance: 'none',
+                  }}
+                >
+                  {([1,2,3,4,5] as ReceivedReason[]).map(v => (
+                    <option key={v} value={v} style={{ background:'#1e1b4b', color:'#fee2e2' }}>
+                      {v}: {REASON_OPTION_LABELS[v]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={disabled || techMaster.length === 0}
+        onClick={addRow}
+        style={{
+          marginTop:    10,
+          width:        '100%',
+          padding:      '8px 12px',
+          background:   'transparent',
+          border:       `1px dashed ${theme.border}`,
+          borderRadius: 8,
+          color:        theme.fg,
+          fontSize:     '0.78rem',
+          fontWeight:   700,
+          cursor:       disabled ? 'not-allowed' : 'pointer',
+          fontFamily:   'inherit',
+          letterSpacing:'0.05em',
+          opacity:      disabled ? 0.5 : 1,
+        }}
+      >
+        ＋ 被打を追加
+      </button>
+
+      {/* 受打件数バッジ */}
+      {selections.length > 0 && (
+        <p style={{
+          marginTop:     8,
+          fontSize:      '0.7rem',
+          color:         theme.fg,
+          textAlign:     'center',
+          fontWeight:    700,
+          letterSpacing: '0.05em',
+        }}>
+          {selections.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0)} 本記録中
+          <span style={{ color:'#10b981', marginLeft: 6 }}>
+            +{selections.reduce((sum, s) => sum + 5 * (Number(s.quantity) || 0), 0)} XP 予定
+          </span>
+        </p>
+      )}
+    </SymmetrySection>
+  );
+}
+
+// =====================================================================
+// ★ Phase13: 与打/被打の共通シェル（シンメトリー構造）
+// =====================================================================
+
+interface SymmetrySectionProps {
+  theme:    typeof SHIM_RED;
+  titleEn:  string;
+  titleJa:  string;
+  caption:  string;
+  icon:     string;
+  warning?: boolean;
+  children: React.ReactNode;
+}
+
+function SymmetrySection({
+  theme, titleEn, titleJa, caption, icon, warning, children,
+}: SymmetrySectionProps) {
+  return (
+    <div
+      style={{
+        position:     'relative',
+        marginTop:    14,
+        padding:      '12px 12px 14px',
+        borderRadius: 12,
+        border:       `1px solid ${theme.border}`,
+        background:   `linear-gradient(135deg, rgba(8,6,20,0.55), rgba(20,10,30,0.55))`,
+        boxShadow:    warning
+          ? `0 0 0 1px ${theme.borderSoft}, 0 0 18px ${theme.glow}33 inset`
+          : `0 0 0 1px ${theme.borderSoft}`,
+        overflow:     'hidden',
+      }}
+    >
+      {/* 上端のシマー線 */}
+      <div style={{
+        position:   'absolute',
+        top:        0,
+        left:       '8%',
+        right:      '8%',
+        height:     1.5,
+        background: `linear-gradient(90deg, transparent, ${theme.border}, transparent)`,
+      }} />
+
+      {/* ヘッダ */}
+      <div style={{
+        display:      'flex',
+        alignItems:   'center',
+        gap:          8,
+        marginBottom: 10,
+      }}>
+        <div style={{
+          width:          28,
+          height:         28,
+          borderRadius:   8,
+          background:     theme.bg,
+          border:         `1px solid ${theme.borderSoft}`,
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'center',
+          fontSize:       14,
+          flexShrink:     0,
+        }}>
+          {icon}
+        </div>
+        <div style={{ flex:1, minWidth: 0 }}>
+          <div style={{
+            fontSize:      '0.55rem',
+            fontWeight:    700,
+            color:         theme.fg,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            lineHeight:    1.1,
+          }}>
+            {titleEn}
+          </div>
+          <div style={{
+            fontSize:      '0.88rem',
+            fontWeight:    800,
+            color:         '#fff',
+            letterSpacing: '0.02em',
+            lineHeight:    1.3,
+            textShadow:    warning ? `0 0 8px ${theme.glow}` : 'none',
+          }}>
+            {titleJa}
+          </div>
+        </div>
+      </div>
+
+      <p style={{
+        fontSize:    '0.7rem',
+        color:       theme.fg,
+        margin:      '0 0 10px',
+        opacity:     0.85,
+        lineHeight:  1.4,
+      }}>
+        {caption}
+      </p>
+
+      {children}
     </div>
   );
 }

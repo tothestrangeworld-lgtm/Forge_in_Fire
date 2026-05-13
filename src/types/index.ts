@@ -41,6 +41,13 @@
 // ★ Phase12: PWAプッシュ通知基盤
 //   - PushSubscriptionPayload / PushSubscriptionRecord 型を追加
 //   - PushSendRequest / PushSendResponse 型を追加
+// ★ Phase13: 被打分析機能（弱点の可視化）
+//   - ReceivedReason 型（深刻度1〜5の悪癖カテゴリ）を追加
+//   - ReceivedTechniqueSelection 型を追加（saveLog の receivedTechs ペイロード）
+//   - ReceivedStatEntry / ReceivedStats 型を追加（getDashboard レスポンス集計用）
+//   - SaveLogPayload に receivedTechs?: ReceivedTechniqueSelection[] を追加
+//   - DashboardData に receivedStats?: ReceivedStats を追加
+//   - 深刻度係数（SEVERITY_MULT）を export
 // =====================================================================
 
 export interface LogEntry {
@@ -189,6 +196,12 @@ export interface DashboardData {
    * targetStyle に該当する topStyles を持つ剣友を検索するために使用。
    */
   peersStyle?:      PeerStyleEntry[];
+  /**
+   * ★ Phase13: 被打分析の集計結果。
+   * received_technique_logs を技別・原因別に集計してフロントへ返す。
+   * 深刻度係数を乗じた receivedPoints で弱点ヒートマップを描画する。
+   */
+  receivedStats?:   ReceivedStats;
 }
 
 // =====================================================================
@@ -208,6 +221,11 @@ export interface SaveLogPayload {
   action: 'saveLog';
   date:   string;
   items:  Array<{ task_id: string; score: number }>;
+  /**
+   * ★ Phase13: その日の地稽古で「打たれた技」の記録。
+   * 任意項目。1件につき正直記録ボーナス +5XP × quantity が付与される。
+   */
+  receivedTechs?: ReceivedTechniqueSelection[];
 }
 
 // =====================================================================
@@ -586,4 +604,96 @@ export interface PushSendResponse {
   failed:    number;
   results:   PushSendResultEntry[];
   message?:  string;
+}
+
+// =====================================================================
+// 被打分析（Received Strikes）システム ★ Phase13
+// =====================================================================
+
+/**
+ * 被打の原因（Reason）= 剣道における悪癖の深刻度。
+ * 数値が大きいほど「より根深い／矯正困難な悪癖」を示す。
+ *
+ *  1: 攻め負け     - 相手の攻めに押されて打たれた（受動的）
+ *  2: 単調         - 攻めが読まれて先を取られた（パターン化）
+ *  3: 居着き       - 足が止まり反応できなかった
+ *  4: 体勢崩れ     - 重心が崩れて隙を作った
+ *  5: 手元上がり   - 手元が浮き、最も重大な悪癖（先生指摘最多）
+ */
+export type ReceivedReason = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * 被打原因コード → ラベル名のマップ。
+ * フロントエンドの選択UI・統計表示で使用する。
+ */
+export const RECEIVED_REASON_LABELS: Record<ReceivedReason, string> = {
+  1: '攻め負け',
+  2: '単調',
+  3: '居着き',
+  4: '体勢崩れ',
+  5: '手元上がり',
+};
+
+/**
+ * 深刻度係数（SEVERITY_MULT）。
+ * 被打累計ポイント（receivedPoints）算出で各 quantity に乗算する倍率。
+ * ARCHITECTURE.md の「質（Quality）」倍率と完全一致させる方針。
+ *
+ * receivedPoints = Σ(quantity × SEVERITY_MULT[reason])
+ *
+ * ⚠️ GAS Code.gs の SEVERITY_MULT と常に同期を保つこと。
+ */
+export const SEVERITY_MULT: Record<ReceivedReason, number> = {
+  1: 1.0,
+  2: 1.2,
+  3: 1.5,
+  4: 2.0,
+  5: 3.0,
+};
+
+/**
+ * saveLog の receivedTechs[] に渡す1件分の被打記録。
+ *
+ *  - techniqueId: technique_master の ID（例: "T001"）
+ *  - quantity:    打たれた回数（1〜5）。正直記録ボーナス +5XP × quantity の対象。
+ *  - reason:      被打原因コード（1〜5）。深刻度係数の指定にも使用。
+ */
+export interface ReceivedTechniqueSelection {
+  techniqueId: string;
+  quantity:    number;
+  reason:      ReceivedReason;
+}
+
+/**
+ * 被打統計の1技ぶんエントリ。getDashboard.receivedStats.byTechnique[] の要素。
+ *
+ *  - techniqueId / techniqueName: 技の識別と表示用
+ *  - totalQuantity:               累計被打回数（quantity の単純合計）
+ *  - receivedPoints:              深刻度係数を乗じた被打累計ポイント
+ *                                 = Σ(quantity × SEVERITY_MULT[reason])
+ *  - reasonBreakdown:             原因別の件数内訳（quantity 合計）
+ */
+export interface ReceivedStatEntry {
+  techniqueId:     string;
+  techniqueName:   string;
+  bodyPart?:       string;
+  subCategory?:    string;
+  totalQuantity:   number;
+  receivedPoints:  number;
+  reasonBreakdown: Record<ReceivedReason, number>;
+}
+
+/**
+ * 被打統計サマリー。getDashboard レスポンスの receivedStats に格納。
+ * フロント側で弱点ヒートマップ・原因別Top3チャート等に利用する。
+ */
+export interface ReceivedStats {
+  /** 全期間の被打総回数（quantity 合計） */
+  totalReceived:   number;
+  /** 全期間の被打累計ポイント（深刻度係数込み） */
+  totalPoints:     number;
+  /** 技別集計。受打ポイント降順でソート済み */
+  byTechnique:     ReceivedStatEntry[];
+  /** 原因別の被打回数内訳（quantity 合計） */
+  byReason:        Record<ReceivedReason, number>;
 }

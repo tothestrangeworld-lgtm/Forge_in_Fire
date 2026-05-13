@@ -55,6 +55,14 @@
 //     優先度3: 他者評価サマリー（今日の peer_evaluations.target_id に該当）
 //   - setupDailyPushTrigger(): 21時トリガー初回設定用ヘルパー
 //   - 失効した購読(results[].expired===true)の自動クリーンアップ
+// ★ Phase13: 被打分析機能（弱点の可視化）
+//   - 新規シート received_technique_logs を追加
+//     列構成: id, user_id, date, technique_id, quantity, reason, xp_earned
+//   - saveLog を拡張: body.receivedTechs[] を受け取り、received_technique_logs に追記
+//     正直記録ボーナス: 1件あたり 5 XP × quantity を user_status / xp_history に合算
+//   - getDashboard を拡張: receivedStats（技別/原因別集計）を返す
+//     被打累計ポイント = Σ(quantity × SEVERITY_MULT[reason])
+//     SEVERITY_MULT = { 1:1.0, 2:1.2, 3:1.5, 4:2.0, 5:3.0 }
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -70,6 +78,8 @@ var SHEET_USER_TECHNIQUES   = 'user_techniques';    // user_id, technique_id, Po
 var SHEET_TECH_LOGS         = 'technique_logs';     // user_id, date, technique_id, quantity, quality, xp_earned, feedback ★ Phase8 新設
 var SHEET_USER_ACHIEVEMENTS = 'user_achievements';  // user_id, achievement_id, unlocked_at ★ Phase6
 var SHEET_PUSH_SUBS         = 'push_subscriptions'; // user_id, subscription_json, updated_at ★ Phase12
+// ★ Phase13: 被打技ログ
+var SHEET_RECEIVED_TECH_LOGS = 'received_technique_logs'; // id, user_id, date, technique_id, quantity, reason, xp_earned
 
 // 全ユーザー共通マスタ（user_id なし）
 var SHEET_TECH_MASTER         = 'technique_master';    // ID, BodyPart, ActionType, SubCategory, Name
@@ -175,6 +185,33 @@ function buildTaskTextMap(ss, userId) {
     }
   });
   return map;
+}
+
+/**
+ * ★ Phase13: 被打深刻度係数
+ * フロント側の types/index.ts SEVERITY_MULT と常に同期すること。
+ *   1: 攻め負け     1.0
+ *   2: 単調         1.2
+ *   3: 居着き       1.5
+ *   4: 体勢崩れ     2.0
+ *   5: 手元上がり   3.0
+ */
+var SEVERITY_MULT_GAS = { 1: 1.0, 2: 1.2, 3: 1.5, 4: 2.0, 5: 3.0 };
+
+/**
+ * received_technique_logs シートを取得（なければ自動作成）★ Phase13
+ * 列: id(0), user_id(1), date(2), technique_id(3), quantity(4), reason(5), xp_earned(6)
+ */
+function getReceivedTechLogsSheet(ss) {
+  var sheet = ss.getSheetByName(SHEET_RECEIVED_TECH_LOGS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_RECEIVED_TECH_LOGS);
+    sheet.appendRow(['id', 'user_id', 'date', 'technique_id', 'quantity', 'reason', 'xp_earned']);
+    sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.setFrozenRows(1);
+    gasLog('INFO', 'getReceivedTechLogsSheet', 'received_technique_logs シートを自動作成しました（Phase13）');
+  }
+  return sheet;
 }
 
 // =====================================================================
@@ -394,15 +431,79 @@ function saveLog(body) {
   // ★ Phase9.5: title 引数を渡さない
   writeXpHistory(ss, userId, 'gain', totalXp, '稽古記録（' + date + '・' + items.length + '項目）', newXp, newLevel);
 
+  // ─────────────────────────────────────────────
+  // ★ Phase13: 被打記録の保存 + 正直記録ボーナス
+  // ─────────────────────────────────────────────
+  var receivedTechs       = body.receivedTechs;
+  var receivedXp          = 0;
+  var receivedSavedCount  = 0;
+
+  if (receivedTechs && Array.isArray(receivedTechs) && receivedTechs.length > 0) {
+    var rtlSheet  = getReceivedTechLogsSheet(ss);
+    var ts        = nowJstTs();
+    var validRows = [];
+
+    receivedTechs.forEach(function(rt) {
+      var techId   = rt && rt.techniqueId ? String(rt.techniqueId) : '';
+      var quantity = parseInt(rt && rt.quantity);
+      var reason   = parseInt(rt && rt.reason);
+
+      // バリデーション: 不正な行はスキップ（saveLog 全体は失敗させない）
+      if (!techId)                                        return;
+      if (isNaN(quantity) || quantity < 1 || quantity > 5) return;
+      if (isNaN(reason)   || reason   < 1 || reason   > 5) return;
+
+      // 正直記録ボーナス: 5 XP × quantity
+      var earned = 5 * quantity;
+      receivedXp         += earned;
+      receivedSavedCount += 1;
+
+      validRows.push([
+        Utilities.getUuid(),  // id (UUID)
+        userId,               // user_id
+        date,                 // date (saveLog 引数)
+        techId,               // technique_id
+        quantity,             // quantity
+        reason,               // reason (1〜5)
+        earned,               // xp_earned
+      ]);
+    });
+
+    if (validRows.length > 0) {
+      rtlSheet.getRange(rtlSheet.getLastRow() + 1, 1, validRows.length, 7).setValues(validRows);
+
+      // user_status へ加算（saveLog 本体の totalXp に積み増しせず、別 type で履歴を残す）
+      newXp    = newXp + receivedXp;
+      newLevel = calcLevel(newXp);
+
+      // user_status を再書き込み
+      var allRows2 = statSheet.getDataRange().getValues();
+      for (var rr = allRows2.length; rr >= 2; rr--) {
+        if (String(allRows2[rr-1][0]) === String(userId)) {
+          statSheet.getRange(rr, 2, 1, 2).setValues([[newXp, newLevel]]);
+          break;
+        }
+      }
+
+      writeXpHistory(ss, userId, 'gain', receivedXp,
+        '正直記録ボーナス（被打 ' + receivedSavedCount + '件）', newXp, newLevel);
+
+      gasLog('INFO', 'saveLog', 'received_techs saved user=' + userId,
+        { count: receivedSavedCount, xp: receivedXp });
+    }
+  }
+
   // ★ Phase6: アチーブメント解除判定
   var newAchievements = checkAndUnlockAchievements(ss, userId, date, logSheet);
 
   return createResponse({
-    xp_earned:        totalXp,
-    total_xp:         newXp,
-    level:            newLevel,
-    // ★ Phase9.5: title をレスポンスから削除
-    newAchievements:  newAchievements,
+    xp_earned:           totalXp + receivedXp,  // ★ Phase13: 合算値で返却
+    xp_from_practice:    totalXp,               // ★ Phase13: 内訳（稽古評価分）
+    xp_from_received:    receivedXp,            // ★ Phase13: 内訳（正直記録ボーナス）
+    received_saved:      receivedSavedCount,    // ★ Phase13: 保存件数
+    total_xp:            newXp,
+    level:               newLevel,
+    newAchievements:     newAchievements,
   });
 }
 
@@ -1086,6 +1187,9 @@ function getTodayEvaluations(params) {
 // xp_history 新列構成（Phase9.5）:
 //   [0]=user_id, [1]=date, [2]=type, [3]=amount, [4]=reason,
 //   [5]=total_xp_after, [6]=level
+// ★ Phase13: receivedStats を追加（被打分析・弱点可視化）
+//   received_technique_logs を技別/原因別に集計し、深刻度係数を乗じて
+//   receivedPoints を算出する。
 // =====================================================================
 
 function getDashboard(params) {
@@ -1196,6 +1300,9 @@ function getDashboard(params) {
   // ── 12. peersStyle（自分以外の剣友のスタイル一覧）★ Phase10 / Phase-ex4 ──
   var peersStyle = getPeersStyleData(ss, userId);
 
+  // ── 13. receivedStats（被打分析の集計）★ Phase13 ──
+  var receivedStats = getReceivedStatsData(ss, userId, techniqueMaster);
+
   return createResponse({
     status:          status,
     tasks:           tasks,
@@ -1209,6 +1316,7 @@ function getDashboard(params) {
     peerLogs:        peerLogs,
     matchupMaster:   matchupMaster,   // ★ Phase10
     peersStyle:      peersStyle,      // ★ Phase10 / Phase-ex4
+    receivedStats:   receivedStats,   // ★ Phase13
   });
 }
 
@@ -1446,6 +1554,120 @@ function getPeersStyleData(ss, currentUserId) {
       withFavTech:   peers.filter(function(p){ return p.favoriteTechnique; }).length,
     });
   return peers;
+}
+
+// =====================================================================
+// L4. 被打分析データ取得 ★ Phase13
+//
+// received_technique_logs を userId でフィルタし、技別/原因別に集計する。
+// 深刻度係数（SEVERITY_MULT_GAS）を乗じた receivedPoints を算出して
+// receivedPoints 降順でソートして返す。
+//
+// 出力例:
+//   {
+//     totalReceived:  42,
+//     totalPoints:    78,
+//     byTechnique: [
+//       {
+//         techniqueId: 'T012',
+//         techniqueName: '出小手',
+//         bodyPart: '小手',
+//         subCategory: '出端技',
+//         totalQuantity: 18,
+//         receivedPoints: 36.5,
+//         reasonBreakdown: { 1: 2, 2: 0, 3: 5, 4: 8, 5: 3 }
+//       },
+//       ...
+//     ],
+//     byReason: { 1: 5, 2: 3, 3: 12, 4: 15, 5: 7 }
+//   }
+// =====================================================================
+
+function getReceivedStatsData(ss, userId, techniqueMasterCache) {
+  var emptyResult = {
+    totalReceived: 0,
+    totalPoints:   0,
+    byTechnique:   [],
+    byReason:      { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  };
+
+  var sheet = ss.getSheetByName(SHEET_RECEIVED_TECH_LOGS);
+  if (!sheet) return emptyResult;
+
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length < 2) return emptyResult;
+
+  // 技マスタを id 引きできるマップに変換
+  var master    = Array.isArray(techniqueMasterCache) ? techniqueMasterCache : getTechniqueMasterData(ss);
+  var masterMap = {};
+  master.forEach(function(m) { masterMap[m.id] = m; });
+
+  var totalReceived = 0;
+  var totalPoints   = 0;
+  var byReason      = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+  // 技ID別の集計バケット
+  // techMap: { techId: { totalQuantity, receivedPoints, reasonBreakdown } }
+  var techMap = {};
+
+  // 列: id(0), user_id(1), date(2), technique_id(3), quantity(4), reason(5), xp_earned(6)
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[1]) !== String(userId)) continue;
+
+    var techId   = String(r[3] || '');
+    var quantity = parseInt(r[4]) || 0;
+    var reason   = parseInt(r[5]) || 0;
+
+    if (!techId || quantity < 1) continue;
+    if (reason < 1 || reason > 5) continue;
+
+    var sevMult = SEVERITY_MULT_GAS[reason] || 1.0;
+    var pts     = quantity * sevMult;
+
+    totalReceived  += quantity;
+    totalPoints    += pts;
+    byReason[reason] = (byReason[reason] || 0) + quantity;
+
+    if (!techMap[techId]) {
+      techMap[techId] = {
+        techniqueId:    techId,
+        totalQuantity:  0,
+        receivedPoints: 0,
+        reasonBreakdown: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      };
+    }
+    techMap[techId].totalQuantity   += quantity;
+    techMap[techId].receivedPoints  += pts;
+    techMap[techId].reasonBreakdown[reason] += quantity;
+  }
+
+  // techMap → 配列化、技マスタとJOIN、receivedPoints 降順でソート
+  var byTechnique = Object.keys(techMap).map(function(tid) {
+    var bucket = techMap[tid];
+    var m      = masterMap[tid];
+    return {
+      techniqueId:     tid,
+      techniqueName:   m ? m.name : tid,
+      bodyPart:        m ? m.bodyPart : '',
+      subCategory:     m ? m.subCategory : '',
+      totalQuantity:   bucket.totalQuantity,
+      receivedPoints:  Math.round(bucket.receivedPoints * 10) / 10, // 小数1桁
+      reasonBreakdown: bucket.reasonBreakdown,
+    };
+  }).sort(function(a, b) {
+    return b.receivedPoints - a.receivedPoints;
+  });
+
+  gasLog('INFO', 'getReceivedStatsData',
+    'user=' + userId + ' techs=' + byTechnique.length + ' total=' + totalReceived);
+
+  return {
+    totalReceived: totalReceived,
+    totalPoints:   Math.round(totalPoints * 10) / 10,
+    byTechnique:   byTechnique,
+    byReason:      byReason,
+  };
 }
 
 // =====================================================================

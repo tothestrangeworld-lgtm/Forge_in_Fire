@@ -25,7 +25,7 @@ import {
   type EdgeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { Technique } from '@/types';
+import type { Technique, ReceivedStats } from '@/types';
 
 // =====================================================================
 // 定数
@@ -39,6 +39,26 @@ const R_MID_RATIO    = 0.46;
 const TECH_NODE_SIZE = 42;
 const BP_NODE_SIZE   = 56;
 const CORE_NODE_SIZE = 64;
+// =====================================================================
+// ★ Phase13: 与打/被打 視覚化モード
+// =====================================================================
+type ViewMode = 'landed' | 'received' | 'both';
+
+/**
+ * ★ Phase13: 与打ポイント / 被打ポイントを 0〜255 の発光強度に正規化する。
+ * 飽和点（SATURATION_POINT）以上は最大強度（255）にクリップする。
+ * - 与打飽和点: 1000pt（既存 TECH_SCORE_CAP に合わせる）
+ * - 被打飽和点: 200pt（被打は1ポイントの重みが大きいため低めに設定）
+ */
+const GIVEN_SATURATION    = 1000;
+const RECEIVED_SATURATION = 200;
+
+function normalizeIntensity(points: number, saturation: number): number {
+  if (!points || points <= 0) return 0;
+  const ratio = Math.min(points / saturation, 1);
+  // 視認性重視: 微小値でも光るよう、γ補正（0.7）でローエンドを持ち上げる
+  return Math.round(255 * Math.pow(ratio, 0.7));
+}
 
 // =====================================================================
 // ハンドル
@@ -115,6 +135,11 @@ function getBpTheme(bodyPart: string): BpTheme {
 interface Props {
   techniques:      Technique[];
   signatureTechId?: string;
+  /**
+   * ★ Phase13: 被打統計。指定された場合、トグルで赤系発光を有効化できる。
+   * 未指定の場合は従来通りの青系（与打のみ）表示にフォールバック。
+   */
+  receivedStats?:  ReceivedStats;
 }
 
 // =====================================================================
@@ -206,37 +231,99 @@ interface TechData {
   tier:        LightningTier;
   isSignature: boolean;
   isMaxed:     boolean;
+  // ★ Phase13: RGBブレンド用
+  givenIntensity:    number;   // 0〜255（与打 → Blue成分）
+  receivedIntensity: number;   // 0〜255（被打 → Red成分）
+  viewMode:          ViewMode;
 }
 
 const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
-  const { technique: t, tier, isSignature, isMaxed } = data as unknown as TechData;
+  const {
+    technique: t,
+    tier,
+    isSignature,
+    isMaxed,
+    givenIntensity,
+    receivedIntensity,
+    viewMode,
+  } = data as unknown as TechData;
   if (!t?.id) return null;
+
   const s = TECH_NODE_SIZE;
   const theme = getBpTheme(t.bodyPart);
-  const { rgb, dark, text: bpText, plasma } = theme;
+  const { rgb: bpRgb, dark, text: bpText, plasma } = theme;
 
-  let bg: string, borderColor: string, textColor: string;
+  // =================================================================
+  // ★ Phase13: viewMode に応じた RGB ブレンド計算
+  // =================================================================
+  // R(Red)=被打 / B(Blue)=与打 / G=固定50（彩度確保用の暗緑成分）
+  const G_BASE = 50;
+  const R = viewMode === 'landed' ? 0 : receivedIntensity;
+  const B = viewMode === 'received' ? 0 : givenIntensity;
+
+  const totalIntensity = Math.max(R, B);             // 0〜255
+  const hasAnyData     = R > 0 || B > 0;
+  const blendedRgb     = `${R}, ${G_BASE}, ${B}`;
+  const blendedColor   = `rgb(${blendedRgb})`;
+
+  // 「両方高い = 危険な激戦区」: R/B共に閾値超なら警告アクセントを加える
+  const isHotZone = R >= 160 && B >= 160 && viewMode === 'both';
+
+  // =================================================================
+  // スタイル決定
+  //   - データなし(初期/該当なし): 部位カラーで弱発光（既存挙動を継承）
+  //   - データあり: viewMode のRGBブレンド色で発光
+  // =================================================================
+  let bg: string;
+  let borderColor: string;
+  let textColor: string;
   let neonGlow: string = 'none';
 
-  if (isMaxed) {
-    bg = `radial-gradient(circle, ${plasma.glow} 0%, ${dark} 70%, #050412 100%)`;
-    borderColor = plasma.core; textColor = plasma.core;
-    neonGlow = `0 0 9px 2.5px ${plasma.mid}, 0 0 0 1px ${plasma.core}`;
-  } else if (tier >= 3) {
-    bg = `radial-gradient(circle, rgba(${rgb},0.4) 0%, ${dark} 70%, #050412 100%)`;
-    borderColor = plasma.mid; textColor = bpText;
-    neonGlow = `0 0 7px 2px rgba(${rgb},0.5), 0 0 0 1px rgba(${rgb},0.5)`;
-  } else if (tier >= 2) {
-    bg = `radial-gradient(circle, rgba(${rgb},0.2) 0%, ${dark} 70%, #050412 100%)`;
-    borderColor = `rgba(${rgb},0.6)`; textColor = bpText;
-    neonGlow = `0 0 5px 1.5px rgba(${rgb},0.35)`;
-  } else if (tier >= 1) {
-    bg = `linear-gradient(135deg, #06050f, #0d0b1a)`;
-    borderColor = `rgba(${rgb},0.32)`; textColor = `rgba(${rgb},0.72)`;
-    neonGlow = `0 0 3px 1px rgba(${rgb},0.22)`;
+  if (!hasAnyData) {
+    // フォールバック: 該当データがない時は既存の部位カラー（薄め）
+    if (tier >= 1) {
+      bg          = `linear-gradient(135deg, #06050f, #0d0b1a)`;
+      borderColor = `rgba(${bpRgb},0.32)`;
+      textColor   = `rgba(${bpRgb},0.72)`;
+      neonGlow    = `0 0 3px 1px rgba(${bpRgb},0.22)`;
+    } else {
+      bg          = '#06050f';
+      borderColor = `rgba(${bpRgb},0.12)`;
+      textColor   = `rgba(${bpRgb},0.32)`;
+    }
+  } else if (isMaxed && viewMode !== 'received') {
+    // MAX到達は viewMode=received 以外では部位カラーで派手に
+    bg          = `radial-gradient(circle, ${plasma.glow} 0%, ${dark} 70%, #050412 100%)`;
+    borderColor = plasma.core;
+    textColor   = plasma.core;
+    neonGlow    = `0 0 9px 2.5px ${plasma.mid}, 0 0 0 1px ${plasma.core}`;
   } else {
-    bg = '#06050f';
-    borderColor = `rgba(${rgb},0.12)`; textColor = `rgba(${rgb},0.32)`;
+    // ★ Phase13: RGBブレンド発光
+    const intensityRatio = totalIntensity / 255; // 0〜1
+    const innerAlpha = (0.25 + intensityRatio * 0.55).toFixed(2);
+    const borderAlpha = (0.4 + intensityRatio * 0.5).toFixed(2);
+    const glowAlpha = (0.35 + intensityRatio * 0.5).toFixed(2);
+    const glowSize = 4 + intensityRatio * 8;
+    const glowSpread = 1 + intensityRatio * 2;
+
+    bg = `radial-gradient(circle, rgba(${blendedRgb},${innerAlpha}) 0%, ${dark} 70%, #050412 100%)`;
+    borderColor = `rgba(${blendedRgb},${borderAlpha})`;
+
+    // 文字色: 高強度なら明色、低強度なら部位色
+    textColor = intensityRatio > 0.4 ? '#ffffff' : bpText;
+
+    neonGlow = isHotZone
+      ? [
+          `0 0 ${glowSize}px ${glowSpread}px rgba(${blendedRgb},${glowAlpha})`,
+          `0 0 0 1.5px rgba(${blendedRgb},${borderAlpha})`,
+          // ★ Hot Zone: 紫の追加リング（激戦区の警告サイン）
+          `0 0 14px 2px rgba(180, 60, 255, 0.45)`,
+          `inset 0 0 5px rgba(${blendedRgb},${glowAlpha})`,
+        ].join(', ')
+      : [
+          `0 0 ${glowSize}px ${glowSpread}px rgba(${blendedRgb},${glowAlpha})`,
+          `0 0 0 1px rgba(${blendedRgb},${borderAlpha})`,
+        ].join(', ');
   }
 
   return (
@@ -248,18 +335,64 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
       color: textColor, textAlign: 'center',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
+      transition: 'background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease',
     }}>
       <MinimalHandles />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {isSignature && (
-          <span className="signature-star-badge" style={{ position: 'absolute', left: -s * 0.34, top: '50%', transform: 'translateY(-50%)', fontSize: 15, lineHeight: 1, color: '#fde047', fontWeight: 900, zIndex: 3, pointerEvents: 'none', textShadow: '0 0 4px rgba(0,0,0,0.7), 0 0 6px rgba(253,224,71,0.65)' }}>★</span>
+          <span className="signature-star-badge" style={{
+            position: 'absolute', left: -s * 0.34, top: '50%',
+            transform: 'translateY(-50%)',
+            fontSize: 15, lineHeight: 1, color: '#fde047', fontWeight: 900,
+            zIndex: 3, pointerEvents: 'none',
+            textShadow: '0 0 4px rgba(0,0,0,0.7), 0 0 6px rgba(253,224,71,0.65)',
+          }}>★</span>
         )}
-        <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1.25, wordBreak: 'break-all', maxWidth: s * 0.82, letterSpacing: '0.02em', textShadow: '0 0 3px rgba(0,0,0,0.9)' }}>{t.name}</span>
-        {(t.points ?? 0) > 0 && (
-          <span style={{ fontSize: 7, opacity: 0.9, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>{t.points}pt</span>
+        <span style={{
+          fontSize: 8, fontWeight: 700, lineHeight: 1.25,
+          wordBreak: 'break-all', maxWidth: s * 0.82,
+          letterSpacing: '0.02em',
+          textShadow: '0 0 3px rgba(0,0,0,0.9)',
+        }}>{t.name}</span>
+
+        {/* ★ Phase13: viewMode に応じて表示するメトリクスを切り替え */}
+        {hasAnyData && viewMode === 'landed' && (t.points ?? 0) > 0 && (
+          <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
+            {t.points}pt
+          </span>
         )}
-        {isMaxed && (
-          <span style={{ position: 'absolute', top: -3, right: -1, fontSize: 6, lineHeight: 1, background: `linear-gradient(135deg, ${plasma.glow}, ${plasma.core})`, borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800, boxShadow: `0 0 4px ${plasma.mid}` }}>MAX</span>
+        {hasAnyData && viewMode === 'received' && receivedIntensity > 0 && (
+          <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, color: '#fecaca', textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
+            被{Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}
+          </span>
+        )}
+        {hasAnyData && viewMode === 'both' && (
+          <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
+            <span style={{ color: '#93c5fd' }}>{t.points ?? 0}</span>
+            <span style={{ opacity: 0.5, margin: '0 1px' }}>/</span>
+            <span style={{ color: '#fca5a5' }}>{Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}</span>
+          </span>
+        )}
+
+        {isMaxed && viewMode !== 'received' && (
+          <span style={{
+            position: 'absolute', top: -3, right: -1, fontSize: 6, lineHeight: 1,
+            background: `linear-gradient(135deg, ${plasma.glow}, ${plasma.core})`,
+            borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800,
+            boxShadow: `0 0 4px ${plasma.mid}`,
+          }}>MAX</span>
+        )}
+
+        {/* ★ Phase13: 激戦区警告マーク */}
+        {isHotZone && (
+          <span style={{
+            position: 'absolute', top: -3, left: -1, fontSize: 7, lineHeight: 1,
+            background: 'linear-gradient(135deg, #b45cff, #ec4899)',
+            borderRadius: 3, padding: '1px 3px',
+            color: '#fff', fontWeight: 800,
+            boxShadow: '0 0 5px rgba(180,92,255,0.9)',
+            animation: 'hotzone-pulse 1.4s ease-in-out infinite',
+          }}>⚠</span>
         )}
       </div>
     </div>
@@ -335,7 +468,9 @@ type TechActionMap = Record<string, string>;
 
 function buildGraph(
   rawTechniques: Technique[],
-  signatureTechId?: string,
+  signatureTechId: string | undefined,
+  receivedStats: ReceivedStats | undefined,
+  viewMode: ViewMode,
 ): { nodes: Node[]; edges: Edge[]; techActionMap: TechActionMap } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -375,6 +510,14 @@ function buildGraph(
   const half = CORE_NODE_SIZE / 2;
   nodes.push({ id: 'core', type: 'coreNode', position: { x: -half, y: -half }, data: {} });
 
+  // ★ Phase13: 被打統計を技ID引きできるマップに変換
+  const receivedPointsByTech: Record<string, number> = {};
+  if (receivedStats?.byTechnique) {
+    receivedStats.byTechnique.forEach(entry => {
+      receivedPointsByTech[entry.techniqueId] = entry.receivedPoints;
+    });
+  }
+
   const techAngles: Record<string, number> = {};
   allTechs.forEach(({ tech }, i) => {
     const angle = (2 * Math.PI / OUTER_SLOTS) * i - Math.PI / 2;
@@ -386,11 +529,18 @@ function buildGraph(
     const hs          = TECH_NODE_SIZE / 2;
     const techId      = `tech-${tech.id}`;
 
+    // ★ Phase13: RGB成分を算出
+    const givenIntensity    = normalizeIntensity(tech.points ?? 0,         GIVEN_SATURATION);
+    const receivedIntensity = normalizeIntensity(receivedPointsByTech[tech.id] ?? 0, RECEIVED_SATURATION);
+
     techActionMap[techId] = tech.actionType ?? '';
     nodes.push({
       id: techId, type: 'techniqueNode',
       position: { x: R_OUTER * Math.cos(angle) - hs, y: R_OUTER * Math.sin(angle) - hs },
-      data: { technique: tech, tier, isSignature, isMaxed } as unknown as Record<string, unknown>,
+      data: {
+        technique: tech, tier, isSignature, isMaxed,
+        givenIntensity, receivedIntensity, viewMode,   // ★ Phase13
+      } as unknown as Record<string, unknown>,
     });
   });
 
@@ -493,16 +643,33 @@ const KEYFRAMES = `
     fill: rgba(129,140,248,0.8) !important;
   }
   .react-flow__controls-button:hover { background: rgba(49,46,129,0.8) !important; }
+
+  /* ★ Phase13: 激戦区（Hot Zone）警告アニメ */
+  @keyframes hotzone-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.65; transform: scale(0.92); }
+  }
+
+  /* ★ Phase13: ViewMode トグル */
+  @keyframes viewmode-active-pulse {
+    0%, 100% { box-shadow: 0 0 8px var(--vm-glow), inset 0 0 4px var(--vm-glow); }
+    50%      { box-shadow: 0 0 14px var(--vm-glow), inset 0 0 6px var(--vm-glow); }
+  }
 `;
 
 // =====================================================================
 // メインコンポーネント
 // =====================================================================
-export default function SkillGrid({ techniques, signatureTechId }: Props) {
+export default function SkillGrid({ techniques, signatureTechId, receivedStats }: Props) {
   const [filter, setFilter] = useState<FilterType>('all');
+  // ★ Phase13: 表示モードの切替state
+  const [viewMode, setViewMode] = useState<ViewMode>('both');
 
   const { nodes: rawNodes, edges: rawEdges, techActionMap } =
-    useMemo(() => buildGraph(techniques, signatureTechId), [techniques, signatureTechId]);
+    useMemo(
+      () => buildGraph(techniques, signatureTechId, receivedStats, viewMode),
+      [techniques, signatureTechId, receivedStats, viewMode],
+    );
 
   const actionTypes = useMemo(() => {
     const safe = sanitizeTechniques(techniques);
@@ -578,6 +745,89 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
           );
         })}
       </div>
+      {/* ====================================================== */}
+      {/* ★ Phase13: ViewMode トグル（与打 / 被打 / 攻防）     */}
+      {/* ====================================================== */}
+      {receivedStats && (
+        <div style={{
+          display:      'flex',
+          gap:          0,
+          marginBottom: 10,
+          padding:      4,
+          borderRadius: 12,
+          border:       '1px solid rgba(99,102,241,0.25)',
+          background:   'linear-gradient(90deg, rgba(8,6,20,0.85), rgba(20,10,40,0.85))',
+          position:     'relative',
+          overflow:     'hidden',
+        }}>
+          {/* 上端のシマー線 */}
+          <div style={{
+            position:   'absolute',
+            top:        0,
+            left:       '8%',
+            right:      '8%',
+            height:     1,
+            background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.6), transparent)',
+            pointerEvents: 'none',
+          }} />
+
+          {([
+            { key: 'landed',   label: '与打',   subEn: 'LANDED',   glow: '99,102,241',  fg: '#a5b4fc' },
+            { key: 'both',     label: '攻防',   subEn: 'BOTH',     glow: '167,139,250', fg: '#c4b5fd' },
+            { key: 'received', label: '被打',   subEn: 'RECEIVED', glow: '248,113,113', fg: '#fca5a5' },
+          ] as { key: ViewMode; label: string; subEn: string; glow: string; fg: string }[]).map(opt => {
+            const active = viewMode === opt.key;
+            return (
+              <button
+                key={opt.key}
+                onClick={() => setViewMode(opt.key)}
+                style={{
+                  flex:           1,
+                  position:       'relative',
+                  padding:        '8px 6px 6px',
+                  borderRadius:   8,
+                  border:         active
+                    ? `1px solid rgba(${opt.glow},0.85)`
+                    : '1px solid transparent',
+                  background:     active
+                    ? `linear-gradient(135deg, rgba(${opt.glow},0.18), rgba(${opt.glow},0.05))`
+                    : 'transparent',
+                  color:          active ? opt.fg : 'rgba(199,210,254,0.4)',
+                  fontFamily:     'inherit',
+                  cursor:         'pointer',
+                  display:        'flex',
+                  flexDirection:  'column',
+                  alignItems:     'center',
+                  justifyContent: 'center',
+                  gap:            2,
+                  transition:     'color 0.2s, background 0.2s, border-color 0.2s',
+                  ['--vm-glow' as string]: `rgba(${opt.glow},0.55)`,
+                  animation:      active ? 'viewmode-active-pulse 2.4s ease-in-out infinite' : 'none',
+                } as React.CSSProperties}
+              >
+                <span style={{
+                  fontSize:      '0.5rem',
+                  fontWeight:    700,
+                  letterSpacing: '0.18em',
+                  opacity:       active ? 0.9 : 0.5,
+                  lineHeight:    1,
+                }}>
+                  {opt.subEn}
+                </span>
+                <span style={{
+                  fontSize:      '0.85rem',
+                  fontWeight:    800,
+                  letterSpacing: '0.08em',
+                  lineHeight:    1.1,
+                  textShadow:    active ? `0 0 8px rgba(${opt.glow},0.7)` : 'none',
+                }}>
+                  {opt.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/*
         ★ Phase11.1 追補: height を 480 (固定) → '100%' に変更。
@@ -618,6 +868,41 @@ export default function SkillGrid({ techniques, signatureTechId }: Props) {
           </div>
         ))}
       </div>
+
+      {/* ★ Phase13: viewMode 凡例 */}
+      {receivedStats && (
+        <div style={{
+          marginTop:    6,
+          padding:      '6px 10px',
+          borderRadius: 8,
+          background:   'rgba(8,6,20,0.5)',
+          border:       '1px solid rgba(99,102,241,0.15)',
+          fontSize:     '0.62rem',
+          color:        'rgba(199,210,254,0.55)',
+          lineHeight:   1.5,
+          letterSpacing:'0.04em',
+        }}>
+          {viewMode === 'landed' && (
+            <>
+              <span style={{ color:'#93c5fd', fontWeight:700 }}>● 与打モード</span>
+              ：青の濃淡が与打ポイントの強さ。鍛えてきた技ほど明るく光る。
+            </>
+          )}
+          {viewMode === 'received' && (
+            <>
+              <span style={{ color:'#fca5a5', fontWeight:700 }}>● 被打モード</span>
+              ：赤の濃淡が被打ポイントの強さ。明るく光る技ほど対策が急務。
+            </>
+          )}
+          {viewMode === 'both' && (
+            <>
+              <span style={{ color:'#c4b5fd', fontWeight:700 }}>● 攻防モード</span>
+              ：青=与打 / 赤=被打 / <span style={{ color:'#e9d5ff', fontWeight:700 }}>紫=激戦区</span>。
+              紫に光る技は「鍛えていても打たれている」要警戒ゾーン。
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

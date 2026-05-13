@@ -134,6 +134,33 @@
 
 ---
 
+### `received_technique_logs`（被打技ログ）★ Phase13 追加
+
+> ⚠️ **特例**: このシートは A列が `id`（UUID）、B列が `user_id` です。
+> 既存のユーザー固有シート（A列=user_id 規約）とは異なるため、フィルタロジックに注意。
+
+| 列 | カラム名 | 型 | 内容 |
+|---|---|---|---|
+| A | id | string | レコードUUID |
+| B | user_id | string | ユーザーID |
+| C | date | string | 稽古日（YYYY-MM-DD） |
+| D | technique_id | string | 打たれた技のID（technique_master の ID と紐づく） |
+| E | quantity | number | 打たれた回数（1〜5） |
+| F | reason | number | 被打原因コード（1: 攻め負け / 2: 単調 / 3: 居着き / 4: 体勢崩れ / 5: 手元上がり） |
+| G | xp_earned | number | 正直記録ボーナス（5 × quantity） |
+
+> **設計原則:**
+> - `saveLog` で受け取った `receivedTechs[]` を本シートへ追記する。1件ずつ独立行として保存。
+> - 正直記録ボーナスとして 1記録あたり `5 XP × quantity` を `user_status` に加算し、
+>   `xp_history` には `type='gain'`, `reason='正直記録ボーナス（被打 N件）'` で記録する。
+> - 被打累計ポイント（`receivedPoints`）は集計時にフロント表示用として算出：
+>   `receivedPoints = Σ(quantity × SEVERITY_MULT[reason])`
+>   - 深刻度係数: 1→1.0倍 / 2→1.2倍 / 3→1.5倍 / 4→2.0倍 / 5→3.0倍
+>   - これは `ARCHITECTURE.md` の技稽古「質（Quality）」倍率と完全一致させる方針。
+> - 物理削除は行わない（過去の弱点推移を分析するため）。
+
+---
+
 ## 全ユーザー共通マスタ
 
 ### `UserMaster`（ユーザー管理）
@@ -305,3 +332,31 @@
    - getDashboard レスポンスに `status.title` が含まれていないこと
    - xpHistory 各エントリに `title` が含まれていないこと
    - XP推移チャートの Tooltip に称号が正しく動的表示されること
+
+### ★ Phase13 被打分析の集計仕様
+
+`received_technique_logs` は GAS の `getReceivedStatsData()` で集計され、
+`getDashboard` レスポンスに `receivedStats` として返される。
+
+集計内容：
+
+- `totalReceived`: 全期間の被打総回数（quantity 合計）
+- `totalPoints`: 深刻度係数を乗じた被打累計ポイント
+- `byTechnique[]`: 技別集計（receivedPoints 降順ソート）
+  - `technique_master` と JOIN して `techniqueName / bodyPart / subCategory` を付加
+  - `reasonBreakdown`: 原因別の被打回数内訳（quantity 合計）
+- `byReason`: 全期間の原因別被打回数（quantity 合計）
+
+フロントエンド側では `receivedStats.byTechnique` の上位を弱点ヒートマップに、
+`byReason` を原因別Top3チャートに使用する。
+
+### ★ Phase13 SEVERITY_MULT 同期ルール
+
+被打深刻度係数（`SEVERITY_MULT`）は以下の2か所で**完全一致**させること：
+
+| 場所 | 識別子 |
+|---|---|
+| `src/types/index.ts` | `export const SEVERITY_MULT` |
+| `gas/Code.gs` | `var SEVERITY_MULT_GAS` |
+
+値の変更時は両方を同時に更新すること。
