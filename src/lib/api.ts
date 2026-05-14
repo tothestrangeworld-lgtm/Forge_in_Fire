@@ -6,6 +6,7 @@
 // ★ Phase6: fetchAchievements 追加。saveLog の戻り値に newAchievements を追加。
 // ★ Phase7: evaluatePeer を PeerEvalItem[] 対応に変更。fetchTodayEvaluations 追加。
 // ★ Phase8: updateTechniqueRating を quantity / quality の2引数に変更。
+// ★ Phase13.2: updateTechniqueRating を完全削除。与打は saveLog の givenTechs に統合。
 // ★ SWR:  useDashboardSWR / useTechniquesSWR / useRivalsSWR / useRivalDashboardSWR を追加。
 //         useDashboardSWR は { dashboard, techniques } を返すよう修正。
 //
@@ -24,7 +25,6 @@ import type {
   TaskDiff,
   Technique,
   TechniqueMasterEntry,
-  TechniqueUpdateResponse,
 } from '@/types';
 import { loggedFetch, logger } from '@/lib/logger';
 import { getCurrentUserId } from '@/lib/auth';
@@ -232,25 +232,11 @@ export function useTechniquesSWR(targetUserId?: string) {
   );
 }
 
-/**
- * 技の習熟度を記録する。
- * ★ Phase8: 引数を quantity（量）と quality（質）の2軸に変更。
- *   - quantity: 稽古の本数・反復数の自己評価（1〜5）
- *   - quality:  技の精度・集中度の自己評価（1〜5）
- *   - GAS側で earnedPoints = ceil(量基礎点 × 質倍率) を計算して返す
- *
- * @param id       technique_master の技ID（例: "T001"）
- * @param quantity 量スコア（1〜5）
- * @param quality  質スコア（1〜5）
- */
-export async function updateTechniqueRating(
-  id: string,
-  quantity: number,
-  quality: number,
-): Promise<TechniqueUpdateResponse> {
-  logger.info('api', `技評価送信: id=${id} quantity=${quantity} quality=${quality}`);
-  return gasPost<TechniqueUpdateResponse>({ action: 'updateTechniqueRating', id, quantity, quality });
-}
+// =====================================================================
+// ★ Phase13.2: updateTechniqueRating は完全廃止。
+// 与打の記録は saveLog の givenTechs[] ペイロードに統合された。
+// 旧API互換性は無いため、本関数を呼び出す箇所が残っていればコンパイルエラーが出る。
+// =====================================================================
 
 // =====================================================================
 // user_tasks

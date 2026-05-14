@@ -1084,9 +1084,12 @@ function TechRow({
 
   // 量の選択肢: 1〜5（フルテキストはシンプル）
   const QUANTITY_LABELS: Record<number, string> = {
-    1: '1本', 2: '2本', 3: '3本', 4: '4本', 5: '5本',
+    1: '少ない',
+    2: 'やや少ない',
+    3: '標準的',
+    4: 'やや多い',
+    5: '多い',
   };
-
   return (
     <div
       style={{
