@@ -416,6 +416,25 @@ export default function RecordPage() {
     return map;
   }, [dashboard?.logs, activeTasks]);
 
+  // ★ Phase13.2: 技マスターを部位順にソート
+  // 優先順位: 面 > 小手 > 胴 > 突き > その他（未分類等）
+  const sortedTechMaster = useMemo(() => {
+    const BP_ORDER: Record<string, number> = {
+      '面':   0,
+      '小手': 1,
+      '胴':   2,
+      '突き': 3,
+    };
+    const master = dashboard?.techniqueMaster ?? [];
+    return [...master].sort((a, b) => {
+      const orderA = BP_ORDER[a.bodyPart] ?? 99;
+      const orderB = BP_ORDER[b.bodyPart] ?? 99;
+      if (orderA !== orderB) return orderA - orderB;
+      // 同部位内は元のID順を維持（安定ソート）
+      return String(a.id).localeCompare(String(b.id));
+    });
+  }, [dashboard?.techniqueMaster]);
+
   async function handleSubmit() {
     if (!canSubmit) return;
     setSubmitting(true); setSubmitError(null);
@@ -605,7 +624,7 @@ export default function RecordPage() {
 
           {/* ============= ★ Phase13.2: 与打セクション ============= */}
           <GivenTechniqueRecordSection
-            techMaster={dashboard?.techniqueMaster ?? []}
+            techMaster={sortedTechMaster}
             selections={givenTechSelections}
             onChange={setGivenTechSelections}
             disabled={submitting}
@@ -613,7 +632,7 @@ export default function RecordPage() {
 
           {/* ============= ★ Phase13.2: 被打セクション ============= */}
           <ReceivedTechniqueRecordSection
-            techMaster={dashboard?.techniqueMaster ?? []}
+            techMaster={sortedTechMaster}
             selections={receivedTechSelections}
             onChange={setReceivedTechSelections}
             disabled={submitting}

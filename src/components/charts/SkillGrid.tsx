@@ -443,7 +443,7 @@ const BodyPartNode = memo(function BodyPartNode({ data }: NodeProps) {
             textShadow: `0 0 4px rgba(255, 0, 85, 0.6)`,
             letterSpacing: '0.03em',
           }}>
-            被{Math.round(d.totalReceived)}
+            {Math.round(d.totalReceived)}pt
           </span>
         )}
         {d.viewMode === 'both' && (d.totalGiven > 0 || d.totalReceived > 0) && (
@@ -580,7 +580,7 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
             color: '#fb7185',
             textShadow: `0 0 3px rgba(255,0,85,0.6)`,
           }}>
-            被{Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}
+            {Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}pt
           </span>
         )}
         {orbit.hasAnyData && viewMode === 'both' && (
