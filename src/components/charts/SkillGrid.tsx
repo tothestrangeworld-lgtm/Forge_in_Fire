@@ -40,7 +40,7 @@ const OUTER_SLOTS    = 24;
 const R_OUTER        = 200;
 const R_MID_RATIO    = 0.46;
 
-const TECH_NODE_SIZE = 37;
+const TECH_NODE_SIZE = 40;
 const BP_NODE_SIZE   = 50;
 const CORE_NODE_SIZE = 64;
 
@@ -347,7 +347,7 @@ const CoreNode = memo(function CoreNode({ data }: NodeProps) {
       boxShadow:  orbit.boxShadow,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       color:      orbit.textColor,
-      fontSize: 15, fontWeight: 800,
+      fontSize: 20, fontWeight: 800,
       letterSpacing: '0.1em',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none', zIndex: 2,
@@ -418,7 +418,7 @@ const BodyPartNode = memo(function BodyPartNode({ data }: NodeProps) {
       <MinimalHandles />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <span style={{
-          fontSize: 11, fontWeight: 800, lineHeight: 1.2,
+          fontSize: 15, fontWeight: 800, lineHeight: 1.2,
           letterSpacing: '0.04em',
           color: orbit.textColor,
           textShadow: orbit.textShadow,
@@ -559,7 +559,7 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
           }}>★</span>
         )}
         <span style={{
-          fontSize: 8, fontWeight: 700, lineHeight: 1.25,
+          fontSize: 13, fontWeight: 700, lineHeight: 1.25,
           wordBreak: 'break-all', maxWidth: s * 0.82,
           letterSpacing: '0.02em',
           textShadow: textShadowFinal,
