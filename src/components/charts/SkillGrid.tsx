@@ -501,17 +501,17 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
         }}>{t.name}</span>
 
         {/* ★ Phase13: viewMode に応じて表示するメトリクスを切り替え */}
-        {hasAnyData && viewMode === 'landed' && (t.points ?? 0) > 0 && (
+        {orbit.hasAnyData && viewMode === 'landed' && (t.points ?? 0) > 0 && (
           <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
             {t.points}pt
           </span>
         )}
-        {hasAnyData && viewMode === 'received' && receivedIntensity > 0 && (
+        {orbit.hasAnyData && viewMode === 'received' && receivedIntensity > 0 && (
           <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, color: '#fecaca', textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
             被{Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}
           </span>
         )}
-        {hasAnyData && viewMode === 'both' && (
+        {orbit.hasAnyData && viewMode === 'both' && (
           <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
             <span style={{ color: '#93c5fd' }}>{t.points ?? 0}</span>
             <span style={{ opacity: 0.5, margin: '0 1px' }}>/</span>
