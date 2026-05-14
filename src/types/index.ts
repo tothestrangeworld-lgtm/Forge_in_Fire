@@ -48,6 +48,13 @@
 //   - SaveLogPayload に receivedTechs?: ReceivedTechniqueSelection[] を追加
 //   - DashboardData に receivedStats?: ReceivedStats を追加
 //   - 深刻度係数（SEVERITY_MULT）を export
+// ★ Phase13.2: 技記録のスマート化（与打を saveLog に統合）
+//   - GivenTechniqueSelection 型を追加（saveLog の givenTechs ペイロード）
+//   - SaveLogPayload に givenTechs?: GivenTechniqueSelection[] を追加
+//   - SaveLogResponse に xp_from_practice / xp_from_received / xp_from_given を追加
+//   - Technique.lastFeedback / lastQuantity / lastQuality は四字熟語廃止のため
+//     optional のまま残置（既存DBレコード互換）
+//   - GivenStrikeQuality 型（1〜5）と QUALITY_LABELS マップを追加
 // =====================================================================
 
 export interface LogEntry {
@@ -226,6 +233,13 @@ export interface SaveLogPayload {
    * 任意項目。1件につき正直記録ボーナス +5XP × quantity が付与される。
    */
   receivedTechs?: ReceivedTechniqueSelection[];
+  /**
+   * ★ Phase13.2: その日の地稽古で「磨きたい・実際に振った技」の記録。
+   * 旧 updateTechniqueRating を統合。saveLog 内で量×質マトリックスから
+   * earnedPoints を算出し、user_techniques を UPSERT、technique_logs に追記、
+   * user_status / xp_history を一括更新する。
+   */
+  givenTechs?: GivenTechniqueSelection[];
 }
 
 // =====================================================================
@@ -234,7 +248,14 @@ export interface SaveLogPayload {
 // ★ Phase9.5: title を削除
 // =====================================================================
 export interface SaveLogResponse {
-  xp_earned:        number;
+  xp_earned:        number;     // 全XP合算（課題 + 被打ボーナス + 与打）
+  /** ★ Phase13.2: 内訳（任意） */
+  xp_from_practice?: number;    // 課題評価分
+  xp_from_received?: number;    // 正直記録ボーナス（被打）
+  xp_from_given?:    number;    // 技の稽古分（与打）
+  /** ★ Phase13.2: 与打の保存件数 */
+  given_saved?:      number;
+  received_saved?:   number;
   total_xp:         number;
   level:            number;
   newAchievements?: Achievement[];
@@ -442,11 +463,21 @@ export interface Technique {
   name:         string;
   points:       number;
   lastRating:   number;
+  /**
+   * ★ Phase13.2: 四字熟語フィードバックは廃止。
+   * 既存DBレコードとの互換のため optional フィールドは残置するが、
+   * 新規記録では書き込まない。表示UI側でも非表示化する。
+   */
   lastQuantity?: number;
   lastQuality?:  number;
   lastFeedback?: string;
 }
 
+/**
+ * @deprecated ★ Phase13.2: updateTechniqueRating API は廃止。
+ * 与打の記録は saveLog の givenTechs で送信し、SaveLogResponse を受け取る。
+ * 型自体は段階的削除のために残置するが、新規実装では使用しないこと。
+ */
 export interface TechniqueUpdateResponse {
   id:           string;
   points:       number;
@@ -696,4 +727,53 @@ export interface ReceivedStats {
   byTechnique:     ReceivedStatEntry[];
   /** 原因別の被打回数内訳（quantity 合計） */
   byReason:        Record<ReceivedReason, number>;
+}
+
+// =====================================================================
+// 与打入力（Given Strikes）★ Phase13.2
+// 旧 updateTechniqueRating を saveLog に統合するためのペイロード型。
+// =====================================================================
+
+/**
+ * 与打の質（Quality）= 打突の精度。
+ *  1: 偶然   2: 強引   3: 確実   4: 会心   5: 無想
+ */
+export type GivenStrikeQuality = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * 与打の質（Quality）→ ラベルマップ。
+ * UI表示・選択肢生成で使用する（透明Selectハックの option text）。
+ */
+export const GIVEN_QUALITY_LABELS: Record<GivenStrikeQuality, string> = {
+  1: '偶然 (意図せずまぐれで当たった)',
+  2: '強引 (気剣体が不十分なまま当てた)',
+  3: '確実 (狙い通りに基本の打突ができた)',
+  4: '会心 (完璧な機会を捉えた一撃)',
+  5: '無想 (無意識に体が動いた)',
+};
+
+/**
+ * 被打の原因（Reason）→ フルテキスト・ラベルマップ。
+ * 既存の RECEIVED_REASON_LABELS（短縮形）に対し、こちらは入力UIの
+ * option text として使うフルテキスト版。
+ */
+export const RECEIVED_REASON_FULL_LABELS: Record<ReceivedReason, string> = {
+  1: '攻め負け (相手に主導権を握られた)',
+  2: '単調 (動きや技のパターンを読まれた)',
+  3: '居着き (足が止まり反応が遅れた)',
+  4: '体勢崩れ (打突後などの姿勢の乱れ)',
+  5: '手元上がり (無意識に防御して隙を作った)',
+};
+
+/**
+ * saveLog の givenTechs[] に渡す1件分の与打記録。
+ *
+ *  - techniqueId: technique_master の ID（例: "T001"）
+ *  - quantity:    打った回数（1〜5）
+ *  - quality:     打突の質（1〜5）
+ */
+export interface GivenTechniqueSelection {
+  techniqueId: string;
+  quantity:    number;          // 1〜5
+  quality:     GivenStrikeQuality; // 1〜5
 }

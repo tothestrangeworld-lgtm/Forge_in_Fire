@@ -63,6 +63,12 @@
 //   - getDashboard を拡張: receivedStats（技別/原因別集計）を返す
 //     被打累計ポイント = Σ(quantity × SEVERITY_MULT[reason])
 //     SEVERITY_MULT = { 1:1.0, 2:1.2, 3:1.5, 4:2.0, 5:3.0 }
+// ★ Phase13.2: 技記録のスマート化（与打を saveLog に統合）
+//   - updateTechniqueRating 関数を完全削除（YOJI_MATRIX も含む）
+//   - doPost のルーティングから 'updateTechniqueRating' を削除
+//   - saveLog を拡張: body.givenTechs[] を受け取り、user_techniques を UPSERT、
+//     technique_logs に追記、合算XPを user_status / xp_history へ一回だけ書き込む
+//   - 獲得XPの内訳を返却: xp_from_practice / xp_from_received / xp_from_given
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -254,7 +260,7 @@ function doPost(e) {
       case 'saveLog':                return saveLog(body);
       case 'updateProfile':          return updateProfile(body);
       case 'resetStatus':            return resetStatus(body);
-      case 'updateTechniqueRating':  return updateTechniqueRating(body);
+      // ★ Phase13.2: updateTechniqueRating は廃止。saveLog の givenTechs に統合済み。
       case 'updateTasks':            return updateTasks(body);
       case 'archiveTask':            return archiveTask(body);
       case 'evaluatePeer':           return evaluatePeer(body);
@@ -268,6 +274,7 @@ function doPost(e) {
     return createError('Server error: ' + err.message, 500);
   }
 }
+
 
 // =====================================================================
 // D. UserMaster
@@ -360,10 +367,14 @@ function getLogs(params) {
 
 /**
  * saveLog
- * ★ Phase4: items[].task_id（UUID）を受け取り、logs シートの C列に task_id として保存。
- * item_name は保存しない。
- * ★ Phase6: 保存後にアチーブメント解除判定を実行し newAchievements をレスポンスに含める。
+ * ★ Phase4:    items[].task_id（UUID）を受け取り logs C列に保存。item_name は廃止。
+ * ★ Phase6:   保存後にアチーブメント解除判定を実行し newAchievements を返却。
  * ★ Phase9.5: title をレスポンスから削除。
+ * ★ Phase13:  receivedTechs[] を received_technique_logs に保存。
+ *             正直記録ボーナス: 5XP × quantity を加算。
+ * ★ Phase13.2: givenTechs[] を user_techniques / technique_logs へ書き込み、
+ *             量×質マトリックスから earnedPoints を算出して合算。
+ *             user_status / xp_history への書き込みは「最終1回」にまとめる。
  *
  * user_status 新列構成（Phase9.5）:
  *   A(0)=user_id, B(1)=total_xp, C(2)=level, D(3)=last_practice_date,
@@ -386,57 +397,32 @@ function saveLog(body) {
   }
   var statSheet = ss.getSheetByName(SHEET_STATUS);
 
+  // ─────────────────────────────────────────────
+  // Step 1. 課題評価 (items) の処理
+  // ─────────────────────────────────────────────
   var BASE_XP     = 50;
   var SCORE_BONUS = { 5:30, 4:20, 3:10, 2:5, 1:2 };
-  var baseXp      = BASE_XP;
+  var practiceXp  = BASE_XP;
 
   items.forEach(function(item){
     var bonus  = SCORE_BONUS[item.score] || 0;
-    baseXp    += bonus;
+    practiceXp += bonus;
     logSheet.appendRow([userId, date, String(item.task_id), item.score, bonus]);
   });
 
-  // 段位倍率（リアル段位）
-  // ★ Phase9.5: real_rank は F列(index 5)
+  // 段位倍率
   var statRows  = filterRowsByUserId(statSheet, userId);
   var realRank  = (statRows.length > 0) ? String(statRows[0][5] || '') : '';
   var MULTI     = { '初段':1.2, '弐段':1.5, '参段':1.8, '四段':2.2, '五段':2.7, '六段':3.4, '七段':4.2, '八段':5.0 };
   var mult      = MULTI[realRank] || 1.0;
-  var totalXp   = Math.ceil(baseXp * mult);
-
-  // user_status 更新
-  // ★ Phase9.5: 8列構成。title 列なし。
-  //   col1=user_id, col2=total_xp, col3=level, col4=last_practice_date,
-  //   col5=last_decay_date, col6=real_rank, col7=motto, col8=favorite_technique
-  var hasRow    = statRows.length > 0;
-  var currentXp = hasRow ? (parseInt(statRows[0][1]) || 0) : 0;
-  var newXp     = currentXp + totalXp;
-  var newLevel  = calcLevel(newXp);
-  var today     = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
-
-  if (hasRow) {
-    var allRows = statSheet.getDataRange().getValues();
-    for (var r = allRows.length; r >= 2; r--) {
-      if (String(allRows[r-1][0]) === String(userId)) {
-        // ★ Phase9.5: 5列分を更新（user_id, total_xp, level, last_practice_date, last_decay_date）
-        statSheet.getRange(r, 1, 1, 5).setValues([[userId, newXp, newLevel, today, today]]);
-        break;
-      }
-    }
-  } else {
-    // ★ Phase9.5: 8列で新規挿入（title 列なし）
-    statSheet.appendRow([userId, newXp, newLevel, today, today, '', '', '']);
-  }
-
-  // ★ Phase9.5: title 引数を渡さない
-  writeXpHistory(ss, userId, 'gain', totalXp, '稽古記録（' + date + '・' + items.length + '項目）', newXp, newLevel);
+  var practiceXpFinal = Math.ceil(practiceXp * mult);
 
   // ─────────────────────────────────────────────
-  // ★ Phase13: 被打記録の保存 + 正直記録ボーナス
+  // Step 2. 被打 (receivedTechs) の処理
   // ─────────────────────────────────────────────
-  var receivedTechs       = body.receivedTechs;
-  var receivedXp          = 0;
-  var receivedSavedCount  = 0;
+  var receivedTechs      = body.receivedTechs;
+  var receivedXp         = 0;
+  var receivedSavedCount = 0;
 
   if (receivedTechs && Array.isArray(receivedTechs) && receivedTechs.length > 0) {
     var rtlSheet  = getReceivedTechLogsSheet(ss);
@@ -448,62 +434,165 @@ function saveLog(body) {
       var quantity = parseInt(rt && rt.quantity);
       var reason   = parseInt(rt && rt.reason);
 
-      // バリデーション: 不正な行はスキップ（saveLog 全体は失敗させない）
-      if (!techId)                                        return;
+      if (!techId) return;
       if (isNaN(quantity) || quantity < 1 || quantity > 5) return;
       if (isNaN(reason)   || reason   < 1 || reason   > 5) return;
 
-      // 正直記録ボーナス: 5 XP × quantity
       var earned = 5 * quantity;
       receivedXp         += earned;
       receivedSavedCount += 1;
 
       validRows.push([
-        Utilities.getUuid(),  // id (UUID)
-        userId,               // user_id
-        date,                 // date (saveLog 引数)
-        techId,               // technique_id
-        quantity,             // quantity
-        reason,               // reason (1〜5)
-        earned,               // xp_earned
+        Utilities.getUuid(), userId, date, techId, quantity, reason, earned,
       ]);
     });
 
     if (validRows.length > 0) {
       rtlSheet.getRange(rtlSheet.getLastRow() + 1, 1, validRows.length, 7).setValues(validRows);
-
-      // user_status へ加算（saveLog 本体の totalXp に積み増しせず、別 type で履歴を残す）
-      newXp    = newXp + receivedXp;
-      newLevel = calcLevel(newXp);
-
-      // user_status を再書き込み
-      var allRows2 = statSheet.getDataRange().getValues();
-      for (var rr = allRows2.length; rr >= 2; rr--) {
-        if (String(allRows2[rr-1][0]) === String(userId)) {
-          statSheet.getRange(rr, 2, 1, 2).setValues([[newXp, newLevel]]);
-          break;
-        }
-      }
-
-      writeXpHistory(ss, userId, 'gain', receivedXp,
-        '正直記録ボーナス（被打 ' + receivedSavedCount + '件）', newXp, newLevel);
-
       gasLog('INFO', 'saveLog', 'received_techs saved user=' + userId,
         { count: receivedSavedCount, xp: receivedXp });
     }
   }
 
-  // ★ Phase6: アチーブメント解除判定
+  // ─────────────────────────────────────────────
+  // Step 3. ★ Phase13.2: 与打 (givenTechs) の処理
+  // ─────────────────────────────────────────────
+  var givenTechs       = body.givenTechs;
+  var givenXp          = 0;
+  var givenSavedCount  = 0;
+
+  if (givenTechs && Array.isArray(givenTechs) && givenTechs.length > 0) {
+    var QUANTITY_BASE = { 1: 10, 2: 20, 3: 30, 4: 40, 5: 50 };
+    var QUALITY_MULT  = { 1: 0.1, 2: 0.5, 3: 1.0, 4: 2.0, 5: 5.0 };
+
+    var master       = getTechniqueMasterData(ss);
+    var masterMap    = {};
+    master.forEach(function(m){ masterMap[m.id] = m; });
+
+    // user_techniques シート
+    var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
+    if (!utSheet) {
+      utSheet = ss.insertSheet(SHEET_USER_TECHNIQUES);
+      utSheet.appendRow(['user_id', 'technique_id', 'Points', 'LastRating', 'last_quantity', 'last_quality', 'last_feedback']);
+      utSheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+      utSheet.setFrozenRows(1);
+      gasLog('INFO', 'saveLog', 'user_techniques シートを自動作成しました（Phase13.2）');
+    }
+
+    // technique_logs シート
+    var tlSheet = ss.getSheetByName(SHEET_TECH_LOGS);
+    if (!tlSheet) {
+      tlSheet = ss.insertSheet(SHEET_TECH_LOGS);
+      tlSheet.appendRow(['user_id', 'date', 'technique_id', 'quantity', 'quality', 'xp_earned', 'feedback']);
+      tlSheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+      tlSheet.setFrozenRows(1);
+      gasLog('INFO', 'saveLog', 'technique_logs シートを自動作成しました（Phase13.2）');
+    }
+
+    var utRows  = utSheet.getDataRange().getValues();
+    var tsGiven = nowJstTs();
+    var newTlRows = [];
+
+    givenTechs.forEach(function(gt) {
+      var techId   = gt && gt.techniqueId ? String(gt.techniqueId) : '';
+      var quantity = parseInt(gt && gt.quantity);
+      var quality  = parseInt(gt && gt.quality);
+
+      if (!techId) return;
+      if (isNaN(quantity) || quantity < 1 || quantity > 5) return;
+      if (isNaN(quality)  || quality  < 1 || quality  > 5) return;
+      if (!masterMap[techId]) {
+        gasLog('WARN', 'saveLog', 'givenTechs: technique_master に ID=' + techId + ' が見つかりません');
+        return;
+      }
+
+      var earned = Math.ceil(QUANTITY_BASE[quantity] * QUALITY_MULT[quality]);
+      givenXp         += earned;
+      givenSavedCount += 1;
+
+      // user_techniques を UPSERT
+      var utRowIdx = -1;
+      for (var i = 1; i < utRows.length; i++) {
+        if (String(utRows[i][0]) === String(userId) && String(utRows[i][1]) === String(techId)) {
+          utRowIdx = i; break;
+        }
+      }
+      if (utRowIdx === -1) {
+        // 新規挿入。lastFeedback は Phase13.2 で廃止のため空文字で保存。
+        utSheet.appendRow([userId, techId, earned, quality, quantity, quality, '']);
+        // utRows にも反映（同一バッチ内の重複技に対応）
+        utRows.push([userId, techId, earned, quality, quantity, quality, '']);
+      } else {
+        var currentPts = Number(utRows[utRowIdx][2]) || 0;
+        var newPts     = currentPts + earned;
+        var sheetRow   = utRowIdx + 1;
+        utSheet.getRange(sheetRow, 3, 1, 5).setValues([[newPts, quality, quantity, quality, '']]);
+        utRows[utRowIdx][2] = newPts;
+        utRows[utRowIdx][3] = quality;
+        utRows[utRowIdx][4] = quantity;
+        utRows[utRowIdx][5] = quality;
+        utRows[utRowIdx][6] = '';
+      }
+
+      // technique_logs に追記
+      newTlRows.push([userId, tsGiven, techId, quantity, quality, earned, '']);
+    });
+
+    if (newTlRows.length > 0) {
+      tlSheet.getRange(tlSheet.getLastRow() + 1, 1, newTlRows.length, 7).setValues(newTlRows);
+      gasLog('INFO', 'saveLog', 'given_techs saved user=' + userId,
+        { count: givenSavedCount, xp: givenXp });
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Step 4. ★ Phase13.2: user_status / xp_history を「一回だけ」書き込む
+  // ─────────────────────────────────────────────
+  var totalEarnedXp = practiceXpFinal + receivedXp + givenXp;
+
+  var hasRow    = statRows.length > 0;
+  var currentXp = hasRow ? (parseInt(statRows[0][1]) || 0) : 0;
+  var newXp     = currentXp + totalEarnedXp;
+  var newLevel  = calcLevel(newXp);
+  var today     = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+
+  if (hasRow) {
+    var allRows = statSheet.getDataRange().getValues();
+    for (var r = allRows.length; r >= 2; r--) {
+      if (String(allRows[r-1][0]) === String(userId)) {
+        // user_id, total_xp, level, last_practice_date, last_decay_date を一括更新
+        statSheet.getRange(r, 1, 1, 5).setValues([[userId, newXp, newLevel, today, today]]);
+        break;
+      }
+    }
+  } else {
+    // 8列で新規挿入（Phase9.5）
+    statSheet.appendRow([userId, newXp, newLevel, today, today, '', '', '']);
+  }
+
+  // xp_history は「課題」「与打」「被打」の構成を1行のreasonに集約
+  var reasonParts = ['稽古記録（' + date + '・' + items.length + '項目）'];
+  if (givenSavedCount > 0)    reasonParts.push('与打 ' + givenSavedCount + '件');
+  if (receivedSavedCount > 0) reasonParts.push('被打 ' + receivedSavedCount + '件 [+正直記録ボーナス]');
+  var reasonText = reasonParts.join(' / ');
+
+  writeXpHistory(ss, userId, 'gain', totalEarnedXp, reasonText, newXp, newLevel);
+
+  // ─────────────────────────────────────────────
+  // Step 5. アチーブメント判定
+  // ─────────────────────────────────────────────
   var newAchievements = checkAndUnlockAchievements(ss, userId, date, logSheet);
 
   return createResponse({
-    xp_earned:           totalXp + receivedXp,  // ★ Phase13: 合算値で返却
-    xp_from_practice:    totalXp,               // ★ Phase13: 内訳（稽古評価分）
-    xp_from_received:    receivedXp,            // ★ Phase13: 内訳（正直記録ボーナス）
-    received_saved:      receivedSavedCount,    // ★ Phase13: 保存件数
-    total_xp:            newXp,
-    level:               newLevel,
-    newAchievements:     newAchievements,
+    xp_earned:        totalEarnedXp,
+    xp_from_practice: practiceXpFinal,
+    xp_from_received: receivedXp,
+    xp_from_given:    givenXp,         // ★ Phase13.2
+    given_saved:      givenSavedCount, // ★ Phase13.2
+    received_saved:   receivedSavedCount,
+    total_xp:         newXp,
+    level:            newLevel,
+    newAchievements:  newAchievements,
   });
 }
 
@@ -837,42 +926,13 @@ function getTechniques(params) {
  *   [0]=user_id, [1]=total_xp, [2]=level, [3]=last_practice_date,
  *   [4]=last_decay_date, [5]=real_rank, [6]=motto, [7]=favorite_technique
  */
-function updateTechniqueRating(body) {
-  var userId   = body.user_id;
-  var id       = body.id;
-  var quantity = parseInt(body.quantity);
-  var quality  = parseInt(body.quality);
+// =====================================================================
+// ★ Phase13.2: updateTechniqueRating 関数は完全削除。
+// 与打の記録は saveLog の givenTechs[] に統合された。
+// 旧API互換性は無いため、フロントエンドの api.ts からも updateTechniqueRating 呼び出しを削除すること。
+// 四字熟語フィードバック（YOJI_MATRIX）も廃止。
+// =====================================================================
 
-  if (!userId)  return createError('user_id は必須です', 400);
-  if (!id)      return createError('id は必須です', 400);
-  if (isNaN(quantity) || quantity < 1 || quantity > 5)
-    return createError('quantity は 1〜5 の整数で指定してください', 400);
-  if (isNaN(quality) || quality < 1 || quality > 5)
-    return createError('quality は 1〜5 の整数で指定してください', 400);
-
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var master      = getTechniqueMasterData(ss);
-  var masterEntry = null;
-  for (var m = 0; m < master.length; m++) {
-    if (master[m].id === String(id)) { masterEntry = master[m]; break; }
-  }
-  if (!masterEntry) {
-    gasLog('WARN', 'updateTechniqueRating', 'technique_master に ID=' + id + ' が見つかりません');
-    return createError('technique_master に ID=' + id + ' が存在しません', 404);
-  }
-  var techniqueName = masterEntry.name;
-
-  var QUANTITY_BASE = { 1: 10, 2: 20, 3: 30, 4: 40, 5: 50 };
-  var QUALITY_MULT  = { 1: 0.1, 2: 0.5, 3: 1.0, 4: 2.0, 5: 5.0 };
-  var earnedPoints  = Math.ceil(QUANTITY_BASE[quantity] * QUALITY_MULT[quality]);
-
-  var YOJI_MATRIX = {
-    '1_1': '点滴穿石',  '1_2': '一念発起',  '1_3': '虚心坦懐',  '1_4': '明鏡止水',  '1_5': '一撃必殺',
-    '2_1': '試行錯誤',  '2_2': '日進月歩',  '2_3': '一意専心',  '2_4': '不撓不屈',  '2_5': '電光石火',
-    '3_1': '継続是力',  '3_2': '磨斧作針',  '3_3': '切磋琢磨',  '3_4': '剣禅一如',  '3_5': '勇猛精進',
-    '4_1': '積小成大',  '4_2': '臥薪嘗胆',  '4_3': '粒粒辛苦',  '4_4': '威風堂々',  '4_5': '破竹之勢',
-    '5_1': '徒労無功',  '5_2': '七転八起',  '5_3': '心技体一',  '5_4': '鬼神之勇',  '5_5': '百錬自得',
-  };
   var feedbackKey = quantity + '_' + quality;
   var feedback    = YOJI_MATRIX[feedbackKey] || '切磋琢磨';
 
