@@ -1,10 +1,14 @@
 'use client';
 
 // =====================================================================
-// SkillGrid.tsx — サイバー八卦陣（引き算の美学 第4.4版：細糸リビジョン）
-// ★ Phase11.1 追補: ReactFlow を囲む div の height を固定値 480 → '100%' に変更。
-//   親コンテナの高さに動的追従させることで、fitView の中心座標計算と
-//   Controls ボタンの配置ズレ／消失を解消。
+// SkillGrid.tsx — サイバー八卦陣（ホログラフィック・ネオン版）
+// ★ Phase11.1: ReactFlow 親コンテナの height を '100%' に変更し fitView を安定化
+// ★ Phase13:   ViewMode（landed/received/both）と RGBブレンド発光を導入
+// ★ Phase13.1: フラクタル発光（CORE/BodyPart/Technique 全階層で共通ロジック）
+// ★ Phase13.2: ホログラフィック・ネオン化
+//   - 背景塗りを完全排除し「光る印影」+ 多重 box-shadow による二重オービット表現
+//   - 与打=シアン(0,229,255) / 被打=クリムゾン(255,0,85) の光三原色寄り配色
+//   - 0pt時は外周完全消灯、データありは漆黒バッファで内周/外周を物理分離
 // =====================================================================
 
 import { memo, useMemo, useState } from 'react';
@@ -39,6 +43,7 @@ const R_MID_RATIO    = 0.46;
 const TECH_NODE_SIZE = 42;
 const BP_NODE_SIZE   = 56;
 const CORE_NODE_SIZE = 64;
+
 // =====================================================================
 // ★ Phase13: 与打/被打 視覚化モード
 // =====================================================================
@@ -46,7 +51,6 @@ type ViewMode = 'landed' | 'received' | 'both';
 
 /**
  * ★ Phase13: 与打ポイント / 被打ポイントを 0〜255 の発光強度に正規化する。
- * 飽和点（SATURATION_POINT）以上は最大強度（255）にクリップする。
  * - 与打飽和点: 1000pt（既存 TECH_SCORE_CAP に合わせる）
  * - 被打飽和点: 200pt（被打は1ポイントの重みが大きいため低めに設定）
  */
@@ -54,10 +58,8 @@ const GIVEN_SATURATION    = 1000;
 const RECEIVED_SATURATION = 200;
 
 // ★ Phase13.1: フラクタル発光のための階層別飽和点
-// 第二階層（部位）: 末端飽和点 × OUTER_SLOTS の中央値想定
 const BP_GIVEN_SATURATION    = 5000;
 const BP_RECEIVED_SATURATION = 1000;
-// 中心階層（全体）: 部位飽和点 × 4部位想定
 const CORE_GIVEN_SATURATION    = 20000;
 const CORE_RECEIVED_SATURATION = 4000;
 
@@ -67,42 +69,93 @@ function normalizeIntensity(points: number, saturation: number): number {
   // 視認性重視: 微小値でも光るよう、γ補正（0.7）でローエンドを持ち上げる
   return Math.round(255 * Math.pow(ratio, 0.7));
 }
+
 // =====================================================================
-// ★ Phase13.1: フラクタル二重オービット スタイル算出
+// ★ Phase13.2: サイバーカラー・チューニング
+// 「光の三原色」寄りで濁りにくいベースカラー
+//   与打: サイバー・シアン  rgb(0, 229, 255)
+//   被打: クリムゾン・レッド rgb(255, 0, 85)
+// =====================================================================
+const GIVEN_HUE    = { r:   0, g: 229, b: 255 }; // Cyan
+const RECEIVED_HUE = { r: 255, g:   0, b:  85 }; // Crimson Red
+
+interface BlendResult {
+  rgb:            string;   // "R, G, B"
+  intensityRatio: number;   // 0〜1
+  hasAnyData:     boolean;
+  isHotZone:      boolean;
+}
+
+function blendCyberColor(
+  givenIntensity:    number,    // 0〜255
+  receivedIntensity: number,    // 0〜255
+  viewMode:          ViewMode,
+  hotZoneThreshold:  number,
+): BlendResult {
+  const givenN    = viewMode === 'received' ? 0 : givenIntensity    / 255;
+  const receivedN = viewMode === 'landed'   ? 0 : receivedIntensity / 255;
+  const total     = Math.max(givenN, receivedN);
+  const hasAnyData = total > 0;
+
+  // 与打/被打の比率（both モード時は強度比で補間 / 単色モード時はその色のみ）
+  const sum = givenN + receivedN;
+  const giveRatio = sum > 0 ? givenN / sum : (viewMode === 'received' ? 0 : 1);
+  const recvRatio = sum > 0 ? receivedN / sum : (viewMode === 'landed'   ? 0 : 1);
+
+  // 線形補間: 強度の高い方の色寄りに
+  const r = Math.round(GIVEN_HUE.r * giveRatio + RECEIVED_HUE.r * recvRatio);
+  const g = Math.round(GIVEN_HUE.g * giveRatio + RECEIVED_HUE.g * recvRatio);
+  const b = Math.round(GIVEN_HUE.b * giveRatio + RECEIVED_HUE.b * recvRatio);
+
+  const isHotZone =
+    viewMode === 'both' &&
+    givenIntensity    >= hotZoneThreshold &&
+    receivedIntensity >= hotZoneThreshold;
+
+  return {
+    rgb:            `${r}, ${g}, ${b}`,
+    intensityRatio: total,
+    hasAnyData,
+    isHotZone,
+  };
+}
+
+// =====================================================================
+// ★ Phase13.2: ホログラフィック・ネオン スタイル算出
 //
-// 全階層（CORE / BodyPart / Technique）で共通の RGB ブレンド + 二重オービットを
-// 生成するヘルパ。コアは漆黒の隙間で固有色をうっすら主張させ、外枠（border + glow）
-// に与打/被打のブレンド色を集中させる。
+// 背景を完全排除し、白い細線+文字+多重box-shadowで以下を表現:
+//   1) 内周コア: 白枠 + 文字に部位色の光（光る印影）
+//   2) 部位色のオーラ（inset + outer の二段光）
+//   3) 漆黒のバッファリング（物理的な隙間）
+//   4) 外周のステータス枠線（与打/被打のブレンド色）
+//   5) 外周のネオン拡散光
 // =====================================================================
 
 interface OrbitStyleInput {
-  /** 階層に応じた与打ポイント */
-  givenPoints: number;
-  /** 階層に応じた被打ポイント */
-  receivedPoints: number;
-  /** 階層別の与打飽和点 */
-  givenSaturation: number;
-  /** 階層別の被打飽和点 */
+  givenPoints:        number;
+  receivedPoints:     number;
+  givenSaturation:    number;
   receivedSaturation: number;
-  /** 該当ノードの固有色 RGB 文字列（例: '248,113,113'） */
-  baseRgb: string;
-  /** ViewMode（landed/received/both） */
-  viewMode: ViewMode;
-  /** 「両方高い＝激戦区」判定の閾値（0〜255） */
-  hotZoneThreshold?: number;
+  /** 内周コアの「印影」色（部位の固有色 RGB 文字列） */
+  baseRgb:            string;
+  viewMode:           ViewMode;
+  hotZoneThreshold?:  number;
+  /** バッファリング（漆黒の隙間）の太さ。階層により調整 */
+  bufferWidth?:       number;
+  /** 外周枠線の太さ */
+  outerBorderWidth?:  number;
 }
 
 interface OrbitStyleOutput {
-  bg:           string;   // radial-gradient（うっすらコア + 漆黒外周）
-  borderColor:  string;   // 軌道色
-  neonGlow:     string;   // box-shadow（オービット発光）
-  textColor:    string;   // 文字色
-  blendedRgb:   string;   // R,G,B 文字列
-  totalIntensity: number; // 0〜255
-  hasAnyData:   boolean;
-  isHotZone:    boolean;
-  R:            number;
-  B:            number;
+  background:    string;
+  border:        string;
+  boxShadow:     string;
+  textColor:     string;
+  textShadow:    string;
+  blendedRgb:    string;
+  intensityRatio:number;
+  hasAnyData:    boolean;
+  isHotZone:     boolean;
 }
 
 function computeOrbitStyle({
@@ -113,80 +166,66 @@ function computeOrbitStyle({
   baseRgb,
   viewMode,
   hotZoneThreshold = 160,
+  bufferWidth      = 4,
+  outerBorderWidth = 1.5,
 }: OrbitStyleInput): OrbitStyleOutput {
   const givenIntensity    = normalizeIntensity(givenPoints,    givenSaturation);
   const receivedIntensity = normalizeIntensity(receivedPoints, receivedSaturation);
 
-  const G_BASE = 50;
-  const R = viewMode === 'landed'   ? 0 : receivedIntensity;
-  const B = viewMode === 'received' ? 0 : givenIntensity;
+  const blend = blendCyberColor(
+    givenIntensity, receivedIntensity, viewMode, hotZoneThreshold,
+  );
+  const { rgb: blendedRgb, intensityRatio, hasAnyData, isHotZone } = blend;
 
-  const totalIntensity = Math.max(R, B);
-  const hasAnyData     = R > 0 || B > 0;
-  const blendedRgb     = `${R}, ${G_BASE}, ${B}`;
-  const isHotZone      = R >= hotZoneThreshold && B >= hotZoneThreshold && viewMode === 'both';
+  // 内周コアの「印影」: 背景は完全排除、白い細線、文字から部位色を放つ
+  const background = '#050412';
+  const border     = '1px solid rgba(255, 255, 255, 0.8)';
+  const textColor  = '#ffffff';
+  const textShadow = `0 0 6px rgba(${baseRgb}, 0.8), 0 0 2px rgba(0,0,0,0.9)`;
 
-  // ===== 二重オービット背景 =====
-  // 0%〜38%:   うっすらコア（α=0.15）
-  // 40%〜43%:  内側オービットの「縁」を固有色でクッキリ描画（α=0.65）
-  // 45%〜:     漆黒の隙間で外側オービットと完全分離
-  //
-  // ※ 内側オービットの縁を background 側に押し込むことで、
-  //   外側オービットの border / box-shadow は与打/被打のブレンド色のみに専念できる。
-  const bg = `radial-gradient(circle, ` +
-    `rgba(${baseRgb},0.15) 0%, ` +
-    `rgba(${baseRgb},0.15) 38%, ` +
-    `rgba(${baseRgb},0.65) 40%, ` +
-    `rgba(${baseRgb},0.65) 43%, ` +
-    `#080715 45%, ` +
-    `#050412 100%)`;
-
-  // ===== 外枠（外側オービット） =====
-  // データなし: 完全に消灯（汎用ネイビー薄色＋box-shadowなし）
-  // データあり: 与打/被打のブレンド色のみで発光
-  let borderColor: string;
-  let neonGlow: string;
-  let textColor: string;
+  let boxShadow: string;
 
   if (!hasAnyData) {
-    // 0pt: 外側オービットを完全消灯
-    // baseRgb（固有色）は内側オービットの縁にのみ任せ、外側は汎用ネイビーで非主張に
-    borderColor = 'rgba(99,102,241,0.12)';
-    neonGlow    = 'none';
-    textColor   = `rgba(${baseRgb},0.78)`;
+    // データなし: 部位の印影だけが微かに光る（外周は完全消灯）
+    boxShadow = [
+      `inset 0 0 6px rgba(${baseRgb}, 0.3)`,
+      `0 0 4px rgba(${baseRgb}, 0.4)`,
+    ].join(', ');
   } else {
-    const intensityRatio = totalIntensity / 255;
-    const borderAlpha = (0.45 + intensityRatio * 0.5).toFixed(2);
-    const glowAlpha   = (0.4  + intensityRatio * 0.5).toFixed(2);
-    const glowSize    = 5 + intensityRatio * 9;
-    const glowSpread  = 1 + intensityRatio * 2.2;
+    // 強度に応じたスケーリング
+    const baseGlowAlpha    = (0.4 + intensityRatio * 0.4).toFixed(2);
+    const innerGlowAlpha   = (0.4 + intensityRatio * 0.3).toFixed(2);
+    const outerBorderAlpha = (0.55 + intensityRatio * 0.4).toFixed(2);
+    const outerGlowSize    = 8 + intensityRatio * 8;
+    const outerGlowSpread  = 3 + intensityRatio * 4;
+    const outerGlowAlpha   = (0.35 + intensityRatio * 0.45).toFixed(2);
 
-    borderColor = `rgba(${blendedRgb},${borderAlpha})`;
+    const layers = [
+      // ① 内側に落ちる部位色の光（印影の立体感）
+      `inset 0 0 8px rgba(${baseRgb}, ${innerGlowAlpha})`,
+      // ② 外側に放つ部位色のオーラ（細い）
+      `0 0 6px 1px rgba(${baseRgb}, ${baseGlowAlpha})`,
+      // ③ 物理的な漆黒の隙間（バッファ）
+      `0 0 0 ${bufferWidth}px #050412`,
+      // ④ 外周オービットのソリッド枠線（ステータス色）
+      `0 0 0 ${bufferWidth + outerBorderWidth}px rgba(${blendedRgb}, ${outerBorderAlpha})`,
+      // ⑤ 外周オービットの拡散ネオン光
+      `0 0 ${outerGlowSize}px ${outerGlowSpread}px rgba(${blendedRgb}, ${outerGlowAlpha})`,
+    ];
 
+    // ⑥ 激戦区（HotZone）: 紫の追加リングを最外殻に
     if (isHotZone) {
-      neonGlow = [
-        `0 0 ${glowSize}px ${glowSpread}px rgba(${blendedRgb},${glowAlpha})`,
-        `0 0 0 1.5px rgba(${blendedRgb},${borderAlpha})`,
-        // 紫の追加リング = 激戦区
-        `0 0 16px 2px rgba(180,60,255,0.5)`,
-        `inset 0 0 6px rgba(${blendedRgb},${glowAlpha})`,
-      ].join(', ');
-    } else {
-      neonGlow = [
-        `0 0 ${glowSize}px ${glowSpread}px rgba(${blendedRgb},${glowAlpha})`,
-        `0 0 0 1px rgba(${blendedRgb},${borderAlpha})`,
-        `inset 0 0 5px rgba(${blendedRgb},${(parseFloat(glowAlpha) * 0.6).toFixed(2)})`,
-      ].join(', ');
+      layers.push(`0 0 18px 4px rgba(180, 60, 255, 0.55)`);
     }
 
-    // 文字色: 強発光時は白系、薄発光時は固有色
-    textColor = intensityRatio > 0.5 ? '#ffffff' : `rgba(${baseRgb},0.95)`;
+    boxShadow = layers.join(', ');
   }
 
   return {
-    bg, borderColor, neonGlow, textColor,
-    blendedRgb, totalIntensity, hasAnyData, isHotZone,
-    R, B,
+    background, border, boxShadow,
+    textColor, textShadow,
+    blendedRgb, intensityRatio,
+    hasAnyData, isHotZone,
   };
 }
 
@@ -273,9 +312,8 @@ interface Props {
 }
 
 // =====================================================================
-// CORE ノード
+// CORE ノード ★ Phase13.2: ホログラフィック・ネオン
 // =====================================================================
-// ★ Phase13.1: コアノードもデータ駆動でブレンド発光
 interface CoreData {
   totalGiven:    number;
   totalReceived: number;
@@ -296,30 +334,29 @@ const CoreNode = memo(function CoreNode({ data }: NodeProps) {
     receivedSaturation: CORE_RECEIVED_SATURATION,
     baseRgb:            DEFAULT_THEME.rgb,
     viewMode,
-    hotZoneThreshold:   140, // 中心は閾値をやや低く
+    hotZoneThreshold:   140,
+    bufferWidth:        5,
+    outerBorderWidth:   1.8,
   });
 
   return (
     <div style={{
       width: s, height: s, borderRadius: '50%',
-      background:  orbit.bg,
-      border:      `1.8px solid ${orbit.borderColor}`,
-      boxShadow:   orbit.neonGlow,
+      background: orbit.background,
+      border:     orbit.border,
+      boxShadow:  orbit.boxShadow,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: orbit.textColor,
+      color:      orbit.textColor,
       fontSize: 15, fontWeight: 800,
       letterSpacing: '0.1em',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none', zIndex: 2,
-      textShadow: orbit.hasAnyData
-        ? `0 0 6px rgba(${orbit.blendedRgb},0.8)`
-        : `0 0 6px rgba(${DEFAULT_THEME.rgb},0.5)`,
-      transition: 'background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease',
+      textShadow: orbit.textShadow,
+      transition: 'box-shadow 0.4s ease, border-color 0.4s ease',
     }}>
       <MinimalHandles />
       技
 
-      {/* ★ Phase13.1: 中心の激戦区警告 */}
       {orbit.isHotZone && (
         <span style={{
           position: 'absolute', top: -4, right: -4, fontSize: 8, lineHeight: 1,
@@ -328,21 +365,20 @@ const CoreNode = memo(function CoreNode({ data }: NodeProps) {
           color: '#fff', fontWeight: 800,
           boxShadow: '0 0 6px rgba(180,92,255,0.9)',
           animation: 'hotzone-pulse 1.4s ease-in-out infinite',
-        }}>⚠</span>
+          zIndex: 3,
+        }}>!</span>
       )}
     </div>
   );
 });
 
 // =====================================================================
-// BodyPart ノード
+// BodyPart ノード ★ Phase13.2: ホログラフィック・ネオン
 // =====================================================================
-// ★ Phase13.1: 部位ノードもブレンド発光対応
 interface BodyPartData {
-  label:       string;
-  totalPoints: number;       // 与打累計（既存・表示用）
-  norm:        number;       // 既存の norm（参考のみ。新ロジックでは未使用）
-  // ★ Phase13.1 追加
+  label:         string;
+  totalPoints:   number;
+  norm:          number;
   totalGiven:    number;
   totalReceived: number;
   viewMode:      ViewMode;
@@ -362,19 +398,22 @@ const BodyPartNode = memo(function BodyPartNode({ data }: NodeProps) {
     baseRgb:            bpRgb,
     viewMode:           d.viewMode,
     hotZoneThreshold:   150,
+    bufferWidth:        4,
+    outerBorderWidth:   1.5,
   });
 
   return (
     <div style={{
       width: s, height: s, borderRadius: '50%',
-      background:  orbit.bg,
-      border:      `1.5px solid ${orbit.borderColor}`,
-      boxShadow:   orbit.neonGlow,
+      background: orbit.background,
+      border:     orbit.border,
+      boxShadow:  orbit.boxShadow,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      color: '#e0e7ff', textAlign: 'center',
+      color:      orbit.textColor,
+      textAlign: 'center',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
-      transition: 'background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease',
+      transition: 'box-shadow 0.4s ease, border-color 0.4s ease',
     }}>
       <MinimalHandles />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -382,34 +421,44 @@ const BodyPartNode = memo(function BodyPartNode({ data }: NodeProps) {
           fontSize: 11, fontWeight: 800, lineHeight: 1.2,
           letterSpacing: '0.04em',
           color: orbit.textColor,
-          textShadow: orbit.hasAnyData
-            ? `0 0 4px rgba(0,0,0,0.85), 0 0 6px rgba(${orbit.blendedRgb},0.75)`
-            : `0 0 4px rgba(0,0,0,0.85), 0 0 6px rgba(${bpRgb},0.55)`,
+          textShadow: orbit.textShadow,
         }}>
           {d.label}
         </span>
 
-        {/* ★ Phase13.1: viewMode に応じて表示するメトリクスを切替 */}
         {d.viewMode === 'landed' && d.totalGiven > 0 && (
-          <span style={{ fontSize: 8, opacity: 0.95, marginTop: 1, color: '#93c5fd', textShadow: '0 0 3px rgba(0,0,0,0.85)' }}>
+          <span style={{
+            fontSize: 8, marginTop: 1,
+            color: '#7dd3fc',
+            textShadow: `0 0 4px rgba(0, 229, 255, 0.6)`,
+            letterSpacing: '0.03em',
+          }}>
             {d.totalGiven}pt
           </span>
         )}
         {d.viewMode === 'received' && d.totalReceived > 0 && (
-          <span style={{ fontSize: 8, opacity: 0.95, marginTop: 1, color: '#fca5a5', textShadow: '0 0 3px rgba(0,0,0,0.85)' }}>
+          <span style={{
+            fontSize: 8, marginTop: 1,
+            color: '#fb7185',
+            textShadow: `0 0 4px rgba(255, 0, 85, 0.6)`,
+            letterSpacing: '0.03em',
+          }}>
             被{Math.round(d.totalReceived)}
           </span>
         )}
         {d.viewMode === 'both' && (d.totalGiven > 0 || d.totalReceived > 0) && (
-          <span style={{ fontSize: 8, opacity: 0.95, marginTop: 1, textShadow: '0 0 3px rgba(0,0,0,0.85)' }}>
-            <span style={{ color: '#93c5fd' }}>{d.totalGiven}</span>
-            <span style={{ opacity: 0.5, margin: '0 1px' }}>/</span>
-            <span style={{ color: '#fca5a5' }}>{Math.round(d.totalReceived)}</span>
+          <span style={{
+            fontSize: 8, marginTop: 1,
+            letterSpacing: '0.03em',
+            textShadow: '0 0 3px rgba(0,0,0,0.85)',
+          }}>
+            <span style={{ color: '#7dd3fc' }}>{d.totalGiven}</span>
+            <span style={{ opacity: 0.5, margin: '0 1px', color: '#fff' }}>/</span>
+            <span style={{ color: '#fb7185' }}>{Math.round(d.totalReceived)}</span>
           </span>
         )}
       </div>
 
-      {/* ★ Phase13.1: 部位の激戦区警告 */}
       {orbit.isHotZone && (
         <span style={{
           position: 'absolute', top: -3, right: -2, fontSize: 7, lineHeight: 1,
@@ -418,6 +467,7 @@ const BodyPartNode = memo(function BodyPartNode({ data }: NodeProps) {
           color: '#fff', fontWeight: 800,
           boxShadow: '0 0 5px rgba(180,92,255,0.9)',
           animation: 'hotzone-pulse 1.4s ease-in-out infinite',
+          zIndex: 3,
         }}>!</span>
       )}
     </div>
@@ -425,23 +475,21 @@ const BodyPartNode = memo(function BodyPartNode({ data }: NodeProps) {
 });
 
 // =====================================================================
-// Technique ノード
+// Technique ノード ★ Phase13.2: ホログラフィック・ネオン
 // =====================================================================
 interface TechData {
-  technique:   Technique;
-  tier:        LightningTier;
-  isSignature: boolean;
-  isMaxed:     boolean;
-  // ★ Phase13: RGBブレンド用
-  givenIntensity:    number;   // 0〜255（与打 → Blue成分）
-  receivedIntensity: number;   // 0〜255（被打 → Red成分）
+  technique:         Technique;
+  tier:              LightningTier;
+  isSignature:       boolean;
+  isMaxed:           boolean;
+  givenIntensity:    number;
+  receivedIntensity: number;
   viewMode:          ViewMode;
 }
 
 const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
   const {
     technique: t,
-    tier,
     isSignature,
     isMaxed,
     givenIntensity,
@@ -454,46 +502,50 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
   const theme = getBpTheme(t.bodyPart);
   const { rgb: bpRgb, plasma } = theme;
 
-  // =================================================================
-  // ★ Phase13.1: フラクタル共通ヘルパで二重オービットを生成
-  //   - 末端ノードは givenIntensity / receivedIntensity（0〜255）を
-  //     直接ポイント相当として渡すため、saturation = 255 を指定する。
-  // =================================================================
+  // 末端ノードは givenIntensity / receivedIntensity（既に0〜255）を直接渡す
+  // ため、saturation=255 で恒等変換させる
   const orbit = computeOrbitStyle({
-    givenPoints:        givenIntensity,    // 既に正規化済み(0〜255)なので
-    receivedPoints:     receivedIntensity, // saturation=255 で恒等変換
+    givenPoints:        givenIntensity,
+    receivedPoints:     receivedIntensity,
     givenSaturation:    255,
     receivedSaturation: 255,
     baseRgb:            bpRgb,
     viewMode,
     hotZoneThreshold:   160,
+    bufferWidth:        3,
+    outerBorderWidth:   1.3,
   });
 
-  let bg          = orbit.bg;
-  let borderColor = orbit.borderColor;
-  let neonGlow    = orbit.neonGlow;
-  let textColor   = orbit.textColor;
+  // MAX到達時の特別演出（プラズマ風 outerリング上書き）
+  let background      = orbit.background;
+  let border          = orbit.border;
+  let boxShadow       = orbit.boxShadow;
+  let textColor       = orbit.textColor;
+  let textShadowFinal = orbit.textShadow;
 
-  // ★ Phase13.1: MAX到達時は固有色のプラズマで派手に上書き（特別演出を維持）
   if (orbit.hasAnyData && isMaxed && viewMode !== 'received') {
-    const { dark } = theme;
-    bg          = `radial-gradient(circle, rgba(${bpRgb},0.18) 0%, rgba(${bpRgb},0.18) 40%, ${dark} 55%, #050412 100%)`;
-    borderColor = plasma.core;
-    textColor   = plasma.core;
-    neonGlow    = `0 0 9px 2.5px ${plasma.mid}, 0 0 0 1px ${plasma.core}, inset 0 0 6px ${plasma.glow}`;
-  }
+    border          = `1px solid ${plasma.core}`;
+    textColor       = plasma.core;
+    textShadowFinal = `0 0 8px ${plasma.mid}, 0 0 3px rgba(0,0,0,0.9)`;
 
+    boxShadow = [
+      `inset 0 0 10px ${plasma.glow}`,
+      `0 0 8px 1px ${plasma.mid}`,
+      `0 0 0 3px #050412`,
+      `0 0 0 4.3px rgba(${orbit.blendedRgb}, 0.85)`,
+      `0 0 14px 6px rgba(${orbit.blendedRgb}, 0.5)`,
+    ].join(', ');
+  }
 
   return (
     <div style={{
       width: s, height: s, borderRadius: '50%',
-      background: bg, border: `1.5px solid ${borderColor}`,
-      boxShadow: neonGlow,
+      background, border, boxShadow,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       color: textColor, textAlign: 'center',
       fontFamily: 'M PLUS Rounded 1c, sans-serif',
       position: 'relative', userSelect: 'none',
-      transition: 'background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease',
+      transition: 'box-shadow 0.4s ease, border-color 0.4s ease',
     }}>
       <MinimalHandles />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -510,25 +562,32 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
           fontSize: 8, fontWeight: 700, lineHeight: 1.25,
           wordBreak: 'break-all', maxWidth: s * 0.82,
           letterSpacing: '0.02em',
-          textShadow: '0 0 3px rgba(0,0,0,0.9)',
+          textShadow: textShadowFinal,
         }}>{t.name}</span>
 
-        {/* ★ Phase13: viewMode に応じて表示するメトリクスを切り替え */}
         {orbit.hasAnyData && viewMode === 'landed' && (t.points ?? 0) > 0 && (
-          <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
+          <span style={{
+            fontSize: 7, marginTop: 1,
+            color: '#7dd3fc',
+            textShadow: `0 0 3px rgba(0,229,255,0.6)`,
+          }}>
             {t.points}pt
           </span>
         )}
         {orbit.hasAnyData && viewMode === 'received' && receivedIntensity > 0 && (
-          <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, color: '#fecaca', textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
+          <span style={{
+            fontSize: 7, marginTop: 1,
+            color: '#fb7185',
+            textShadow: `0 0 3px rgba(255,0,85,0.6)`,
+          }}>
             被{Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}
           </span>
         )}
         {orbit.hasAnyData && viewMode === 'both' && (
-          <span style={{ fontSize: 7, opacity: 0.95, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
-            <span style={{ color: '#93c5fd' }}>{t.points ?? 0}</span>
-            <span style={{ opacity: 0.5, margin: '0 1px' }}>/</span>
-            <span style={{ color: '#fca5a5' }}>{Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}</span>
+          <span style={{ fontSize: 7, marginTop: 1, textShadow: '0 0 2px rgba(0,0,0,0.9)' }}>
+            <span style={{ color: '#7dd3fc' }}>{t.points ?? 0}</span>
+            <span style={{ opacity: 0.5, margin: '0 1px', color: '#fff' }}>/</span>
+            <span style={{ color: '#fb7185' }}>{Math.round(receivedIntensity / 255 * RECEIVED_SATURATION)}</span>
           </span>
         )}
 
@@ -538,10 +597,10 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
             background: `linear-gradient(135deg, ${plasma.glow}, ${plasma.core})`,
             borderRadius: 3, padding: '1px 2px', color: '#fff', fontWeight: 800,
             boxShadow: `0 0 4px ${plasma.mid}`,
+            zIndex: 3,
           }}>MAX</span>
         )}
 
-        {/* ★ Phase13: 激戦区警告マーク */}
         {orbit.isHotZone && (
           <span style={{
             position: 'absolute', top: -3, left: -1, fontSize: 7, lineHeight: 1,
@@ -550,6 +609,7 @@ const TechniqueNode = memo(function TechniqueNode({ data }: NodeProps) {
             color: '#fff', fontWeight: 800,
             boxShadow: '0 0 5px rgba(180,92,255,0.9)',
             animation: 'hotzone-pulse 1.4s ease-in-out infinite',
+            zIndex: 3,
           }}>!</span>
         )}
       </div>
@@ -676,11 +736,9 @@ function buildGraph(
   }
 
   // ★ Phase13.1: 階層別累計の事前集計
-  // - 全体（CORE）累計
   const coreTotalGiven    = techniques.reduce((s, t) => s + (t.points ?? 0), 0);
   const coreTotalReceived = Object.values(receivedPointsByTech).reduce((s, p) => s + (p || 0), 0);
 
-  // - 部位別の被打累計（既存の bpTotalPoints が与打側）
   const bpTotalReceived: Record<string, number> = {};
   if (receivedStats?.byTechnique) {
     receivedStats.byTechnique.forEach(entry => {
@@ -701,7 +759,6 @@ function buildGraph(
     } as unknown as Record<string, unknown>,
   });
 
-
   const techAngles: Record<string, number> = {};
   allTechs.forEach(({ tech }, i) => {
     const angle = (2 * Math.PI / OUTER_SLOTS) * i - Math.PI / 2;
@@ -713,7 +770,6 @@ function buildGraph(
     const hs          = TECH_NODE_SIZE / 2;
     const techId      = `tech-${tech.id}`;
 
-    // ★ Phase13: RGB成分を算出
     const givenIntensity    = normalizeIntensity(tech.points ?? 0,         GIVEN_SATURATION);
     const receivedIntensity = normalizeIntensity(receivedPointsByTech[tech.id] ?? 0, RECEIVED_SATURATION);
 
@@ -723,7 +779,7 @@ function buildGraph(
       position: { x: R_OUTER * Math.cos(angle) - hs, y: R_OUTER * Math.sin(angle) - hs },
       data: {
         technique: tech, tier, isSignature, isMaxed,
-        givenIntensity, receivedIntensity, viewMode,   // ★ Phase13
+        givenIntensity, receivedIntensity, viewMode,
       } as unknown as Record<string, unknown>,
     });
   });
@@ -748,7 +804,6 @@ function buildGraph(
         label:         bp,
         totalPoints:   totalPts,
         norm:          bpNorm,
-        // ★ Phase13.1: フラクタル発光のための階層別データ
         totalGiven:    totalPts,
         totalReceived: bpTotalReceived[bp] ?? 0,
         viewMode,
@@ -788,7 +843,7 @@ function buildGraph(
       const tier        = pointsToTier(tech.points ?? 0);
       const techTheme   = getBpTheme(tech.bodyPart);
       const techIsMaxed = (tech.points ?? 0) >= TECH_SCORE_CAP;
-      
+
       let edgeColorToBp = '';
       if (techIsMaxed) edgeColorToBp = techTheme.plasma.core;
       else if (tier >= 3) edgeColorToBp = techTheme.plasma.mid;
@@ -870,7 +925,6 @@ const KEYFRAMES = `
 // =====================================================================
 export default function SkillGrid({ techniques, signatureTechId, receivedStats }: Props) {
   const [filter, setFilter] = useState<FilterType>('all');
-  // ★ Phase13: 表示モードの切替state
   const [viewMode, setViewMode] = useState<ViewMode>('both');
 
   const { nodes: rawNodes, edges: rawEdges, techActionMap } =
@@ -953,9 +1007,8 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
           );
         })}
       </div>
-      {/* ====================================================== */}
-      {/* ★ Phase13: ViewMode トグル（与打 / 被打 / 攻防）     */}
-      {/* ====================================================== */}
+
+      {/* ★ Phase13: ViewMode トグル（与打 / 被打 / 攻防） */}
       {receivedStats && (
         <div style={{
           display:      'flex',
@@ -968,7 +1021,6 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
           position:     'relative',
           overflow:     'hidden',
         }}>
-          {/* 上端のシマー線 */}
           <div style={{
             position:   'absolute',
             top:        0,
@@ -980,9 +1032,9 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
           }} />
 
           {([
-            { key: 'landed',   label: '与打',   subEn: 'LANDED',   glow: '99,102,241',  fg: '#a5b4fc' },
+            { key: 'landed',   label: '与打',   subEn: 'LANDED',   glow: '0,229,255',   fg: '#7dd3fc' },
             { key: 'both',     label: '攻防',   subEn: 'BOTH',     glow: '167,139,250', fg: '#c4b5fd' },
-            { key: 'received', label: '被打',   subEn: 'RECEIVED', glow: '248,113,113', fg: '#fca5a5' },
+            { key: 'received', label: '被打',   subEn: 'RECEIVED', glow: '255,0,85',    fg: '#fb7185' },
           ] as { key: ViewMode; label: string; subEn: string; glow: string; fg: string }[]).map(opt => {
             const active = viewMode === opt.key;
             return (
@@ -1037,11 +1089,6 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
         </div>
       )}
 
-      {/*
-        ★ Phase11.1 追補: height を 480 (固定) → '100%' に変更。
-        親コンテナの高さに動的追従させることで、fitView の中心座標計算と
-        Controls ボタンの配置ズレ／消失を解消。
-      */}
       <div style={{
         width: '100%', height: '100%', borderRadius: 16, overflow: 'hidden',
         background: 'linear-gradient(135deg, #050412 0%, #080717 50%, #0a0918 100%)',
@@ -1092,20 +1139,20 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
         }}>
           {viewMode === 'landed' && (
             <>
-              <span style={{ color:'#93c5fd', fontWeight:700 }}>● 与打モード</span>
-              ：青の濃淡が与打ポイントの強さ。鍛えてきた技ほど明るく光る。
+              <span style={{ color:'#7dd3fc', fontWeight:700 }}>● 与打モード</span>
+              ：シアンの濃淡が与打ポイントの強さ。鍛えてきた技ほど明るく光る。
             </>
           )}
           {viewMode === 'received' && (
             <>
-              <span style={{ color:'#fca5a5', fontWeight:700 }}>● 被打モード</span>
-              ：赤の濃淡が被打ポイントの強さ。明るく光る技ほど対策が急務。
+              <span style={{ color:'#fb7185', fontWeight:700 }}>● 被打モード</span>
+              ：クリムゾンの濃淡が被打ポイントの強さ。明るく光る技ほど対策が急務。
             </>
           )}
           {viewMode === 'both' && (
             <>
               <span style={{ color:'#c4b5fd', fontWeight:700 }}>● 攻防モード</span>
-              ：青=与打 / 赤=被打 / <span style={{ color:'#e9d5ff', fontWeight:700 }}>紫=激戦区</span>。
+              ：シアン=与打 / クリムゾン=被打 / <span style={{ color:'#e9d5ff', fontWeight:700 }}>紫リング=激戦区</span>。
               紫に光る技は「鍛えていても打たれている」要警戒ゾーン。
             </>
           )}
