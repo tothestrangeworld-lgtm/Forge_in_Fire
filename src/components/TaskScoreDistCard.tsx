@@ -45,7 +45,7 @@ const DOT_COLORS: Record<number, string> = {
   2: '#fb923c',
   3: '#fbbf24',
   4: '#86efac',
-  5: '#fde68a',
+  5: '#22d3ee', // ← ココを輝くサイバーブルーに変更
 };
 
 // =====================================================================
@@ -801,83 +801,27 @@ function ProgressDots({ count, total }: { count: number; total: number }) {
 
 function MasteryRowMastered({ mastery }: { mastery: MasteryStatus }) {
   return (
-    <>
-      <style>{`
-        @keyframes masteredShimmer {
-          0%, 100% { box-shadow: 0 0 12px rgba(251,191,36,0.35), inset 0 0 8px rgba(251,191,36,0.12); }
-          50%      { box-shadow: 0 0 20px rgba(251,191,36,0.55), inset 0 0 10px rgba(251,191,36,0.20); }
-        }
-        @keyframes masteredScan {
-          0%   { background-position: -200% 0; }
-          100% { background-position:  200% 0; }
-        }
-      `}</style>
-
-      <div style={{
-        display:    'flex',
-        alignItems: 'center',
-        flexWrap:   'wrap',
-        gap:        8,
-        rowGap:     6,
-      }}>
-{/*        {/* 皆伝バッジ *
-        <div style={{
-          position:     'relative',
-          display:      'inline-flex',
-          alignItems:   'center',
-          gap:          7,
-          background:   'linear-gradient(135deg, #0a0a0a 0%, #1a1410 50%, #0a0a0a 100%)',
-          border:       '1px solid #fbbf24',
-          borderRadius: 4,
-          padding:      '4px 12px 4px 10px',
-          animation:    'masteredShimmer 2.4s ease-in-out infinite',
-          overflow:     'hidden',
-          flexShrink:   0,
-        }}>
-          {/* スキャンライン 
-          <div style={{
-            position:       'absolute',
-            inset:          0,
-            background:     'linear-gradient(105deg, transparent 30%, rgba(251,191,36,0.18) 50%, transparent 70%)',
-            backgroundSize: '200% 100%',
-            animation:      'masteredScan 3s linear infinite',
-            pointerEvents:  'none',
-          }} />
-
-          {/* 朱印風アクセント 
-          <span style={{
-            width:        7,
-            height:       7,
-            borderRadius: '50%',
-            background:   'radial-gradient(circle at 30% 30%, #ef4444, #991b1b)',
-            border:       '1px solid #fbbf24',
-            boxShadow:    '0 0 4px rgba(239,68,68,0.6)',
-            flexShrink:   0,
-            zIndex:       1,
-          }} />
-
-          {/* テキスト 
-          <span style={{
-            fontSize:      10.5,
-            fontWeight:    900,
-            color:         '#fbbf24',
-            letterSpacing: '0.32em',
-            textShadow:    '0 0 6px rgba(251,191,36,0.55)',
-            whiteSpace:    'nowrap',
-            zIndex:        1,
-          }}>
-            免 許 皆 伝
-          </span>
-        </div> */}
-      <span 
-        className="text-yellow-400 text-lg drop-shadow-[0_0_8px_rgba(250,204,21,0.8)] ml-2" 
-        title="免許皆伝"
-      >
+    <div style={{
+      display:    'flex',
+      alignItems: 'center',
+      flexWrap:   'wrap',
+      gap:        8,
+      rowGap:     6,
+    }}>
+      {/* 皆伝バッジ（黄金の★） */}
+      <span style={{
+        fontSize:   '1.2rem',
+        color:      '#facc15',
+        lineHeight: 1,
+        userSelect: 'none',
+        filter:     'drop-shadow(0 0 8px rgba(250,204,21,0.85))',
+        flexShrink: 0,
+      }} title="免許皆伝">
         ★
       </span>
-        {/* 履歴ドット */}
-        <HistoryDots scores={mastery.recentScores} />
-      </div>
-    </>
+
+      {/* 履歴ドット */}
+      <HistoryDots scores={mastery.recentScores} />
+    </div>
   );
 }

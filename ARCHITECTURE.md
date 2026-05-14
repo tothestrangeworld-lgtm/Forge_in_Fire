@@ -459,18 +459,31 @@ receivedPoints = Σ(quantity × SEVERITY_MULT[reason])
 | **二重レーダー** | プレイスタイル分析 | 「面・小手・胴・突き」軸での与打/被打 重畳描画 |
 | **Weakness Analysis** | プレイスタイル分析下部 | 原因別ランキング水平棒グラフ。1位は紫グラデの「⚠️最優先課題」バッジ＋パルスアニメ |
 
-### RGBブレンド（SkillGrid）
+### RGBブレンド（SkillGrid）★ Phase13.1 でフラクタル化
 
-各技ノードの色を以下で算出：
+全階層（中心 / 部位 / 末端）で同じRGBブレンド法則を適用：
 
-B (Blue) = normalizeIntensity(givenPoints, 1000) // 与打
-R (Red) = normalizeIntensity(receivedPoints, 200) // 被打
-G_BASE = 50 (固定)
-color = rgb(R, 50, B)
+階層 | 与打飽和点 | 被打飽和点
+---|---|---
+末端ノード（個別技） | 1000pt | 200pt
+第二ノード（部位） | 5000pt | 1000pt
+中心ノード（全体） | 20000pt | 4000pt
+
+各ノードの背景は **二重オービット構造**：
+
+radial-gradient(circle,
+rgba(baseRgb, 0.13) 0%,
+rgba(baseRgb, 0.13) 45%,
+#080715 50%,
+#050412 100%
+)
 
 
-`normalizeIntensity` は γ=0.7 補正で微小値も視認可能に。
-`R≥160 && B≥160` のときは **「Hot Zone（激戦区）」**として紫リング+`⚠`バッジ+パルスアニメで強調する。
+中心約半分が「うっすらと固有色」、それより外側は**漆黒の隙間**でノード同士の境界を物理的に分離。
+外枠（border + box-shadow）に与打/被打のブレンド色（`rgb(R, 50, B)`）を集中させ、軌道として発光させる。
+
+`R≥160 && B≥160` のときは「Hot Zone（激戦区）」として全階層で `⚠` バッジ＋紫リング＋パルスアニメで強調する。
+
 
 ### 深刻度係数の同期ルール
 
@@ -499,7 +512,8 @@ Phase10	✅	剣風相性マッチング（MatchupMaster）
 Phase-ex1	✅	他者評価ログの匿名化
 Phase-ex4	✅	上位4スタイルによるマッチング精度向上
 Phase12	✅	PWA Push通知システム（自前webpush-edge + dailyPushJob）
- Phase13  ✅  被打分析機能（被打記録・弱点可視化）：`received_technique_logs` 新設、SkillGrid RGBブレンド、二重チャート、原因別ランキング、正直記録ボーナス +5XP×qty |
+Phase13  ✅  被打分析機能（被打記録・弱点可視化）：`received_technique_logs` 新設、SkillGrid RGBブレンド、二重チャート、原因別ランキング、正直記録ボーナス +5XP×qty |
+Phase13.1  ✅  SkillGrid フラクタル二重オービット化：CORE/BodyPart/Technique の全階層で共通の `computeOrbitStyle()` ヘルパを使い、漆黒の隙間でノードを分離しつつ与打/被打のRGBブレンドを軌道発光として表現 |
 
 ### 今後の拡張
 

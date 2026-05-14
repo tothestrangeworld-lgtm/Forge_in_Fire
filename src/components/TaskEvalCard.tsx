@@ -3,7 +3,7 @@
 // 百錬自得 - 課題評価カード（共通コンポーネント）
 // 【Phase-ex2】評価入力カードの極限シンプル化
 //   - Mastery表示UIの完全削除
-//   - 選択スコアに応じた星のカラー動的化（1:赤, 2:オレンジ, 3:黄, 4:緑, 5:ゴールド）
+//   - 選択スコアに応じた星のカラー動的化（1:赤, 2:オレンジ, 3:黄, 4:緑, 5:サイバーブルー）
 // =====================================================================
 
 'use client';
@@ -23,7 +23,7 @@ const SCORE_BADGE_COLORS: Record<number, { bg: string; fg: string; border: strin
   2: { bg: 'rgba(255,237,213,0.12)', fg: '#fdba74', border: 'rgba(253,186,116,0.35)' },
   3: { bg: 'rgba(254,249,195,0.12)', fg: '#fde047', border: 'rgba(253,224,71,0.35)' },
   4: { bg: 'rgba(220,252,231,0.12)', fg: '#86efac', border: 'rgba(134,239,172,0.4)'  },
-  5: { bg: 'rgba(251,191,36,0.18)',  fg: '#fde68a', border: 'rgba(251,191,36,0.55)'  },
+  5: { bg: 'rgba(34,211,238,0.12)',  fg: '#67e8f9', border: 'rgba(34,211,238,0.4)'   }, // ← ★5のバッジをサイバーブルーに変更
 };
 
 const STAR_COLORS: Record<number, string> = {
@@ -31,7 +31,7 @@ const STAR_COLORS: Record<number, string> = {
   2: '#fb923c',
   3: '#fbbf24',
   4: '#86efac',
-  5: '#fde68a',
+  5: '#22d3ee', // ← ★5の星の色を輝くサイバーブルーに変更
 };
 
 export interface TaskEvalCardProps {
