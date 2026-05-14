@@ -1016,85 +1016,84 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
       </div>
 
       {/* ★ Phase13: ViewMode トグル（与打 / 被打 / 攻防） */}
-      {receivedStats && (
+      {/* ★ Phase13.2: receivedStats が無くても常時表示（操作可能にする） */}
+      <div style={{
+        display:      'flex',
+        gap:          0,
+        marginBottom: 10,
+        padding:      4,
+        borderRadius: 12,
+        border:       '1px solid rgba(99,102,241,0.25)',
+        background:   'linear-gradient(90deg, rgba(8,6,20,0.85), rgba(20,10,40,0.85))',
+        position:     'relative',
+        overflow:     'hidden',
+      }}>
         <div style={{
-          display:      'flex',
-          gap:          0,
-          marginBottom: 10,
-          padding:      4,
-          borderRadius: 12,
-          border:       '1px solid rgba(99,102,241,0.25)',
-          background:   'linear-gradient(90deg, rgba(8,6,20,0.85), rgba(20,10,40,0.85))',
-          position:     'relative',
-          overflow:     'hidden',
-        }}>
-          <div style={{
-            position:   'absolute',
-            top:        0,
-            left:       '8%',
-            right:      '8%',
-            height:     1,
-            background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.6), transparent)',
-            pointerEvents: 'none',
-          }} />
+          position:   'absolute',
+          top:        0,
+          left:       '8%',
+          right:      '8%',
+          height:     1,
+          background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.6), transparent)',
+          pointerEvents: 'none',
+        }} />
 
-          {([
-            { key: 'landed',   label: '与打',   subEn: 'LANDED',   glow: '0,229,255',   fg: '#7dd3fc' },
-            { key: 'both',     label: '攻防',   subEn: 'BOTH',     glow: '167,139,250', fg: '#c4b5fd' },
-            { key: 'received', label: '被打',   subEn: 'RECEIVED', glow: '255,0,85',    fg: '#fb7185' },
-          ] as { key: ViewMode; label: string; subEn: string; glow: string; fg: string }[]).map(opt => {
-            const active = viewMode === opt.key;
-            return (
-              <button
-                key={opt.key}
-                onClick={() => setViewMode(opt.key)}
-                style={{
-                  flex:           1,
-                  position:       'relative',
-                  padding:        '8px 6px 6px',
-                  borderRadius:   8,
-                  border:         active
-                    ? `1px solid rgba(${opt.glow},0.85)`
-                    : '1px solid transparent',
-                  background:     active
-                    ? `linear-gradient(135deg, rgba(${opt.glow},0.18), rgba(${opt.glow},0.05))`
-                    : 'transparent',
-                  color:          active ? opt.fg : 'rgba(199,210,254,0.4)',
-                  fontFamily:     'inherit',
-                  cursor:         'pointer',
-                  display:        'flex',
-                  flexDirection:  'column',
-                  alignItems:     'center',
-                  justifyContent: 'center',
-                  gap:            2,
-                  transition:     'color 0.2s, background 0.2s, border-color 0.2s',
-                  ['--vm-glow' as string]: `rgba(${opt.glow},0.55)`,
-                  animation:      active ? 'viewmode-active-pulse 2.4s ease-in-out infinite' : 'none',
-                } as React.CSSProperties}
-              >
-                <span style={{
-                  fontSize:      '0.5rem',
-                  fontWeight:    700,
-                  letterSpacing: '0.18em',
-                  opacity:       active ? 0.9 : 0.5,
-                  lineHeight:    1,
-                }}>
-                  {opt.subEn}
-                </span>
-                <span style={{
-                  fontSize:      '0.85rem',
-                  fontWeight:    800,
-                  letterSpacing: '0.08em',
-                  lineHeight:    1.1,
-                  textShadow:    active ? `0 0 8px rgba(${opt.glow},0.7)` : 'none',
-                }}>
-                  {opt.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+        {([
+          { key: 'landed',   label: '与打',   subEn: 'LANDED',   glow: '0,229,255',   fg: '#7dd3fc' },
+          { key: 'both',     label: '攻防',   subEn: 'BOTH',     glow: '167,139,250', fg: '#c4b5fd' },
+          { key: 'received', label: '被打',   subEn: 'RECEIVED', glow: '255,0,85',    fg: '#fb7185' },
+        ] as { key: ViewMode; label: string; subEn: string; glow: string; fg: string }[]).map(opt => {
+          const active = viewMode === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={() => setViewMode(opt.key)}
+              style={{
+                flex:           1,
+                position:       'relative',
+                padding:        '8px 6px 6px',
+                borderRadius:   8,
+                border:         active
+                  ? `1px solid rgba(${opt.glow},0.85)`
+                  : '1px solid transparent',
+                background:     active
+                  ? `linear-gradient(135deg, rgba(${opt.glow},0.18), rgba(${opt.glow},0.05))`
+                  : 'transparent',
+                color:          active ? opt.fg : 'rgba(199,210,254,0.4)',
+                fontFamily:     'inherit',
+                cursor:         'pointer',
+                display:        'flex',
+                flexDirection:  'column',
+                alignItems:     'center',
+                justifyContent: 'center',
+                gap:            2,
+                transition:     'color 0.2s, background 0.2s, border-color 0.2s',
+                ['--vm-glow' as string]: `rgba(${opt.glow},0.55)`,
+                animation:      active ? 'viewmode-active-pulse 2.4s ease-in-out infinite' : 'none',
+              } as React.CSSProperties}
+            >
+              <span style={{
+                fontSize:      '0.5rem',
+                fontWeight:    700,
+                letterSpacing: '0.18em',
+                opacity:       active ? 0.9 : 0.5,
+                lineHeight:    1,
+              }}>
+                {opt.subEn}
+              </span>
+              <span style={{
+                fontSize:      '0.85rem',
+                fontWeight:    800,
+                letterSpacing: '0.08em',
+                lineHeight:    1.1,
+                textShadow:    active ? `0 0 8px rgba(${opt.glow},0.7)` : 'none',
+              }}>
+                {opt.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       <div style={{
         width: '100%', height: '100%', borderRadius: 16, overflow: 'hidden',
@@ -1132,39 +1131,43 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
       </div>
 
       {/* ★ Phase13: viewMode 凡例 */}
-      {receivedStats && (
-        <div style={{
-          marginTop:    6,
-          padding:      '6px 10px',
-          borderRadius: 8,
-          background:   'rgba(8,6,20,0.5)',
-          border:       '1px solid rgba(99,102,241,0.15)',
-          fontSize:     '0.62rem',
-          color:        'rgba(199,210,254,0.55)',
-          lineHeight:   1.5,
-          letterSpacing:'0.04em',
-        }}>
-          {viewMode === 'landed' && (
-            <>
-              <span style={{ color:'#7dd3fc', fontWeight:700 }}>● 与打モード</span>
-              ：シアンの濃淡が与打ポイントの強さ。鍛えてきた技ほど明るく光る。
-            </>
-          )}
-          {viewMode === 'received' && (
-            <>
-              <span style={{ color:'#fb7185', fontWeight:700 }}>● 被打モード</span>
-              ：クリムゾンの濃淡が被打ポイントの強さ。明るく光る技ほど対策が急務。
-            </>
-          )}
-          {viewMode === 'both' && (
-            <>
-              <span style={{ color:'#c4b5fd', fontWeight:700 }}>● 攻防モード</span>
-              ：シアン=与打 / クリムゾン=被打 / <span style={{ color:'#e9d5ff', fontWeight:700 }}>紫リング=激戦区</span>。
-              紫に光る技は「鍛えていても打たれている」要警戒ゾーン。
-            </>
-          )}
-        </div>
-      )}
+      {/* ★ Phase13.2: receivedStats が無くても常時表示 */}
+      <div style={{
+        marginTop:    6,
+        padding:      '6px 10px',
+        borderRadius: 8,
+        background:   'rgba(8,6,20,0.5)',
+        border:       '1px solid rgba(99,102,241,0.15)',
+        fontSize:     '0.62rem',
+        color:        'rgba(199,210,254,0.55)',
+        lineHeight:   1.5,
+        letterSpacing:'0.04em',
+      }}>
+        {viewMode === 'landed' && (
+          <>
+            <span style={{ color:'#7dd3fc', fontWeight:700 }}>● 与打モード</span>
+            ：シアンの濃淡が与打ポイントの強さ。鍛えてきた技ほど明るく光る。
+          </>
+        )}
+        {viewMode === 'received' && (
+          <>
+            <span style={{ color:'#fb7185', fontWeight:700 }}>● 被打モード</span>
+            ：クリムゾンの濃淡が被打ポイントの強さ。明るく光る技ほど対策が急務。
+            {!receivedStats && (
+              <span style={{ display: 'block', marginTop: 4, color: 'rgba(252,165,165,0.6)', fontSize: '0.58rem' }}>
+                ※ 被打データがまだ記録されていません
+              </span>
+            )}
+          </>
+        )}
+        {viewMode === 'both' && (
+          <>
+            <span style={{ color:'#c4b5fd', fontWeight:700 }}>● 攻防モード</span>
+            ：シアン=与打 / クリムゾン=被打 / <span style={{ color:'#e9d5ff', fontWeight:700 }}>紫リング=激戦区</span>。
+            紫に光る技は「鍛えていても打たれている」要警戒ゾーン。
+          </>
+        )}
+      </div>
     </div>
   );
 }
