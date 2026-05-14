@@ -181,7 +181,7 @@ function computeOrbitStyle({
   const background = '#050412';
   const border     = '1px solid rgba(255, 255, 255, 0.8)';
   const textColor  = '#ffffff';
-  const textShadow = `0 0 6px rgba(${baseRgb}, 0.8), 0 0 2px rgba(0,0,0,0.9)`;
+  const textShadow = `0 0 12px rgba(${baseRgb}, 0.9), 0 0 2px rgba(0,0,0,0.9)`;
 
   let boxShadow: string;
 
@@ -625,11 +625,16 @@ interface StaticEdgeData {
   width:    number;
 }
 
+// =====================================================================
+// ★ Phase13.2: ホログラフィック・ネオン エッジ
+// 線は白い細線、部位ブレンド色は drop-shadow で微発光させる。
+// 「ノードの白い印影」と「白い細線」が同じ言語で繋がり、デザインの一貫性を持つ。
+// =====================================================================
 const StaticEdge = memo(function StaticEdge({
   sourceX, sourceY, targetX, targetY, data, id, style
 }: EdgeProps) {
   const d = (data ?? {}) as Partial<StaticEdgeData>;
-  const color  = d.color  ?? 'rgba(99,102,241,0.6)';
+  const color = d.color ?? 'rgba(99,102,241,0.6)';
 
   const [edgePath] = getStraightPath({ sourceX, sourceY, targetX, targetY });
 
@@ -639,8 +644,10 @@ const StaticEdge = memo(function StaticEdge({
       path={edgePath}
       style={{
         ...style,
-        stroke: color,
-        strokeWidth: 1.5,
+        stroke:      'rgba(255, 255, 255, 0.85)',
+        strokeWidth: 1,
+        // 部位色のオーラを線に纏わせる（多重 drop-shadow で深みを出す）
+        filter: `drop-shadow(0 0 3px ${color}) drop-shadow(0 0 6px ${color})`,
       }}
     />
   );
