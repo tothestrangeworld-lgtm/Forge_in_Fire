@@ -400,9 +400,13 @@ export default function RecordPage() {
   const error = fetchError?.message === 'AUTH_REQUIRED' ? null : fetchError;
 
   const activeTasks: UserTask[] = (dashboard?.tasks ?? []).filter(t => t.status === 'active');
-  const allScored   = activeTasks.length > 0 && activeTasks.every(t => scores[t.id]);
-  const canSubmit   = activeTasks.length > 0 && allScored && !submitting;
-
+  // ★ Phase13.2: 全課題スコア必須を撤廃。1件以上スコア入力 or 与打 or 被打のいずれかがあれば送信可能
+  const hasAnyInput =
+    activeTasks.some(t => scores[t.id]) ||
+    givenTechSelections.length > 0 ||
+    receivedTechSelections.length > 0;
+  const canSubmit   = hasAnyInput && !submitting;
+  
   const masteryMap = useMemo(() => {
     const map: Record<string, ReturnType<typeof calcMasteryStatus>> = {};
     if (!dashboard?.logs) return map;
@@ -643,7 +647,7 @@ export default function RecordPage() {
                 <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
               </>
             ) : (
-              `稽古を記録する（${activeTasks.filter(t => scores[t.id]).length}/${activeTasks.length}）`
+              '稽古を記録'
             )}
           </button>
         </div>
