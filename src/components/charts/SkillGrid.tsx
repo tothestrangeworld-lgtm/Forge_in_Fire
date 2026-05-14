@@ -40,8 +40,8 @@ const OUTER_SLOTS    = 24;
 const R_OUTER        = 200;
 const R_MID_RATIO    = 0.46;
 
-const TECH_NODE_SIZE = 42;
-const BP_NODE_SIZE   = 56;
+const TECH_NODE_SIZE = 37;
+const BP_NODE_SIZE   = 50;
 const CORE_NODE_SIZE = 64;
 
 // =====================================================================
