@@ -1129,45 +1129,6 @@ export default function SkillGrid({ techniques, signatureTechId, receivedStats }
           </div>
         ))}
       </div>
-
-      {/* ★ Phase13: viewMode 凡例 */}
-      {/* ★ Phase13.2: receivedStats が無くても常時表示 */}
-      <div style={{
-        marginTop:    6,
-        padding:      '6px 10px',
-        borderRadius: 8,
-        background:   'rgba(8,6,20,0.5)',
-        border:       '1px solid rgba(99,102,241,0.15)',
-        fontSize:     '0.62rem',
-        color:        'rgba(199,210,254,0.55)',
-        lineHeight:   1.5,
-        letterSpacing:'0.04em',
-      }}>
-        {viewMode === 'landed' && (
-          <>
-            <span style={{ color:'#7dd3fc', fontWeight:700 }}>● 与打モード</span>
-            ：シアンの濃淡が与打ポイントの強さ。鍛えてきた技ほど明るく光る。
-          </>
-        )}
-        {viewMode === 'received' && (
-          <>
-            <span style={{ color:'#fb7185', fontWeight:700 }}>● 被打モード</span>
-            ：クリムゾンの濃淡が被打ポイントの強さ。明るく光る技ほど対策が急務。
-            {!receivedStats && (
-              <span style={{ display: 'block', marginTop: 4, color: 'rgba(252,165,165,0.6)', fontSize: '0.58rem' }}>
-                ※ 被打データがまだ記録されていません
-              </span>
-            )}
-          </>
-        )}
-        {viewMode === 'both' && (
-          <>
-            <span style={{ color:'#c4b5fd', fontWeight:700 }}>● 攻防モード</span>
-            ：シアン=与打 / クリムゾン=被打 / <span style={{ color:'#e9d5ff', fontWeight:700 }}>紫リング=激戦区</span>。
-            紫に光る技は「鍛えていても打たれている」要警戒ゾーン。
-          </>
-        )}
-      </div>
     </div>
   );
 }
