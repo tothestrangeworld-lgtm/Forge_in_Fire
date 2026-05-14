@@ -127,19 +127,32 @@ function computeOrbitStyle({
   const isHotZone      = R >= hotZoneThreshold && B >= hotZoneThreshold && viewMode === 'both';
 
   // ===== 二重オービット背景 =====
-  // コア固有色をうっすら（α=0.13）→ 45%以降は漆黒で「物理的な隙間」を作る。
-  // これにより外枠の発光色（与打/被打のブレンド）が独立して視認できる。
-  const bg = `radial-gradient(circle, rgba(${baseRgb},0.13) 0%, rgba(${baseRgb},0.13) 45%, #080715 50%, #050412 100%)`;
+  // 0%〜38%:   うっすらコア（α=0.15）
+  // 40%〜43%:  内側オービットの「縁」を固有色でクッキリ描画（α=0.65）
+  // 45%〜:     漆黒の隙間で外側オービットと完全分離
+  //
+  // ※ 内側オービットの縁を background 側に押し込むことで、
+  //   外側オービットの border / box-shadow は与打/被打のブレンド色のみに専念できる。
+  const bg = `radial-gradient(circle, ` +
+    `rgba(${baseRgb},0.15) 0%, ` +
+    `rgba(${baseRgb},0.15) 38%, ` +
+    `rgba(${baseRgb},0.65) 40%, ` +
+    `rgba(${baseRgb},0.65) 43%, ` +
+    `#080715 45%, ` +
+    `#050412 100%)`;
 
-  // ===== 外枠（オービット）: データがあればブレンド色 / なければ baseRgb の薄色 =====
+  // ===== 外枠（外側オービット） =====
+  // データなし: 完全に消灯（汎用ネイビー薄色＋box-shadowなし）
+  // データあり: 与打/被打のブレンド色のみで発光
   let borderColor: string;
   let neonGlow: string;
   let textColor: string;
 
   if (!hasAnyData) {
-    // データなし: 固有色で控えめな軌道
-    borderColor = `rgba(${baseRgb},0.32)`;
-    neonGlow    = `0 0 4px 1px rgba(${baseRgb},0.22)`;
+    // 0pt: 外側オービットを完全消灯
+    // baseRgb（固有色）は内側オービットの縁にのみ任せ、外側は汎用ネイビーで非主張に
+    borderColor = 'rgba(99,102,241,0.12)';
+    neonGlow    = 'none';
     textColor   = `rgba(${baseRgb},0.78)`;
   } else {
     const intensityRatio = totalIntensity / 255;
