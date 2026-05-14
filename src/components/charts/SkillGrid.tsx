@@ -177,11 +177,19 @@ function computeOrbitStyle({
   );
   const { rgb: blendedRgb, intensityRatio, hasAnyData, isHotZone } = blend;
 
-  // 内周コアの「印影」: 背景は完全排除、白い細線、文字から部位色を放つ
+  // ★ Phase13.4: 動的明度（intensityRatio 連動）
+  // 0pt時は暗いグレー(70)、MAX時は純白(255)へ線形補間。
+  // 暗黒背景に溶け込まずギリギリ読める下限を保証する。
+  const brightness         = Math.floor(70 + intensityRatio * 185);
+  const dynamicCoreColor   = `rgb(${brightness}, ${brightness}, ${brightness})`;
+  const dynamicBorderColor = `rgba(${brightness}, ${brightness}, ${brightness}, 0.8)`;
+
+  // 内周コアの「印影」: 背景は完全排除、文字色と枠線は intensityRatio に応じて明るくなる
   const background = '#050412';
-  const border     = '1px solid rgba(255, 255, 255, 0.8)';
-  const textColor  = '#ffffff';
+  const border     = `1px solid ${dynamicBorderColor}`;
+  const textColor  = dynamicCoreColor;
   const textShadow = `0 0 12px rgba(${baseRgb}, 0.9), 0 0 2px rgba(0,0,0,0.9)`;
+  // ...
 
   let boxShadow: string;
 

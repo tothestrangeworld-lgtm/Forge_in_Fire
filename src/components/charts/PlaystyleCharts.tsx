@@ -4,7 +4,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer, Legend,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts';
 import type {
   Technique, MatchupMasterEntry, PeerStyleEntry, TechniqueMasterEntry,
@@ -12,6 +11,7 @@ import type {
 } from '@/types';
 import { RECEIVED_REASON_LABELS } from '@/types';
 import MatchupScroll from '@/components/charts/MatchupScroll';
+import RadarChart from '@/components/charts/RadarChart';
 import { getDegreeTheme, getTagHoverStyles } from '@/lib/matchupTheme';
 
 interface Props {
@@ -23,13 +23,17 @@ interface Props {
   receivedStats?:   ReceivedStats;
 }
 
-// ダークモード対応カラー
-const ACTION_COLORS      = ['#6366f1', '#f59e0b'];  // 仕掛け技・応じ技
-const SUBCATEGORY_COLORS = ['#818cf8', '#34d399', '#f59e0b', '#f472b6', '#60a5fa', '#a78bfa'];
-// ★ Phase13: 被打用カラーパレット
-const RECEIVED_COLOR        = '#ef4444';   // red-500
-const RECEIVED_COLOR_LIGHT  = '#fca5a5';   // red-300
-const RECEIVED_ACTION_COLORS = ['#dc2626', '#f97316'];   // 仕掛け技(深紅) / 応じ技(オレンジ赤)
+// =====================================================================
+// ★ Phase13.3: ACTION BALANCE のカラーパレット
+// 外側=与打（青系）、内側=被打（赤系）の二重ドーナツ
+// =====================================================================
+// 与打（外側ドーナツ・青系）
+const COLOR_GIVEN_OFFENSE  = '#00e5ff';   // シアン:   仕掛け
+const COLOR_GIVEN_DEFENSE  = '#818cf8';   // インディゴ: 応じ
+
+// 被打（内側ドーナツ・赤系）
+const COLOR_RECV_OFFENSE   = '#ff0055';   // クリムゾン: 仕掛け（被打）
+const COLOR_RECV_DEFENSE   = '#fb923c';   // オレンジ赤: 応じ（被打）
 
 // 部位（BodyPart）の表示順を固定
 const BODY_PART_AXIS = ['面', '小手', '胴', '突き'];
@@ -40,18 +44,19 @@ const TOOLTIP_STYLE = {
   fontSize: 12, padding: '8px 12px',
 };
 
-// カスタム中央ラベル（ドーナツ用）
-function DonutLabel({ cx, cy, totalPts }: { cx: number; cy: number; totalPts: number }) {
+// =====================================================================
+// 中央ラベル（ドーナツ用）
+// =====================================================================
+function DonutCenterLabel({ totalGiven, totalReceived }: { totalGiven: number; totalReceived: number }) {
   return (
     <g>
-      <text x={cx} y={cy - 8} textAnchor="middle" fill="#c7d2fe" fontSize={10} fontWeight={600}>
-        合計
+      <text x="50%" y="46%" textAnchor="middle" fill="#c7d2fe" fontSize={9} fontWeight={700} letterSpacing="0.1em">
+        ATK / DEF
       </text>
-      <text x={cx} y={cy + 10} textAnchor="middle" fill="#fff" fontSize={18} fontWeight={800}>
-        {totalPts}
-      </text>
-      <text x={cx} y={cy + 26} textAnchor="middle" fill="#a5b4fc" fontSize={9}>
-        pt
+      <text x="50%" y="56%" textAnchor="middle" fill="#fff" fontSize={14} fontWeight={800}>
+        <tspan fill="#7dd3fc">{totalGiven}</tspan>
+        <tspan fill="rgba(165,180,252,0.4)" dx={3} dy={0}>:</tspan>
+        <tspan fill="#fb7185" dx={3}>{Math.round(totalReceived)}</tspan>
       </text>
     </g>
   );
@@ -67,54 +72,57 @@ export default function PlaystyleCharts({
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // モーダル開閉ステート
   const [selectedMatchup, setSelectedMatchup] = useState<MatchupMasterEntry | null>(null);
 
-  // ★ Phase-ex4: baseStyles を「subTotals の上位4件」で抽出
-  // ★ Phase13: 被打用の集計（actionData / radarData）を追加
   const {
-    actionData, subData, totalPts, baseStyles,
-    actionDataReceived, radarData, totalReceivedPts,
+    givenDonutData,
+    receivedDonutData,
+    radarData,
+    totalGiven,
+    totalReceivedPts,
+    baseStyles,
     reasonRanking,
   } = useMemo(() => {
     // ─────────────────────────────
-    // 既存: 与打の集計
+    // 与打: ActionType / SubCategory / BodyPart の集計
     // ─────────────────────────────
-    const actionTotals: Record<string, number> = {};
+    let offenseTotal = 0;   // 仕掛け技
+    let defenseTotal = 0;   // 応じ技
     const subTotals:    Record<string, number> = {};
+    const givenByBodyPart: Record<string, number> = {};
 
     techniques.forEach(t => {
-      if (t.actionType)  actionTotals[t.actionType]  = (actionTotals[t.actionType]  ?? 0) + t.points;
-      if (t.subCategory) subTotals[t.subCategory]    = (subTotals[t.subCategory]    ?? 0) + t.points;
+      const pts = t.points ?? 0;
+      if (pts <= 0) return;
+
+      // ActionType を「仕掛け技 / 応じ技」の2軸に正規化
+      if (t.actionType === '仕掛け技')      offenseTotal += pts;
+      else if (t.actionType === '応じ技')   defenseTotal += pts;
+      else                                  offenseTotal += pts; // 不明は仕掛け扱い
+
+      if (t.subCategory) subTotals[t.subCategory] = (subTotals[t.subCategory] ?? 0) + pts;
+
+      if (t.bodyPart) {
+        givenByBodyPart[t.bodyPart] = (givenByBodyPart[t.bodyPart] ?? 0) + pts;
+      }
     });
 
-    const actionData = Object.entries(actionTotals)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-
-    const subData = Object.entries(subTotals)
-      .map(([subject, value]) => ({ subject, value, fullMark: Math.max(...Object.values(subTotals), 1) }))
-      .sort((a, b) => b.value - a.value);
-
-    const totalPts = techniques.reduce((s, t) => s + t.points, 0);
-
-    const baseStyles: string[] = Object.entries(subTotals)
-      .filter(([, pts]) => pts > 0)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 4)
-      .map(([key]) => key);
+    const totalGiven = offenseTotal + defenseTotal;
 
     // ─────────────────────────────
-    // ★ Phase13: 被打の集計
+    // 被打: 部位別 + ★ Phase13.3: ActionType別の集計
     // ─────────────────────────────
-    const receivedActionTotals: Record<string, number> = {};
-    const receivedBodyPartTotals: Record<string, number> = {};
-    let totalReceivedPts = 0;
+    const receivedByBodyPart:   Record<string, number> = {};
+    let receivedOffenseTotal = 0;   // 被打のうち、相手の仕掛け技で打たれた合計
+    let receivedDefenseTotal = 0;   // 被打のうち、相手の応じ技で打たれた合計
+    let totalReceivedPts     = 0;
 
     if (receivedStats?.byTechnique) {
-      // technique_id → TechniqueMasterEntry の引きやすいマップ（Props優先 / 無ければtechniques から）
+      // technique_id → { actionType, bodyPart } の引きマップ
       const techMap: Record<string, { actionType?: string; bodyPart?: string }> = {};
-      techniqueMaster.forEach(m => { techMap[m.id] = { actionType: m.actionType, bodyPart: m.bodyPart }; });
+      techniqueMaster.forEach(m => {
+        techMap[m.id] = { actionType: m.actionType, bodyPart: m.bodyPart };
+      });
       techniques.forEach(t => {
         if (!techMap[t.id]) techMap[t.id] = { actionType: t.actionType, bodyPart: t.bodyPart };
       });
@@ -124,57 +132,77 @@ export default function PlaystyleCharts({
         if (pts <= 0) return;
         totalReceivedPts += pts;
 
-        // bodyPart は entry に直接含まれているのでそれを優先
+        // 部位別集計
         const bp = entry.bodyPart || techMap[entry.techniqueId]?.bodyPart || '未分類';
-        receivedBodyPartTotals[bp] = (receivedBodyPartTotals[bp] ?? 0) + pts;
+        receivedByBodyPart[bp] = (receivedByBodyPart[bp] ?? 0) + pts;
 
+        // ★ Phase13.3: ActionType別集計（被打側）
         const at = techMap[entry.techniqueId]?.actionType;
-        if (at) {
-          receivedActionTotals[at] = (receivedActionTotals[at] ?? 0) + pts;
-        }
+        if (at === '応じ技')      receivedDefenseTotal += pts;
+        else                      receivedOffenseTotal += pts; // 仕掛け技 or 不明 は仕掛け扱い
       });
     }
 
-    const actionDataReceived = Object.entries(receivedActionTotals)
-      .map(([name, value]) => ({ name, value: Math.round(value * 10) / 10 }))
-      .sort((a, b) => b.value - a.value);
+    // ─────────────────────────────
+    // ★ Phase13.3: ACTION BALANCE 二重ドーナツデータ
+    //   - 外側（与打）: 仕掛け / 応じ
+    //   - 内側（被打）: 仕掛け / 応じ
+    // ─────────────────────────────
+    const givenDonutData = [
+      { name: '与打・仕掛け', value: offenseTotal, color: COLOR_GIVEN_OFFENSE, layer: 'given' as const },
+      { name: '与打・応じ',   value: defenseTotal, color: COLOR_GIVEN_DEFENSE, layer: 'given' as const },
+    ].filter(d => d.value > 0);
+
+    const receivedDonutData = [
+      { name: '被打・仕掛け', value: Math.round(receivedOffenseTotal * 10) / 10, color: COLOR_RECV_OFFENSE, layer: 'received' as const },
+      { name: '被打・応じ',   value: Math.round(receivedDefenseTotal * 10) / 10, color: COLOR_RECV_DEFENSE, layer: 'received' as const },
+    ].filter(d => d.value > 0);
 
     // ─────────────────────────────
-    // ★ Phase13: レーダー二重描画用データ
-    // 軸を「面・小手・胴・突き」固定にし、与打/被打を同一座標で重ねる。
+    // ★ Phase13.3: 部位別 与打/被打 比較データ
     // ─────────────────────────────
-    const givenByBodyPart: Record<string, number> = {};
-    techniques.forEach(t => {
-      if (t.bodyPart && (t.points ?? 0) > 0) {
-        givenByBodyPart[t.bodyPart] = (givenByBodyPart[t.bodyPart] ?? 0) + (t.points ?? 0);
-      }
-    });
+    const allBodyParts = Array.from(new Set<string>([
+      ...BODY_PART_AXIS,
+      ...Object.keys(givenByBodyPart),
+      ...Object.keys(receivedByBodyPart),
+    ]));
+
+    const orderedBodyParts = [
+      ...BODY_PART_AXIS.filter(bp => allBodyParts.includes(bp)),
+      ...allBodyParts.filter(bp => !BODY_PART_AXIS.includes(bp)),
+    ];
 
     const maxRadarVal = Math.max(
       1,
-      ...Object.values(givenByBodyPart),
-      ...Object.values(receivedBodyPartTotals),
+      ...orderedBodyParts.map(bp => givenByBodyPart[bp] ?? 0),
+      ...orderedBodyParts.map(bp => receivedByBodyPart[bp] ?? 0),
     );
 
-    // 全部位を統合（"面・小手・胴・突き" を優先順位とし、それ以外も末尾に追加）
-    const bodyPartSet = new Set<string>([
-      ...BODY_PART_AXIS,
-      ...Object.keys(givenByBodyPart),
-      ...Object.keys(receivedBodyPartTotals),
-    ]);
-    const radarData = Array.from(bodyPartSet).map(bp => ({
-      subject:  bp,
-      given:    Math.round((givenByBodyPart[bp]            ?? 0) * 10) / 10,
-      received: Math.round((receivedBodyPartTotals[bp]     ?? 0) * 10) / 10,
-      fullMark: maxRadarVal,
-    }));
+    const radarData = orderedBodyParts
+      .filter(bp => (givenByBodyPart[bp] ?? 0) > 0 || (receivedByBodyPart[bp] ?? 0) > 0)
+      .map(bp => ({
+        subject:  bp,
+        given:    Math.round((givenByBodyPart[bp]    ?? 0) * 10) / 10,
+        received: Math.round((receivedByBodyPart[bp] ?? 0) * 10) / 10,
+        fullMark: maxRadarVal,
+      }));
 
     // ─────────────────────────────
-    // ★ Phase13: 原因別ランキング
+    // BaseStyle（剣風相性のキー）
+    // ─────────────────────────────
+    const baseStyles: string[] = Object.entries(subTotals)
+      .filter(([, pts]) => pts > 0)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 4)
+      .map(([key]) => key);
+
+    // ─────────────────────────────
+    // 弱点ランキング
     // ─────────────────────────────
     const reasonRanking: Array<{ code: ReceivedReason; label: string; count: number; pct: number }> = [];
     if (receivedStats?.byReason) {
-      const totalCount = (Object.values(receivedStats.byReason) as number[]).reduce((s, v) => s + (v || 0), 0);
+      const totalCount = (Object.values(receivedStats.byReason) as number[])
+        .reduce((s, v) => s + (v || 0), 0);
       ([1, 2, 3, 4, 5] as ReceivedReason[]).forEach(code => {
         const count = receivedStats.byReason[code] || 0;
         if (count > 0) {
@@ -190,13 +218,17 @@ export default function PlaystyleCharts({
     }
 
     return {
-      actionData, subData, totalPts, baseStyles,
-      actionDataReceived, radarData, totalReceivedPts,
+      givenDonutData,        // ★ Phase13.3: 外側ドーナツ
+      receivedDonutData,     // ★ Phase13.3: 内側ドーナツ
+      radarData,
+      totalGiven,
+      totalReceivedPts,
+      baseStyles,
       reasonRanking,
     };
   }, [techniques, receivedStats, techniqueMaster]);
 
-  // 各 baseStyle ごとに該当する matchupMaster データをグルーピング
+  // matchupGroups
   const matchupGroups = useMemo(() => {
     if (baseStyles.length === 0 || matchupMaster.length === 0) return [];
     return baseStyles.map(style => ({
@@ -210,11 +242,10 @@ export default function PlaystyleCharts({
     })).filter(g => g.matchups.length > 0);
   }, [baseStyles, matchupMaster]);
 
-  // モーダル表示時の baseStyle
   const modalBaseStyle = selectedMatchup?.baseStyle ?? (baseStyles[0] ?? '');
 
   if (!mounted) return null;
-  if (totalPts === 0) {
+  if (totalGiven === 0 && totalReceivedPts === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '1.5rem', color: '#a8a29e', fontSize: '0.82rem' }}>
         技を評価するとプレイスタイル分析が表示されます
@@ -224,196 +255,189 @@ export default function PlaystyleCharts({
 
   return (
     <>
+      {/* ====================================================== */}
+      {/* 上段: ACTION BALANCE 二重ドーナツ                      */}
+      {/* ====================================================== */}
       <div style={{
-        display: 'flex',
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        width: '100%',
+        background:   'rgba(255,255,255,0.04)',
+        borderRadius: 14,
+        padding:      '0.85rem 0.6rem 0.7rem',
+        border:       '1px solid rgba(129,140,248,0.15)',
+        marginBottom: 12,
       }}>
-
-        {/* ドーナツチャート（ActionType） */}
         <div style={{
-          flex: '0 0 40%',
-          minWidth: 0,
-          background: 'rgba(255,255,255,0.04)',
-          borderRadius: 14,
-          padding: '0.75rem 0.4rem 0.5rem',
-          border: '1px solid rgba(129,140,248,0.15)',
+          textAlign:     'center',
+          marginBottom:  6,
         }}>
           <p style={{
-            textAlign: 'center', fontSize: '0.62rem', fontWeight: 700,
-            color: '#a5b4fc', letterSpacing: '0.08em', marginBottom: 4,
+            margin:        0,
+            fontSize:      '0.6rem',
+            fontWeight:    800,
+            color:         'rgba(165,180,252,0.7)',
+            letterSpacing: '0.18em',
           }}>
-            仕掛け / 応じ
-            {actionDataReceived.length > 0 && (
-              <span style={{
-                display:    'block',
-                marginTop:  2,
-                fontSize:   '0.5rem',
-                fontWeight: 600,
-                color:      'rgba(252,165,165,0.75)',
-                letterSpacing: '0.1em',
-              }}>
-                内＝与打 / 外＝被打
-              </span>
-            )}
+            ACTION BALANCE
           </p>
-          <div style={{ width: '100%', height: 150 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                {/* ★ Phase13: 内側ドーナツ = 与打 */}
+          <p style={{
+            margin:        '2px 0 0',
+            fontSize:      '0.55rem',
+            fontWeight:    600,
+            color:         'rgba(199,210,254,0.5)',
+            letterSpacing: '0.05em',
+          }}>
+            外＝与打 / 内＝被打（仕掛け・応じ）
+          </p>
+        </div>
+
+        <div style={{ width: '100%', height: 200 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              {/* ★ Phase13.3: 内側ドーナツ = 被打（仕掛け / 応じ） */}
+              {receivedDonutData.length > 0 && (
                 <Pie
-                  data={actionData}
+                  data={receivedDonutData}
                   cx="50%" cy="50%"
-                  innerRadius="32%" outerRadius="50%"
+                  innerRadius="34%"
+                  outerRadius="56%"
                   paddingAngle={3}
                   dataKey="value"
                   labelLine={false}
                   nameKey="name"
+                  stroke="rgba(0,0,0,0.5)"
+                  strokeWidth={1}
                 >
-                  {actionData.map((_, i) => (
-                    <Cell key={`g-${i}`} fill={ACTION_COLORS[i % ACTION_COLORS.length]} strokeWidth={0} />
+                  {receivedDonutData.map((entry, i) => (
+                    <Cell key={`recv-${i}`} fill={entry.color} />
                   ))}
-                  {/* 中央ラベル（与打合計を主表示） */}
-                  <DonutLabel cx={0} cy={0} totalPts={totalPts} />
                 </Pie>
+              )}
 
-                {/* ★ Phase13: 外側ドーナツ = 被打（データありの時のみ） */}
-                {actionDataReceived.length > 0 && (
-                  <Pie
-                    data={actionDataReceived}
-                    cx="50%" cy="50%"
-                    innerRadius="58%" outerRadius="76%"
-                    paddingAngle={3}
-                    dataKey="value"
-                    labelLine={false}
-                    nameKey="name"
-                  >
-                    {actionDataReceived.map((_, i) => (
-                      <Cell
-                        key={`r-${i}`}
-                        fill={RECEIVED_ACTION_COLORS[i % RECEIVED_ACTION_COLORS.length]}
-                        stroke="rgba(0,0,0,0.4)"
-                        strokeWidth={0.5}
-                      />
-                    ))}
-                  </Pie>
-                )}
+              {/* ★ Phase13.3: 外側ドーナツ = 与打（仕掛け / 応じ） */}
+              {givenDonutData.length > 0 && (
+                <Pie
+                  data={givenDonutData}
+                  cx="50%" cy="50%"
+                  innerRadius="62%"
+                  outerRadius="84%"
+                  paddingAngle={3}
+                  dataKey="value"
+                  labelLine={false}
+                  nameKey="name"
+                  stroke="rgba(0,0,0,0.4)"
+                  strokeWidth={1}
+                >
+                  {givenDonutData.map((entry, i) => (
+                    <Cell key={`given-${i}`} fill={entry.color} />
+                  ))}
+                </Pie>
+              )}
 
-                <PieTooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  formatter={(value: number, _name, item) => {
-                    // recharts の payload から内側/外側を判別する代わりに、
-                    // payload.outerRadius または item.dataKey で間接判定可能だが
-                    // ここでは合計値の所属で判定する簡易ロジック
-                    const isReceived =
-                      actionDataReceived.some(a => a.name === item.payload.name && a.value === value) &&
-                      !actionData.some(a => a.name === item.payload.name && a.value === value);
-                    return [
-                      `${value} pt`,
-                      `${item.payload.name}（${isReceived ? '被打' : '与打'}）`,
-                    ];
-                  }}
-                />
-                <Legend
-                  iconType="circle"
-                  iconSize={7}
-                  wrapperStyle={{ fontSize: 9, color: '#c7d2fe', paddingTop: 4 }}
-                  payload={[
-                    ...actionData.map((a, i) => ({
-                      value: `与・${a.name}`,
-                      type: 'circle' as const,
-                      color: ACTION_COLORS[i % ACTION_COLORS.length],
-                      id:    `g-${i}`,
-                    })),
-                    ...actionDataReceived.map((a, i) => ({
-                      value: `被・${a.name}`,
-                      type: 'circle' as const,
-                      color: RECEIVED_ACTION_COLORS[i % RECEIVED_ACTION_COLORS.length],
-                      id:    `r-${i}`,
-                    })),
-                  ]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+              {/* 中央ラベル */}
+              {(totalGiven > 0 || totalReceivedPts > 0) && (
+                <DonutCenterLabel totalGiven={totalGiven} totalReceived={totalReceivedPts} />
+              )}
+
+              <PieTooltip
+                contentStyle={TOOLTIP_STYLE}
+                formatter={(value: number, _name, item) => {
+                  // 与打/被打 どちらの系列か判定
+                  const isGiven = givenDonutData.some(d => d.name === item.payload.name);
+                  const layerTotal = isGiven
+                    ? givenDonutData.reduce((s, d) => s + d.value, 0)
+                    : receivedDonutData.reduce((s, d) => s + d.value, 0);
+                  const pct = layerTotal > 0 ? Math.round((value / layerTotal) * 100) : 0;
+                  return [`${value} pt（${pct}%）`, item.payload.name];
+                }}
+              />
+
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{
+                  fontSize: 10,
+                  color: '#c7d2fe',
+                  paddingTop: 8,
+                  letterSpacing: '0.04em',
+                }}
+                payload={[
+                  ...givenDonutData.map((d, i) => ({
+                    value: d.name,
+                    type: 'circle' as const,
+                    color: d.color,
+                    id: `given-${i}`,
+                  })),
+                  ...receivedDonutData.map((d, i) => ({
+                    value: d.name,
+                    type: 'circle' as const,
+                    color: d.color,
+                    id: `recv-${i}`,
+                  })),
+                ]}
+                formatter={(value, entry) => {
+                  const allData = [...givenDonutData, ...receivedDonutData];
+                  const item = allData.find(a => a.name === value);
+                  return (
+                    <span style={{ color: entry.color, fontWeight: 700 }}>
+                      {value}
+                      <span style={{
+                        color: 'rgba(199,210,254,0.55)',
+                        fontWeight: 600,
+                        marginLeft: 4,
+                      }}>
+                        {item?.value ?? 0}
+                      </span>
+                    </span>
+                  );
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
-
-        {/* レーダーチャート（SubCategory） */}
-        <div style={{
-          flex: '0 0 calc(60% - 8px)',
-          minWidth: 0,
-          background: 'rgba(255,255,255,0.04)',
-          borderRadius: 14,
-          padding: '0.75rem 0.4rem 0.5rem',
-          border: '1px solid rgba(129,140,248,0.15)',
-        }}>
-          <p style={{
-            textAlign: 'center', fontSize: '0.62rem', fontWeight: 700,
-            color: '#a5b4fc', letterSpacing: '0.08em', marginBottom: 4,
-          }}>
-            部位バランス（与打 vs 被打）
-            {totalReceivedPts > 0 && (
-              <span style={{
-                display:    'block',
-                marginTop:  2,
-                fontSize:   '0.5rem',
-                fontWeight: 600,
-                color:      'rgba(252,165,165,0.75)',
-                letterSpacing: '0.1em',
-              }}>
-                <span style={{ color: '#a5b4fc' }}>■ 与打</span>
-                <span style={{ margin: '0 6px', opacity: 0.5 }}>/</span>
-                <span style={{ color: RECEIVED_COLOR_LIGHT }}>■ 被打</span>
-              </span>
-            )}
-          </p>
-          <div style={{ width: '100%', height: 150 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              {/* ★ Phase13: 部位（面・小手・胴・突き）軸の与打/被打 二重レーダー */}
-              <RadarChart data={radarData} outerRadius="62%">
-                <PolarGrid stroke="rgba(129,140,248,0.25)" />
-                <PolarAngleAxis
-                  dataKey="subject"
-                  tick={{ fontSize: 8, fill: '#c7d2fe', fontFamily: 'M PLUS Rounded 1c, sans-serif' }}
-                />
-                <PolarRadiusAxis tick={false} axisLine={false} />
-
-                {/* 与打: 青 */}
-                <Radar
-                  name="与打"
-                  dataKey="given"
-                  stroke="#818cf8"
-                  fill="#6366f1"
-                  fillOpacity={0.32}
-                  strokeWidth={1.5}
-                  dot={{ fill: '#a5b4fc', r: 2, strokeWidth: 0 }}
-                />
-
-                {/* ★ Phase13: 被打: 赤（データがある時のみ重畳描画） */}
-                {totalReceivedPts > 0 && (
-                  <Radar
-                    name="被打"
-                    dataKey="received"
-                    stroke={RECEIVED_COLOR}
-                    fill={RECEIVED_COLOR}
-                    fillOpacity={0.28}
-                    strokeWidth={1.5}
-                    dot={{ fill: RECEIVED_COLOR_LIGHT, r: 2, strokeWidth: 0 }}
-                  />
-                )}
-
-                <PieTooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  formatter={(v: number, name: string) => [`${v} pt`, name]}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
       </div>
+
+      {/* ====================================================== */}
+      {/* 中段: 部位別 与打/被打 比較バーチャート               */}
+      {/* ====================================================== */}
+      <div style={{
+        background:   'rgba(255,255,255,0.04)',
+        borderRadius: 14,
+        padding:      '0.85rem 0.7rem',
+        border:       '1px solid rgba(129,140,248,0.15)',
+        marginBottom: 12,
+      }}>
+        <div style={{ marginBottom: 10 }}>
+          <p style={{
+            margin:        0,
+            fontSize:      '0.6rem',
+            fontWeight:    800,
+            color:         'rgba(165,180,252,0.7)',
+            letterSpacing: '0.18em',
+          }}>
+            BODY PART SCORE
+          </p>
+          <p style={{
+            margin:        '2px 0 0',
+            fontSize:      '0.55rem',
+            fontWeight:    600,
+            color:         'rgba(199,210,254,0.5)',
+            letterSpacing: '0.05em',
+          }}>
+            部位ごとの与打 vs 被打
+          </p>
+        </div>
+
+        {radarData.length > 0 ? (
+          <RadarChart data={radarData} />
+        ) : (
+          <p style={{
+            textAlign:'center', fontSize:'0.78rem',
+            color: 'rgba(165,180,252,0.4)', padding: '1rem 0', margin: 0,
+          }}>
+            部位別の集計データがありません
+          </p>
+        )}
+      </div>
+
       {/* ====================================================== */}
       {/* ★ Phase13: 弱点分析セクション                        */}
       {/* ====================================================== */}
@@ -424,7 +448,9 @@ export default function PlaystyleCharts({
         />
       )}
 
-      {/* BaseStyle バッジ */}
+      {/* ====================================================== */}
+      {/* BaseStyle バッジ + 相性タグ                            */}
+      {/* ====================================================== */}
       {baseStyles.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <div style={{
@@ -468,7 +494,6 @@ export default function PlaystyleCharts({
             </div>
           </div>
 
-          {/* 相性タグ */}
           {matchupGroups.length > 0 ? (
             <>
               <p style={{
@@ -560,8 +585,7 @@ export default function PlaystyleCharts({
 }
 
 // =====================================================================
-// MatchupTag ★ Phase11.1 最終調整版
-// 「文字ラベル」を撤廃し、色と Glow のみで相性を表現する。
+// MatchupTag
 // =====================================================================
 interface TagProps {
   matchup: MatchupMasterEntry;
@@ -625,7 +649,6 @@ function MatchupTag({ matchup, onClick }: TagProps) {
         `}</style>
       )}
 
-      {/* TargetStyle 名（色とGlowで属性を表現） */}
       <span style={{
         fontSize: degree === 3 ? '0.78rem' : degree === 2 ? '0.74rem' : '0.72rem',
         fontWeight: degree === 3 ? 800 : 700,
@@ -638,6 +661,7 @@ function MatchupTag({ matchup, onClick }: TagProps) {
     </button>
   );
 }
+
 // =====================================================================
 // ★ Phase13: 弱点分析（Weakness Analysis）
 // =====================================================================
@@ -654,13 +678,12 @@ interface WeaknessAnalysisBlockProps {
   totalReceivedQty: number;
 }
 
-/** 各深刻度に対応するアクセントカラー（深刻度が高いほど警戒色強め） */
 const REASON_THEME: Record<ReceivedReason, { glow: string; bar: string; text: string }> = {
-  1: { glow: 'rgba(251,146,60,0.55)',  bar: '#fb923c', text: '#fed7aa' },  // 攻め負け: 橙
-  2: { glow: 'rgba(250,204,21,0.55)',  bar: '#facc15', text: '#fef08a' },  // 単調: 黄
-  3: { glow: 'rgba(244,114,182,0.55)', bar: '#f472b6', text: '#fbcfe8' },  // 居着き: ピンク
-  4: { glow: 'rgba(239,68,68,0.55)',   bar: '#ef4444', text: '#fecaca' },  // 体勢崩れ: 赤
-  5: { glow: 'rgba(180,60,255,0.65)',  bar: '#b45cff', text: '#e9d5ff' },  // 手元上がり: 紫（最重大）
+  1: { glow: 'rgba(251,146,60,0.55)',  bar: '#fb923c', text: '#fed7aa' },
+  2: { glow: 'rgba(250,204,21,0.55)',  bar: '#facc15', text: '#fef08a' },
+  3: { glow: 'rgba(244,114,182,0.55)', bar: '#f472b6', text: '#fbcfe8' },
+  4: { glow: 'rgba(239,68,68,0.55)',   bar: '#ef4444', text: '#fecaca' },
+  5: { glow: 'rgba(180,60,255,0.65)',  bar: '#b45cff', text: '#e9d5ff' },
 };
 
 function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBlockProps) {
@@ -678,7 +701,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
       position:     'relative',
       overflow:     'hidden',
     }}>
-      {/* 上端のシマー線 */}
       <div style={{
         position:   'absolute',
         top:        0,
@@ -689,7 +711,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
         pointerEvents: 'none',
       }} />
 
-      {/* ヘッダ */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
       }}>
@@ -729,7 +750,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
         </span>
       </div>
 
-      {/* ランキングバー */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {ranking.map((item, idx) => {
           const isTop = idx === 0;
@@ -752,11 +772,9 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
                 boxShadow: isTop ? `0 0 12px ${theme.glow}` : 'none',
               }}
             >
-              {/* 1行目: ランク + 名前 + バッジ + 件数 */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4,
               }}>
-                {/* ランク数字 */}
                 <span style={{
                   flexShrink: 0,
                   width: 18, height: 18, borderRadius: 4,
@@ -771,7 +789,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
                   {idx + 1}
                 </span>
 
-                {/* 名前 */}
                 <span style={{
                   fontSize: isTop ? '0.82rem' : '0.78rem',
                   fontWeight: isTop ? 800 : 700,
@@ -782,7 +799,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
                   {item.label}
                 </span>
 
-                {/* 1位の警告バッジ */}
                 {isTop && (
                   <span style={{
                     flexShrink: 0,
@@ -798,7 +814,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
                   </span>
                 )}
 
-                {/* 件数 / % */}
                 <span style={{
                   marginLeft: 'auto', flexShrink: 0,
                   fontSize: '0.72rem', fontWeight: 700,
@@ -817,7 +832,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
                 </span>
               </div>
 
-              {/* 2行目: 水平棒グラフ */}
               <div style={{
                 position: 'relative',
                 height: 6,
@@ -837,7 +851,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
                     : 'none',
                   transition: 'width 0.6s cubic-bezier(0.34,1.56,0.64,1)',
                 }} />
-                {/* シマー（1位のみ） */}
                 {isTop && (
                   <div style={{
                     position: 'absolute',
@@ -855,7 +868,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
         })}
       </div>
 
-      {/* 1位への対策メモ（手元上がり=5 のときのみ強調メッセージ） */}
       {top && top.code === 5 && (
         <div style={{
           marginTop: 10,
@@ -874,7 +886,6 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
         </div>
       )}
 
-      {/* キーフレーム */}
       <style>{`
         @keyframes weakness-top-pulse {
           0%, 100% { transform: scale(1);   opacity: 1;    }
@@ -883,6 +894,10 @@ function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBl
         @keyframes weakness-shimmer {
           0%   { background-position:  200% 0; }
           100% { background-position: -200% 0; }
+        }
+        @keyframes fade-up {
+          0%   { opacity: 0; transform: translateY(8px); }
+          100% { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>

@@ -259,9 +259,16 @@ export default function DashboardPage() {
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">PLAY STYLE</span>
-          <PlaystyleCharts techniques={techniques} matchupMaster={matchupMaster} peersStyle={peersStyle} techniqueMaster={techMaster} />
+          <PlaystyleCharts
+            techniques={techniques}
+            matchupMaster={matchupMaster}
+            peersStyle={peersStyle}
+            techniqueMaster={techMaster}
+            receivedStats={data.receivedStats}
+          />
         </div>
       )}
+
     </div>
   );
 }

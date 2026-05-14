@@ -1,18 +1,25 @@
 'use client';
 
 // =====================================================================
-// RadarChart.tsx（改修2）
+// RadarChart.tsx（Phase13.3: 攻防比較型プログレスバー）
 //
 // 【設計方針】
-//   レーダーチャートを廃止。
-//   ユーザーが課題への「積み重ね（努力量）」を直感的に把握できるよう、
-//   横型プログレスバー形式に変更。
-//   Recharts に依存しないため SSR 問題もなし。
+//   1項目（部位）に対して「与打（Blue）」と「被打（Red）」の
+//   2本のバーを並列表示する。
+//
+//   - 与打：シアン～インディゴ系のグラデーション
+//   - 被打：クリムゾン～オレンジ系のグラデーション
+//   - スケールは「両方の最大値」で正規化（同一スケール比較を保証）
+//   - 被打データが無い場合は与打のみの片面表示にフォールバック
 // =====================================================================
 
 interface RadarDataPoint {
   subject:  string;
-  score:    number;
+  /** 与打スコア（既存互換のため score も受け取る） */
+  given?:   number;
+  score?:   number;
+  /** ★ Phase13.3: 被打スコア */
+  received?: number;
   fullMark: number;
 }
 
@@ -20,155 +27,348 @@ interface Props {
   data: RadarDataPoint[];
 }
 
-// スコア → グラデーションカラー
-function barColor(score: number, fullMark: number): { from: string; to: string; glow: string } {
-  const ratio = score / fullMark;
-  if (ratio >= 0.85) return { from: '#d97706', to: '#fbbf24', glow: 'rgba(251,191,36,0.5)' };
+// =====================================================================
+// カラーテーマ
+// =====================================================================
+
+/** 与打（Blue系）のカラー */
+function givenColor(ratio: number): { from: string; to: string; glow: string } {
+  if (ratio >= 0.85) return { from: '#0891b2', to: '#22d3ee', glow: 'rgba(34,211,238,0.5)' };
   if (ratio >= 0.65) return { from: '#4f46e5', to: '#818cf8', glow: 'rgba(129,140,248,0.45)' };
   if (ratio >= 0.4)  return { from: '#1e40af', to: '#60a5fa', glow: 'rgba(96,165,250,0.35)' };
   return              { from: '#1e1b4b', to: '#4338ca', glow: 'rgba(67,56,202,0.25)' };
 }
 
-// スコア数値をラベル用テキストに変換
-function scoreLabel(score: number, fullMark: number): string {
-  const stars = Math.round((score / fullMark) * 5);
-  return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+/** 被打（Red系）のカラー */
+function receivedColor(ratio: number): { from: string; to: string; glow: string } {
+  if (ratio >= 0.85) return { from: '#9f1239', to: '#fb7185', glow: 'rgba(251,113,133,0.55)' };
+  if (ratio >= 0.65) return { from: '#b91c1c', to: '#f87171', glow: 'rgba(248,113,113,0.5)' };
+  if (ratio >= 0.4)  return { from: '#7f1d1d', to: '#ef4444', glow: 'rgba(239,68,68,0.4)' };
+  return              { from: '#450a0a', to: '#991b1b', glow: 'rgba(153,27,27,0.3)' };
 }
+
+// =====================================================================
+// 1本のバー
+// =====================================================================
+
+interface SingleBarProps {
+  label:    string;        // 'GIVEN' | 'RECEIVED'
+  labelJa:  string;        // '与打' | '被打'
+  score:    number;
+  fullMark: number;        // 表示用の絶対上限（pt表示用）
+  scaleMax: number;        // バー幅正規化用の最大値（与打/被打の最大）
+  variant:  'given' | 'received';
+}
+
+function SingleBar({ label, labelJa, score, fullMark, scaleMax, variant }: SingleBarProps) {
+  const ratio  = scaleMax > 0 ? score / scaleMax : 0;
+  const pctOfFullmark = fullMark > 0 ? Math.round((score / fullMark) * 100) : 0;
+  const colors = variant === 'given' ? givenColor(ratio) : receivedColor(ratio);
+  const barPct = Math.min(100, Math.max(0, Math.round(ratio * 100)));
+
+  const isEmpty = score <= 0;
+
+  return (
+    <div style={{
+      display:        'flex',
+      alignItems:     'center',
+      gap:            6,
+      opacity:        isEmpty ? 0.45 : 1,
+    }}>
+      {/* 左ラベル: 与打/被打 */}
+      <span style={{
+        flexShrink:    0,
+        width:         34,
+        fontSize:      '0.55rem',
+        fontWeight:    800,
+        color:         variant === 'given' ? '#a5b4fc' : '#fca5a5',
+        letterSpacing: '0.1em',
+        textAlign:     'left',
+        textTransform: 'uppercase',
+      }}>
+        {label}
+      </span>
+
+      {/* バートラック */}
+      <div style={{
+        flex:         1,
+        minWidth:     0,
+        height:       7,
+        background:   'rgba(99,102,241,0.08)',
+        borderRadius: 999,
+        overflow:     'hidden',
+        position:     'relative',
+        border:       '1px solid rgba(255,255,255,0.04)',
+      }}>
+        {!isEmpty && (
+          <div style={{
+            width:        `${barPct}%`,
+            height:       '100%',
+            background:   `linear-gradient(90deg, ${colors.from}, ${colors.to})`,
+            borderRadius: 999,
+            boxShadow:    `0 0 6px ${colors.glow}`,
+            transition:   'width .6s cubic-bezier(.4,0,.2,1)',
+            position:     'relative',
+          }}>
+            {/* バー先端のグロー点 */}
+            {barPct > 6 && (
+              <div style={{
+                position:    'absolute',
+                right:        0,
+                top:          '50%',
+                transform:    'translateY(-50%)',
+                width:        5,
+                height:       5,
+                borderRadius: '50%',
+                background:   colors.to,
+                boxShadow:    `0 0 6px ${colors.glow}, 0 0 10px ${colors.glow}`,
+              }} />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 右側スコア */}
+      <span style={{
+        flexShrink: 0,
+        minWidth:   42,
+        textAlign:  'right',
+        fontSize:   '0.68rem',
+        fontWeight: 800,
+        color:      isEmpty
+          ? 'rgba(165,180,252,0.35)'
+          : (variant === 'given' ? colors.to : colors.to),
+        letterSpacing: '0.02em',
+      }}>
+        {Math.round(score)}
+        <span style={{
+          fontSize: '0.55rem',
+          fontWeight: 600,
+          color: 'rgba(165,180,252,0.45)',
+          marginLeft: 2,
+        }}>
+          pt
+        </span>
+      </span>
+
+      {/* 視覚的な日本語ラベル（補足） */}
+      <span style={{
+        flexShrink: 0,
+        width: 22,
+        fontSize: '0.55rem',
+        color: 'rgba(165,180,252,0.35)',
+        fontWeight: 600,
+        textAlign: 'right',
+      }}>
+        {labelJa}
+      </span>
+    </div>
+  );
+}
+
+// =====================================================================
+// メインコンポーネント
+// =====================================================================
 
 export default function RadarChart({ data }: Props) {
   if (!data?.length) return null;
 
-  const maxScore = Math.max(...data.map(d => d.score), 1);
+  // 既存呼び出し側で score プロパティを使っている場合の互換: given にフォールバック
+  const normalized = data.map(d => ({
+    subject:  d.subject,
+    given:    d.given    ?? d.score ?? 0,
+    received: d.received ?? 0,
+    fullMark: d.fullMark,
+  }));
+
+  // 与打/被打すべての値の中で最大値（バー幅正規化に使用）
+  const scaleMax = Math.max(
+    1,
+    ...normalized.map(d => d.given),
+    ...normalized.map(d => d.received),
+  );
+
+  // 被打データの有無
+  const hasReceived = normalized.some(d => d.received > 0);
 
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {data.map((item, i) => {
-        const ratio  = item.score / item.fullMark;
-        const pct    = Math.round(ratio * 100);
-        const colors = barColor(item.score, item.fullMark);
-        // バーの幅はスコア / 全体最大スコアで正規化（最高値が100%になる）
-        const barPct = Math.round((item.score / maxScore) * 100);
+      {normalized.map((item, i) => {
+        const totalRatio = item.fullMark > 0
+          ? (item.given + item.received) / item.fullMark
+          : 0;
+        const isMostStruck =
+          hasReceived &&
+          item.received > 0 &&
+          item.received === Math.max(...normalized.map(d => d.received));
 
         return (
           <div
             key={item.subject}
             style={{
-              animation: `fade-up .35s cubic-bezier(.4,0,.2,1) ${i * 60}ms both`,
+              padding:      '8px 10px 9px',
+              borderRadius: 10,
+              background:   isMostStruck
+                ? 'linear-gradient(135deg, rgba(127,29,29,0.18), rgba(20,10,20,0.3))'
+                : 'rgba(99,102,241,0.04)',
+              border:       isMostStruck
+                ? '1px solid rgba(248,113,113,0.4)'
+                : '1px solid rgba(99,102,241,0.12)',
+              boxShadow:    isMostStruck ? '0 0 10px rgba(239,68,68,0.18)' : 'none',
+              animation:    `fade-up .35s cubic-bezier(.4,0,.2,1) ${i * 60}ms both`,
             }}
           >
-            {/* ラベル行 */}
+            {/* 部位ヘッダー行 */}
             <div style={{
-              display: 'flex',
-              alignItems: 'baseline',
+              display:        'flex',
+              alignItems:     'baseline',
               justifyContent: 'space-between',
-              marginBottom: 5,
+              marginBottom:   6,
             }}>
-              <span style={{
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                color: ratio >= 0.65 ? '#c7d2fe' : 'rgba(129,140,248,0.7)',
-                letterSpacing: '0.02em',
-                fontFamily: 'M PLUS Rounded 1c, sans-serif',
-              }}>
-                {item.subject}
-              </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{
-                  fontSize: '0.68rem',
-                  color: colors.to,
+                  fontSize:      '0.86rem',
+                  fontWeight:    800,
+                  color:         isMostStruck ? '#fff' : '#c7d2fe',
                   letterSpacing: '0.04em',
-                  filter: `drop-shadow(0 0 4px ${colors.glow})`,
+                  fontFamily:    'M PLUS Rounded 1c, sans-serif',
+                  textShadow:    isMostStruck ? '0 0 6px rgba(239,68,68,0.5)' : 'none',
                 }}>
-                  {scoreLabel(item.score, item.fullMark)}
+                  {item.subject}
                 </span>
-                <span style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  color: colors.to,
-                  minWidth: 32,
-                  textAlign: 'right',
-                }}>
-                  {pct}%
-                </span>
-              </div>
-            </div>
-
-            {/* バートラック */}
-            <div style={{
-              height: 9,
-              background: 'rgba(99,102,241,0.08)',
-              borderRadius: 999,
-              overflow: 'hidden',
-              position: 'relative',
-            }}>
-              {/* バー本体 */}
-              <div style={{
-                width: `${barPct}%`,
-                height: '100%',
-                background: `linear-gradient(90deg, ${colors.from}, ${colors.to})`,
-                borderRadius: 999,
-                boxShadow: `0 0 8px ${colors.glow}`,
-                transition: 'width .6s cubic-bezier(.4,0,.2,1)',
-                position: 'relative',
-              }}>
-                {/* バー先端のグロー点 */}
-                {barPct > 5 && (
-                  <div style={{
-                    position: 'absolute',
-                    right: 0, top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: 5, height: 5,
-                    borderRadius: '50%',
-                    background: colors.to,
-                    boxShadow: `0 0 6px ${colors.glow}, 0 0 12px ${colors.glow}`,
-                  }} />
+                {isMostStruck && (
+                  <span style={{
+                    fontSize:      '0.5rem',
+                    fontWeight:    800,
+                    color:         '#fff',
+                    background:    'linear-gradient(90deg, #ef4444, #b45cff)',
+                    padding:       '2px 6px',
+                    borderRadius:  999,
+                    letterSpacing: '0.08em',
+                    boxShadow:     '0 0 6px rgba(239,68,68,0.5)',
+                  }}>
+                    要警戒
+                  </span>
                 )}
               </div>
+
+              {/* 攻防バランス比率 */}
+              {hasReceived && item.given + item.received > 0 && (() => {
+                const givenRatio = item.given / (item.given + item.received);
+                const recvRatio  = item.received / (item.given + item.received);
+                return (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: '0.55rem', fontWeight: 700,
+                    letterSpacing: '0.04em',
+                  }}>
+                    <span style={{ color: '#7dd3fc' }}>{Math.round(givenRatio * 100)}</span>
+                    <span style={{ color: 'rgba(165,180,252,0.4)' }}>:</span>
+                    <span style={{ color: '#fb7185' }}>{Math.round(recvRatio * 100)}</span>
+                  </div>
+                );
+              })()}
             </div>
 
-            {/* スコア数値（絶対値表示） */}
-            <div style={{
-              marginTop: 3,
-              fontSize: '0.62rem',
-              color: 'rgba(99,102,241,0.4)',
-              textAlign: 'right',
-              fontWeight: 700,
-              letterSpacing: '0.04em',
-            }}>
-              {item.score.toLocaleString()} / {item.fullMark.toLocaleString()} pt
+            {/* 与打バー */}
+            <div style={{ marginBottom: hasReceived ? 4 : 0 }}>
+              <SingleBar
+                label="GIVEN"
+                labelJa="与"
+                score={item.given}
+                fullMark={item.fullMark}
+                scaleMax={scaleMax}
+                variant="given"
+              />
             </div>
+
+            {/* 被打バー（被打データがどこかにある場合のみ表示） */}
+            {hasReceived && (
+              <SingleBar
+                label="RECVD"
+                labelJa="被"
+                score={item.received}
+                fullMark={item.fullMark}
+                scaleMax={scaleMax}
+                variant="received"
+              />
+            )}
           </div>
         );
       })}
 
-      {/* 合計スコア */}
-      {data.length > 1 && (() => {
-        const totalScore   = data.reduce((s, d) => s + d.score, 0);
-        const totalFullMark = data.reduce((s, d) => s + d.fullMark, 0);
-        const totalRatio   = totalScore / totalFullMark;
-        const totalColors  = barColor(totalScore, totalFullMark);
+      {/* 合計サマリー */}
+      {normalized.length > 1 && (() => {
+        const totalGiven    = normalized.reduce((s, d) => s + d.given, 0);
+        const totalReceived = normalized.reduce((s, d) => s + d.received, 0);
+        const totalSum      = totalGiven + totalReceived;
+        const givenPct = totalSum > 0 ? (totalGiven / totalSum) * 100 : 100;
+        const recvPct  = totalSum > 0 ? (totalReceived / totalSum) * 100 : 0;
 
         return (
           <div style={{
-            marginTop: 4,
-            padding: '8px 12px',
-            background: 'rgba(99,102,241,0.07)',
+            marginTop:    4,
+            padding:      '10px 12px',
+            background:   'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(127,29,29,0.10))',
             borderRadius: 10,
-            border: '1px solid rgba(99,102,241,0.15)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            border:       '1px solid rgba(99,102,241,0.18)',
           }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(129,140,248,0.6)', letterSpacing: '0.08em' }}>
-              TOTAL
-            </span>
-            <span style={{
-              fontSize: '1rem', fontWeight: 800,
-              color: totalColors.to,
-              filter: `drop-shadow(0 0 5px ${totalColors.glow})`,
+            <div style={{
+              display:        'flex',
+              justifyContent: 'space-between',
+              alignItems:     'center',
+              marginBottom:   hasReceived ? 6 : 0,
             }}>
-              {Math.round(totalRatio * 100)}%
-            </span>
+              <span style={{
+                fontSize:      '0.6rem',
+                fontWeight:    800,
+                color:         'rgba(199,210,254,0.7)',
+                letterSpacing: '0.14em',
+              }}>
+                ATTACK / DEFENSE BALANCE
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#7dd3fc' }}>
+                  {totalGiven}
+                </span>
+                {hasReceived && (
+                  <>
+                    <span style={{ color: 'rgba(165,180,252,0.4)' }}>:</span>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#fb7185' }}>
+                      {Math.round(totalReceived)}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* スタックバー（与打:被打の比率） */}
+            {hasReceived && totalSum > 0 && (
+              <div style={{
+                position:     'relative',
+                height:       8,
+                borderRadius: 999,
+                overflow:     'hidden',
+                background:   'rgba(0,0,0,0.4)',
+                border:       '1px solid rgba(255,255,255,0.05)',
+                display:      'flex',
+              }}>
+                <div style={{
+                  width:      `${givenPct}%`,
+                  height:     '100%',
+                  background: 'linear-gradient(90deg, #4f46e5, #22d3ee)',
+                  boxShadow:  '0 0 6px rgba(34,211,238,0.4)',
+                  transition: 'width .6s cubic-bezier(.4,0,.2,1)',
+                }} />
+                <div style={{
+                  width:      `${recvPct}%`,
+                  height:     '100%',
+                  background: 'linear-gradient(90deg, #b91c1c, #ef4444)',
+                  boxShadow:  '0 0 6px rgba(239,68,68,0.4)',
+                  transition: 'width .6s cubic-bezier(.4,0,.2,1)',
+                }} />
+              </div>
+            )}
           </div>
         );
       })()}
