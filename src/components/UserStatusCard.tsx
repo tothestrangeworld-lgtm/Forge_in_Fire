@@ -17,14 +17,13 @@
 //   コード変更は不要。型互換性の確認のみ。
 // ★ Phase11.1: 歯車アイコン（/settings/profile）を右上に追加。
 //   実績バッジの絵文字🏆をLucideのTrophyアイコンに変更。
-// ★ DEBUG: 二つ名判定プロセス可視化バッジを追加（リリース前に削除）
 // =====================================================================
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
 import { Settings, Trophy } from 'lucide-react';
-import type { EpithetResult, EpithetDebugInfo } from '@/lib/epithet';
+import type { EpithetResult } from '@/lib/epithet';
 import { levelColor, xpForLevel, calcLevelFromXp, calcProgressPercent } from '@/types';
 
 // =====================================================================
@@ -184,6 +183,12 @@ export interface UserStatusCardProps {
 
 // =====================================================================
 // UserStatusCard 本体
+// ★ Phase9.5: このコンポーネントはもともと status.title を使わず
+//   epithet.levelTitle（calcEpithet() 内で titleForLevel() で計算済み）を
+//   表示しているため、Phase9.5 の変更による修正箇所はゼロ。
+//   型定義から UserStatus.title が消えても Props に影響なし。
+// ★ Phase11.1: 右上に歯車アイコン（/settings/profile）を追加。
+//   実績バッジの絵文字をLucide Trophyアイコンに変更。
 // =====================================================================
 export function UserStatusCard({
   userName,
@@ -257,11 +262,6 @@ export function UserStatusCard({
         }}>
           {userName}
         </span>
-
-        {/* ★ DEBUG: 判定プロセスの可視化バッジ */}
-        {epithet._debug && (
-          <EpithetDebugBadge debug={epithet._debug} epithet={epithet} />
-        )}
       </div>
 
       {/* ── 2行目: 信条 (motto) — 未設定時は非表示 ──────────────── */}
@@ -324,7 +324,7 @@ export function UserStatusCard({
           Lv.{level}
         </span>
 
-        {/* レベル称号 */}
+        {/* レベル称号 — epithet.levelTitle は calcEpithet() 内で titleForLevel() から動的計算済み */}
         <span style={{
           fontSize: '0.78rem', fontWeight: 800,
           background: `linear-gradient(135deg, #e0e7ff, ${lvColor})`,
@@ -336,7 +336,7 @@ export function UserStatusCard({
           {epithet.levelTitle}
         </span>
 
-        {/* ★ Phase11.1: 実績バッジ */}
+        {/* ★ Phase11.1: 実績バッジ — 絵文字🏆 → Lucide Trophy アイコン */}
         {achiev !== undefined && (
           <a
             href="/achievements"
@@ -429,219 +429,6 @@ export function UserStatusCard({
         </p>
       ) : null}
 
-    </div>
-  );
-}
-
-// =====================================================================
-// ★ DEBUG: EpithetDebugBadge — 判定プロセスの可視化バッジ
-// 開発・デバッグ専用。リリース前にこのコンポーネント全体と、
-// 上記呼び出し箇所（{epithet._debug && <EpithetDebugBadge ... />}）を削除すること。
-// =====================================================================
-
-interface EpithetDebugBadgeProps {
-  debug:   EpithetDebugInfo;
-  epithet: EpithetResult;
-}
-
-function EpithetDebugBadge({ debug, epithet }: EpithetDebugBadgeProps) {
-  const [open, setOpen] = useState(false);
-
-  const matched = debug.matched;
-  const badgeColor  = matched ? '#22c55e' : '#ef4444';
-  const badgeBg     = matched ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
-  const badgeBorder = matched ? 'rgba(34,197,94,0.5)'  : 'rgba(239,68,68,0.5)';
-
-  return (
-    <div style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        style={{
-          fontSize:    '0.55rem',
-          fontWeight:  700,
-          fontFamily:  'monospace',
-          padding:     '2px 6px',
-          borderRadius: 4,
-          border:      `1px solid ${badgeBorder}`,
-          background:  badgeBg,
-          color:       badgeColor,
-          cursor:      'pointer',
-          letterSpacing: '0.04em',
-          lineHeight:  1.4,
-          whiteSpace:  'nowrap',
-        }}
-        title="判定プロセスを表示"
-      >
-        🔍 [{matched ? 'OK' : 'NG'}] {debug.triggerKey || '(empty)'}
-      </button>
-
-      {open && (
-        <div style={{
-          position:     'absolute',
-          top:          'calc(100% + 6px)',
-          left:         0,
-          zIndex:       60,
-          minWidth:     280,
-          maxWidth:     360,
-          padding:      '10px 12px',
-          borderRadius: 10,
-          background:   'rgba(8, 6, 20, 0.97)',
-          border:       `1px solid ${badgeBorder}`,
-          boxShadow:    '0 6px 24px rgba(0,0,0,0.6)',
-          fontFamily:   'monospace',
-          fontSize:     '0.65rem',
-          lineHeight:   1.6,
-          color:        'rgba(199,210,254,0.92)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-        }}>
-          <DebugLine label="生成キー" value={`"${debug.triggerKey}"`} highlight />
-          <DebugLine
-            label="ヒット結果"
-            value={matched
-              ? `✅ "${epithet.epithetName}" (${epithet.epithetRarity})`
-              : '❌ 未マッチ → "未知なる"'}
-            color={badgeColor}
-          />
-
-          <div style={{
-            marginTop: 8,
-            marginBottom: 4,
-            color: 'rgba(165,180,252,0.7)',
-            fontSize: '0.6rem',
-          }}>
-            ▼ subCategory 累計ポイント（降順 上位5）
-          </div>
-          {debug.subTotalsSorted.length === 0 ? (
-            <div style={{
-              padding: '4px 6px',
-              color: 'rgba(252,165,165,0.7)',
-              fontSize: '0.6rem',
-            }}>
-              （まだポイントがありません）
-            </div>
-          ) : (
-            debug.subTotalsSorted.slice(0, 5).map((row, i) => (
-              <div key={row.name} style={{
-                display:        'flex',
-                justifyContent: 'space-between',
-                padding:        '1px 4px',
-                background:     i < 3 ? 'rgba(34,197,94,0.08)' : 'transparent',
-                borderRadius:   3,
-              }}>
-                <span style={{ color: i < 3 ? '#86efac' : 'rgba(199,210,254,0.7)' }}>
-                  {i + 1}. {row.name}
-                </span>
-                <span style={{ color: '#fbbf24', fontWeight: 700 }}>
-                  {row.pts} pt
-                </span>
-              </div>
-            ))
-          )}
-
-          <div style={{ marginTop: 8 }}>
-            <DebugLine
-              label="上位3(抽出順)"
-              value={debug.top3Raw.length ? debug.top3Raw.join(' / ') : '(empty)'}
-            />
-            <DebugLine
-              label="上位3(整列後)"
-              value={debug.top3Sorted.length ? debug.top3Sorted.join(' / ') : '(empty)'}
-            />
-          </div>
-
-          {debug.unknownSubcategories.length > 0 && (
-            <div style={{
-              marginTop:    8,
-              padding:      '4px 6px',
-              borderRadius: 4,
-              background:   'rgba(251,146,60,0.12)',
-              border:       '1px solid rgba(251,146,60,0.4)',
-              color:        '#fdba74',
-              fontSize:     '0.6rem',
-            }}>
-              ⚠️ 未登録カテゴリ: {debug.unknownSubcategories.join(', ')}
-            </div>
-          )}
-
-          {!matched && debug.masterTriggerSamples.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{
-                color: 'rgba(165,180,252,0.7)',
-                fontSize: '0.6rem',
-                marginBottom: 2,
-              }}>
-                ▼ マスタの triggerValue サンプル（{debug.masterStyleCount}件中5件）
-              </div>
-              {debug.masterTriggerSamples.map((tv, i) => (
-                <div key={i} style={{
-                  fontSize:    '0.6rem',
-                  color:       'rgba(165,180,252,0.5)',
-                  paddingLeft: 8,
-                }}>
-                  • &quot;{tv}&quot;
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button
-            onClick={() => setOpen(false)}
-            style={{
-              marginTop:  10,
-              display:    'block',
-              width:      '100%',
-              padding:    '4px 0',
-              background: 'none',
-              border:     'none',
-              cursor:     'pointer',
-              fontFamily: 'inherit',
-              fontSize:   '0.6rem',
-              fontWeight: 700,
-              color:      'rgba(129,140,248,0.5)',
-              textAlign:  'right',
-            }}
-          >
-            閉じる ✕
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// =====================================================================
-// ★ DEBUG: DebugLine — ラベル+値の1行表示
-// =====================================================================
-function DebugLine({
-  label, value, highlight, color,
-}: {
-  label:      string;
-  value:      string;
-  highlight?: boolean;
-  color?:     string;
-}) {
-  return (
-    <div style={{
-      display: 'flex',
-      gap:     8,
-      padding: '2px 0',
-    }}>
-      <span style={{
-        flexShrink: 0,
-        minWidth:   86,
-        color:      'rgba(165,180,252,0.6)',
-        fontSize:   '0.6rem',
-      }}>
-        {label}:
-      </span>
-      <span style={{
-        color:      color ?? (highlight ? '#fbbf24' : 'rgba(199,210,254,0.95)'),
-        fontWeight: highlight ? 800 : 600,
-        wordBreak:  'break-all',
-      }}>
-        {value}
-      </span>
     </div>
   );
 }

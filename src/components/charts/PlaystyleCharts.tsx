@@ -27,13 +27,13 @@ interface Props {
 // ★ Phase13.3: ACTION BALANCE のカラーパレット
 // 外側=与打（青系）、内側=被打（赤系）の二重ドーナツ
 // =====================================================================
-// 与打（外側ドーナツ・青系）
-const COLOR_GIVEN_OFFENSE  = '#00e5ff';   // シアン:   仕掛け
-const COLOR_GIVEN_DEFENSE  = '#818cf8';   // インディゴ: 応じ
+// 与打（外側ドーナツ・蒼系）
+const COLOR_GIVEN_OFFENSE  = '#00e5ff';   // 明るいシアン（攻めの光）
+const COLOR_GIVEN_DEFENSE  = '#4338ca';   // 深いインディゴ（守りの静寂）
 
-// 被打（内側ドーナツ・赤系）
-const COLOR_RECV_OFFENSE   = '#ff0055';   // クリムゾン: 仕掛け（被打）
-const COLOR_RECV_DEFENSE   = '#fb923c';   // オレンジ赤: 応じ（被打）
+// 被打（内側ドーナツ・紅系）
+const COLOR_RECV_OFFENSE   = '#ff0055';   // 鮮烈なクリムゾン（打たれた警告）
+const COLOR_RECV_DEFENSE   = '#7f1d1d';   // 暗いバーガンディ（隙を突かれた影）
 
 // 部位（BodyPart）の表示順を固定
 const BODY_PART_AXIS = ['面', '小手', '胴', '突き'];
