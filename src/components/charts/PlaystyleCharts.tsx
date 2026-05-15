@@ -28,12 +28,12 @@ interface Props {
 // 外側=与打（青系）、内側=被打（赤系）の二重ドーナツ
 // =====================================================================
 // 与打（外側ドーナツ・蒼系）
-const COLOR_GIVEN_OFFENSE  = '#00e5ff';   // 明るいシアン（攻めの光）
-const COLOR_GIVEN_DEFENSE  = '#4338ca';   // 深いインディゴ（守りの静寂）
+const COLOR_GIVEN_OFFENSE  = '#1875BF';   // 明るいao攻めの光）
+const COLOR_GIVEN_DEFENSE  = '#0D3F66';   // 深いao（守りの静寂）
 
 // 被打（内側ドーナツ・紅系）
-const COLOR_RECV_OFFENSE   = '#ff0055';   // 鮮烈なクリムゾン（打たれた警告）
-const COLOR_RECV_DEFENSE   = '#7f1d1d';   // 暗いバーガンディ（隙を突かれた影）
+const COLOR_RECV_OFFENSE   = '#641914';   // kuraiaka（打たれた警告）
+const COLOR_RECV_DEFENSE   = '#974A45';   // akaruiaka（隙を突かれた影）
 
 // 部位（BodyPart）の表示順を固定
 const BODY_PART_AXIS = ['面', '小手', '胴', '突き'];
@@ -278,15 +278,15 @@ export default function PlaystyleCharts({
           }}>
             ACTION BALANCE
           </p>
-          <p style={{
+{/*           <p style={{
             margin:        '2px 0 0',
             fontSize:      '0.55rem',
             fontWeight:    600,
             color:         'rgba(199,210,254,0.5)',
             letterSpacing: '0.05em',
           }}>
-            外＝与打 / 内＝被打（仕掛け・応じ）
-          </p>
+            外＝与打 / 内＝被打
+          </p> */}
         </div>
 
         <div style={{ width: '100%', height: 200 }}>
