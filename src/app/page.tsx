@@ -245,7 +245,7 @@ export default function DashboardPage() {
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">Skill Grid</span>
-          <div style={{ height: 380, marginTop: 12 }}>
+          <div style={{ height: 450, marginTop: 12 }}>
           <SkillGrid
             techniques={techniques}
             signatureTechId={status.favorite_technique}
