@@ -29,14 +29,14 @@ import { titleForLevel } from '@/types';
 // TriggerValue（カンマ結合キー）の生成時に indexOf でこの順序を参照する。
 // =====================================================================
 const SUBCATEGORY_ORDER: ReadonlyArray<string> = [
-  '二段打ち',
+  '二段打',
   '出端技',
   '基本',
   '引き技',
-  '打ち落とし技',
+  '打落技',
   '払い技',
   '抜き技',
-  '摺り上げ技',
+  '摺上技',
   '返し技',
 ] as const;
 
