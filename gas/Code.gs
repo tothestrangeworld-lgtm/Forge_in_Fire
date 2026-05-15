@@ -520,7 +520,7 @@ function saveLog(body) {
       if (isNaN(quantity) || quantity < 1 || quantity > 5) return;
       if (isNaN(reason)   || reason   < 1 || reason   > 5) return;
 
-      var earned = 5 * quantity;
+      var earned = 25 * quantity;
       receivedXp         += earned;
       receivedSavedCount += 1;
 
@@ -1038,9 +1038,17 @@ function getPeerLevelMultiplier(level) {
 
 /**
  * evaluatePeer
- * ★ Phase7: items 配列（{ taskId, score }[]）を受け取り、課題単位で記録する。
- * ★ Phase9.5: title 関連を削除。user_status インデックス修正。
+ * ★ Phase7:    items 配列（{ taskId, score }[]）を受け取り、課題単位で記録する。
+ * ★ Phase9.5:  title 関連を削除。user_status インデックス修正。
  * ★ Phase-ex1: writeXpHistory.reason から評価者名を排除し匿名化。
+ * ★ Phase13.6: XP報酬バランス最適化
+ *   - 評価された側（targetId）のXPを2倍に引き上げ
+ *     旧: xpGranted = ceil(totalScoreSum * 2 * mult)
+ *     新: xpGranted = ceil(totalScoreSum * 4 * mult)
+ *   - 評価した側（evaluatorId）に「見取り稽古ボーナス」を新規付与
+ *     evaluatorXp = evaluatedTasks.length * 20
+ *     ※ 評価レベル倍率は適用しない（基本価値の純粋な対価）
+ *   - 戻り値に evaluator_xp を追加
  */
 function evaluatePeer(body) {
   var evaluatorId = body.user_id;
@@ -1074,6 +1082,7 @@ function evaluatePeer(body) {
     gasLog('INFO', 'evaluatePeer', 'peer_evaluations シートを自動作成しました');
   }
 
+  // 重複評価チェック用セット構築
   var peRows = peSheet.getDataRange().getValues();
   var alreadyEvaluatedSet = {};
   for (var i = 1; i < peRows.length; i++) {
@@ -1088,6 +1097,7 @@ function evaluatePeer(body) {
   var statSheet = ss.getSheetByName(SHEET_STATUS);
   if (!statSheet) return createError('user_status シートが存在しません', 500);
 
+  // 評価者のレベルと倍率（targetId への報酬計算に使用）
   var evalRows  = filterRowsByUserId(statSheet, evaluatorId);
   var evalLevel = evalRows.length > 0 ? (parseInt(evalRows[0][2]) || 1) : 1;
   var mult      = getPeerLevelMultiplier(evalLevel);
@@ -1105,6 +1115,9 @@ function evaluatePeer(body) {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // Step 1. peer_evaluations への書き込み
+  // ─────────────────────────────────────────────
   var evaluatedTasks = [];
   var skippedTasks   = [];
   var totalScoreSum  = 0;
@@ -1124,9 +1137,17 @@ function evaluatePeer(body) {
     totalScoreSum += score;
   });
 
-  var xpGranted = evaluatedTasks.length > 0 ? Math.ceil(totalScoreSum * 2 * mult) : 0;
+  // ─────────────────────────────────────────────
+  // Step 2. ★ Phase13.6: 評価された側（targetId）への報酬を2倍化
+  //   旧: totalScoreSum * 2 * mult
+  //   新: totalScoreSum * 4 * mult
+  // ─────────────────────────────────────────────
+  var xpGranted = evaluatedTasks.length > 0
+    ? Math.ceil(totalScoreSum * 4 * mult)
+    : 0;
 
   if (xpGranted > 0) {
+    // peer_evaluations の xp_granted 列を更新（直近に書き込んだ行を更新）
     var perItemXp = Math.ceil(xpGranted / evaluatedTasks.length);
     var peLastRow = peSheet.getLastRow();
     var updatedCount = 0;
@@ -1140,6 +1161,7 @@ function evaluatePeer(body) {
       }
     }
 
+    // targetId の user_status を更新
     var targetRows = filterRowsByUserId(statSheet, targetId);
     var hasTarget  = targetRows.length > 0;
     var currentXp  = hasTarget ? (parseInt(targetRows[0][1]) || 0) : 0;
@@ -1167,13 +1189,68 @@ function evaluatePeer(body) {
       newXp, newLevel);
   }
 
+  // ─────────────────────────────────────────────
+  // Step 3. ★ Phase13.6: 評価した側（evaluatorId）への
+  // 「見取り稽古ボーナス」を新規付与
+  //   evaluatorXp = evaluatedTasks.length * 20
+  //   ※ 評価レベル倍率は適用しない（純粋な観察行為への対価）
+  // ─────────────────────────────────────────────
+  var evaluatorXp       = 0;
+  var evaluatorNewXp    = 0;
+  var evaluatorNewLevel = evalLevel;
+
+  if (evaluatedTasks.length > 0) {
+    evaluatorXp = evaluatedTasks.length * 20;
+
+    // evaluatorId の user_status を更新
+    var evaluatorRows = filterRowsByUserId(statSheet, evaluatorId);
+    var hasEvaluator  = evaluatorRows.length > 0;
+    var currentEvalXp = hasEvaluator ? (parseInt(evaluatorRows[0][1]) || 0) : 0;
+    evaluatorNewXp    = currentEvalXp + evaluatorXp;
+    evaluatorNewLevel = calcLevel(evaluatorNewXp);
+
+    if (hasEvaluator) {
+      var allEvalRows = statSheet.getDataRange().getValues();
+      for (var er = allEvalRows.length; er >= 2; er--) {
+        if (String(allEvalRows[er-1][0]) === String(evaluatorId)) {
+          // ★ Phase9.5: col2=total_xp, col3=level
+          statSheet.getRange(er, 2).setValue(evaluatorNewXp);
+          statSheet.getRange(er, 3).setValue(evaluatorNewLevel);
+          break;
+        }
+      }
+    } else {
+      // ★ Phase9.5: 8列で新規挿入
+      statSheet.appendRow([evaluatorId, evaluatorNewXp, evaluatorNewLevel, '', today, '', '', '']);
+    }
+
+    // xp_history に「見取り稽古ボーナス」として記録
+    writeXpHistory(ss, evaluatorId, 'mitori_bonus', evaluatorXp,
+      '剣友の評価を実施（見取り稽古ボーナス・' + evaluatedTasks.length + '課題）',
+      evaluatorNewXp, evaluatorNewLevel);
+  }
+
+  // ─────────────────────────────────────────────
+  // Step 4. 構造化ログ
+  // ─────────────────────────────────────────────
   gasLog('INFO', 'evaluatePeer',
     'evaluator=' + evaluatorId + '(' + evalLevel + ') evaluated=' + evaluatedTasks.length +
-    ' skipped=' + skippedTasks.length + ' scoreSum=' + totalScoreSum + ' +' + xpGranted + 'XP(×' + mult + ')',
-    { evalName: evalName, evaluatedTasks: evaluatedTasks, skippedTasks: skippedTasks });
+    ' skipped=' + skippedTasks.length + ' scoreSum=' + totalScoreSum +
+    ' targetXp=+' + xpGranted + '(×' + mult + ')' +
+    ' evaluatorXp=+' + evaluatorXp + '(見取り稽古)',
+    {
+      evalName:       evalName,
+      evaluatedTasks: evaluatedTasks,
+      skippedTasks:   skippedTasks,
+    });
 
+  // ─────────────────────────────────────────────
+  // Step 5. レスポンス
+  // ★ Phase13.6: evaluator_xp を新規追加
+  // ─────────────────────────────────────────────
   return createResponse({
-    xp_granted:      xpGranted,
+    xp_granted:      xpGranted,        // 評価された側に付与されたXP
+    evaluator_xp:    evaluatorXp,      // ★ Phase13.6: 評価した側に付与されたXP（見取り稽古ボーナス）
     evaluator_level: evalLevel,
     multiplier:      mult,
     evaluated_tasks: evaluatedTasks,

@@ -280,6 +280,7 @@ export interface PeerEvalItem {
 
 export interface EvaluatePeerResponse {
   xp_granted:      number;
+  evaluator_xp?:   number;        // ★ Phase13.6: 見取り稽古ボーナス
   evaluator_level: number;
   multiplier:      number;
   evaluated_tasks: string[];

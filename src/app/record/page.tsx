@@ -595,7 +595,6 @@ export default function RecordPage() {
         </div>
       ) : activeTasks.length === 0 ? (
         <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
-          <p style={{ fontSize:'2rem', marginBottom:8 }}>📋</p>
           <p style={{ color:'#78716c', fontWeight:600 }}>評価項目がありません</p>
           <p style={{ fontSize:'0.75rem', color:'#a8a29e', marginTop:6 }}>
             <a href="/settings/tasks" style={{ color:'#6366f1', fontWeight:700 }}>設定 → 評価項目</a> から課題を登録してください

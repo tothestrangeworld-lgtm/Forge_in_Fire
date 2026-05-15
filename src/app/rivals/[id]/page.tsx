@@ -47,7 +47,13 @@ export default function RivalDashboardPage({
   const [taskScores,       setTaskScores]       = useState<Record<string, number | null>>({});
   const [evaluatedTaskIds, setEvaluatedTaskIds] = useState<Set<string>>(new Set());
   const [evalLoading,      setEvalLoading]      = useState(false);
-  const [evalResult,       setEvalResult]       = useState<{ xp: number; mult: number; count: number } | null>(null);
+  const [evalResult, setEvalResult] = useState<{
+    xp:          number;
+    mult:        number;
+    count:       number;
+    evaluatorXp: number;   // ★ Phase13.6: 見取り稽古ボーナス
+  } | null>(null);
+ 
   const [evalError,        setEvalError]        = useState('');
 
   const initializedRef = useRef(false);
@@ -80,7 +86,13 @@ export default function RivalDashboardPage({
         items.forEach(item => { next[item.taskId] = null; });
         return next;
       });
-      setEvalResult({ xp: res.xp_granted, mult: res.multiplier, count: res.evaluated_tasks.length });
+      setEvalResult({
+        xp:          res.xp_granted,
+        mult:        res.multiplier,
+        count:       res.evaluated_tasks.length,
+        evaluatorXp: res.evaluator_xp ?? 0,   // ★ Phase13.6
+      });
+      
     } catch (err: unknown) {
       setEvalError(err instanceof Error ? (err.message || '評価の送信に失敗しました。') : '評価の送信に失敗しました。');
     } finally {
@@ -302,15 +314,78 @@ export default function RivalDashboardPage({
 
           {!isSelf && activeTasks.length > 0 && (
             <div style={{ marginTop: 14 }}>
-              {evalResult && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 10, marginBottom: 10 }}>
+            {evalResult && (
+              <div style={{
+                padding: '12px 14px',
+                background: 'linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(251,191,36,0.08) 100%)',
+                border: '1px solid rgba(34,197,94,0.35)',
+                borderRadius: 12,
+                marginBottom: 10,
+                boxShadow: '0 0 16px rgba(34,197,94,0.12)',
+              }}>
+                {/* ヘッダー: 件数 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <CheckCircle style={{ width: 16, height: 16, color: '#86efac', flexShrink: 0 }} />
-                  <div>
-                    <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#86efac' }}>{evalResult.count}件の課題を評価しました！</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(134,239,172,0.7)' }}>{targetName} に +{evalResult.xp} XP（×{evalResult.mult} 倍率）</p>
-                  </div>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#86efac', letterSpacing: '0.04em' }}>
+                    {evalResult.count}件の課題を評価しました
+                  </p>
                 </div>
-              )}
+
+                {/* XP内訳: 相手 → 自分 の2行表示 */}
+                <div style={{
+                  paddingLeft: 24,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}>
+                  {/* 相手へのXP */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, letterSpacing: '0.1em',
+                      color: 'rgba(134,239,172,0.55)',
+                      width: 36, flexShrink: 0,
+                    }}>
+                      相手
+                    </span>
+                    <span style={{ fontSize: 11, color: 'rgba(134,239,172,0.85)', fontWeight: 700 }}>
+                      {targetName} に
+                      <span style={{ color: '#86efac', fontWeight: 800, margin: '0 3px' }}>
+                        +{evalResult.xp}
+                      </span>
+                      XP
+                      <span style={{
+                        marginLeft: 4,
+                        fontSize: 9,
+                        color: 'rgba(134,239,172,0.55)',
+                        fontWeight: 600,
+                      }}>
+                        （×{evalResult.mult} 倍率）
+                      </span>
+                    </span>
+                  </div>
+
+                  {/* ★ Phase13.6: 自分の見取り稽古ボーナス */}
+                  {evalResult.evaluatorXp > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, letterSpacing: '0.1em',
+                        color: 'rgba(253,230,138,0.55)',
+                        width: 36, flexShrink: 0,
+                      }}>
+                        自分
+                      </span>
+                      <span style={{ fontSize: 11, color: 'rgba(253,230,138,0.85)', fontWeight: 700 }}>
+                        見取り稽古ボーナス
+                        <span style={{ color: '#fde68a', fontWeight: 800, margin: '0 3px' }}>
+                          +{evalResult.evaluatorXp}
+                        </span>
+                        XP
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
               {evalError && (
                 <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, marginBottom: 10 }}>
                   <p style={{ margin: 0, fontSize: 12, color: '#fca5a5' }}>{evalError}</p>
