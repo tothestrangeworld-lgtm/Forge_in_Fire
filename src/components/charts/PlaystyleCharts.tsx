@@ -50,13 +50,11 @@ const TOOLTIP_STYLE = {
 const COLUMN_PANEL_STYLE: React.CSSProperties = {
   background:   'rgba(255,255,255,0.04)',
   borderRadius: 14,
-  padding:      '0.85rem 0.6rem 0.7rem',
+  padding:      '0.85rem 0.5rem 0.7rem',
   border:       '1px solid rgba(129,140,248,0.15)',
   display:      'flex',
   flexDirection: 'column',
-  // 横並び時: 各カラムが画面の半分弱を占める
-  // 縦並び時(wrap): 100%幅まで広がる
-  flex:         '1 1 280px',
+  flex:         '1 1 150px',   // ★ 280px → 150px に変更
   minWidth:     0,
 };
 
