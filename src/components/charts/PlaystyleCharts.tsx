@@ -9,7 +9,7 @@ import type {
   Technique, MatchupMasterEntry, PeerStyleEntry, TechniqueMasterEntry,
   ReceivedStats, ReceivedReason,
 } from '@/types';
-import { RECEIVED_REASON_LABELS } from '@/types';
+import { RECEIVED_REASON_LABELS, RECEIVED_REASON_FULL_LABELS } from '@/types';
 import MatchupScroll from '@/components/charts/MatchupScroll';
 import RadarChart from '@/components/charts/RadarChart';
 import { getDegreeTheme, getTagHoverStyles } from '@/lib/matchupTheme';
@@ -73,6 +73,9 @@ export default function PlaystyleCharts({
   useEffect(() => { setMounted(true); }, []);
 
   const [selectedMatchup, setSelectedMatchup] = useState<MatchupMasterEntry | null>(null);
+
+  // ★ Phase13.3.3: 弱点ツールチップの State
+  const [activeWeaknessTooltip, setActiveWeaknessTooltip] = useState<number | null>(null);
 
   const {
     givenDonutData,
@@ -161,7 +164,6 @@ export default function PlaystyleCharts({
     // ─────────────────────────────
     // ★ Phase13.3.2: 部位別 与打/被打 デュアルレーダーデータ
     // 4軸（面・小手・胴・突き）で必ず固定。データ無し部位は 0 で埋める。
-    // レーダーチャートは「カタチ」が重要なため、データ0でも軸を描画する。
     // ─────────────────────────────
     const radarData = BODY_PART_AXIS.map(bp => ({
       subject:  bp,
@@ -179,7 +181,7 @@ export default function PlaystyleCharts({
       .map(([key]) => key);
 
     // ─────────────────────────────
-    // 弱点ランキング
+    // 弱点ランキング（count 降順ソート済み）
     // ─────────────────────────────
     const reasonRanking: Array<{ code: ReceivedReason; label: string; count: number; pct: number }> = [];
     if (receivedStats?.byReason) {
@@ -200,8 +202,8 @@ export default function PlaystyleCharts({
     }
 
     return {
-      givenDonutData,        // ★ Phase13.3: 外側ドーナツ
-      receivedDonutData,     // ★ Phase13.3: 内側ドーナツ
+      givenDonutData,
+      receivedDonutData,
       radarData,
       totalGiven,
       totalReceivedPts,
@@ -260,15 +262,6 @@ export default function PlaystyleCharts({
           }}>
             ACTION BALANCE
           </p>
-{/*           <p style={{
-            margin:        '2px 0 0',
-            fontSize:      '0.55rem',
-            fontWeight:    600,
-            color:         'rgba(199,210,254,0.5)',
-            letterSpacing: '0.05em',
-          }}>
-            外＝与打 / 内＝被打
-          </p> */}
         </div>
 
         <div style={{ width: '100%', height: 200 }}>
@@ -322,7 +315,6 @@ export default function PlaystyleCharts({
               <PieTooltip
                 contentStyle={TOOLTIP_STYLE}
                 formatter={(value: number, _name, item) => {
-                  // 与打/被打 どちらの系列か判定
                   const isGiven = givenDonutData.some(d => d.name === item.payload.name);
                   const layerTotal = isGiven
                     ? givenDonutData.reduce((s, d) => s + d.value, 0)
@@ -378,7 +370,7 @@ export default function PlaystyleCharts({
       </div>
 
       {/* ====================================================== */}
-      {/* 中段: 部位別 与打/被打 比較バーチャート               */}
+      {/* 中段: 部位別 与打/被打 デュアルレーダーチャート         */}
       {/* ====================================================== */}
       <div style={{
         background:   'rgba(255,255,255,0.04)',
@@ -421,12 +413,14 @@ export default function PlaystyleCharts({
       </div>
 
       {/* ====================================================== */}
-      {/* ★ Phase13: 弱点分析セクション                        */}
+      {/* ★ Phase13.3.3: 弱点分析 (冷徹な脆弱性メーター)        */}
       {/* ====================================================== */}
       {receivedStats && reasonRanking.length > 0 && (
         <WeaknessAnalysisBlock
           ranking={reasonRanking}
           totalReceivedQty={receivedStats.totalReceived}
+          activeTooltip={activeWeaknessTooltip}
+          setActiveTooltip={setActiveWeaknessTooltip}
         />
       )}
 
@@ -645,7 +639,13 @@ function MatchupTag({ matchup, onClick }: TagProps) {
 }
 
 // =====================================================================
-// ★ Phase13: 弱点分析（Weakness Analysis）
+// ★ Phase13.3.3: WEAKNESS ANALYSIS（冷徹な脆弱性メーター）
+//
+// 設計方針:
+//   - 引き算の美学: 装飾を排し、データのみで語る
+//   - 1行完結型: 順位 / ラベル / バー の3カラム構成
+//   - ポイント数は常時非表示。タップ時のみツールチップで表示
+//   - 第1位のみパルスアニメーションで微かな注意喚起
 // =====================================================================
 
 interface WeaknessRankItem {
@@ -656,230 +656,234 @@ interface WeaknessRankItem {
 }
 
 interface WeaknessAnalysisBlockProps {
-  ranking:          WeaknessRankItem[];
-  totalReceivedQty: number;
+  ranking:           WeaknessRankItem[];
+  totalReceivedQty:  number;
+  activeTooltip:     number | null;
+  setActiveTooltip:  (code: number | null) => void;
 }
 
-const REASON_THEME: Record<ReceivedReason, { glow: string; bar: string; text: string }> = {
-  1: { glow: 'rgba(251,146,60,0.55)',  bar: '#fb923c', text: '#fed7aa' },
-  2: { glow: 'rgba(250,204,21,0.55)',  bar: '#facc15', text: '#fef08a' },
-  3: { glow: 'rgba(244,114,182,0.55)', bar: '#f472b6', text: '#fbcfe8' },
-  4: { glow: 'rgba(239,68,68,0.55)',   bar: '#ef4444', text: '#fecaca' },
-  5: { glow: 'rgba(180,60,255,0.65)',  bar: '#b45cff', text: '#e9d5ff' },
-};
-
-function WeaknessAnalysisBlock({ ranking, totalReceivedQty }: WeaknessAnalysisBlockProps) {
+function WeaknessAnalysisBlock({
+  ranking,
+  totalReceivedQty,
+  activeTooltip,
+  setActiveTooltip,
+}: WeaknessAnalysisBlockProps) {
   const maxCount = Math.max(...ranking.map(r => r.count), 1);
-  const top      = ranking[0];
 
   return (
     <div style={{
       marginTop:    18,
-      padding:      '12px 12px 14px',
+      padding:      '14px 14px 16px',
       borderRadius: 12,
-      background:   'linear-gradient(135deg, rgba(20,5,15,0.55), rgba(30,10,20,0.45))',
-      border:       '1px solid rgba(239,68,68,0.28)',
-      boxShadow:    '0 0 0 1px rgba(239,68,68,0.1) inset',
+      background:   'rgba(10, 5, 8, 0.6)',
+      border:       '1px solid rgba(100, 25, 20, 0.45)',
       position:     'relative',
-      overflow:     'hidden',
+      overflow:     'visible', // ツールチップがはみ出せるように
     }}>
+      {/* ヘッダー（簡素化） */}
       <div style={{
-        position:   'absolute',
-        top:        0,
-        left:       '8%',
-        right:      '8%',
-        height:     1.5,
-        background: 'linear-gradient(90deg, transparent, rgba(239,68,68,0.7), transparent)',
-        pointerEvents: 'none',
-      }} />
-
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'space-between',
+        marginBottom:   14,
+        paddingBottom:  8,
+        borderBottom:   '1px solid rgba(100, 25, 20, 0.35)',
       }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: 8,
-          background: 'rgba(127,29,29,0.45)',
-          border: '1px solid rgba(248,113,113,0.45)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14, flexShrink: 0,
-        }}>
-          🛡️
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div>
           <div style={{
-            fontSize: '0.55rem', fontWeight: 700,
-            color: '#fca5a5', letterSpacing: '0.18em',
-            textTransform: 'uppercase', lineHeight: 1.1,
+            fontSize:      '0.56rem',
+            fontWeight:    800,
+            color:         'rgba(255, 255, 255, 0.45)',
+            letterSpacing: '0.22em',
+            textTransform: 'uppercase',
           }}>
             WEAKNESS ANALYSIS
           </div>
           <div style={{
-            fontSize: '0.88rem', fontWeight: 800,
-            color: '#fff', letterSpacing: '0.02em',
-            lineHeight: 1.3, textShadow: '0 0 8px rgba(239,68,68,0.4)',
+            marginTop:     2,
+            fontSize:      '0.78rem',
+            fontWeight:    700,
+            color:         'rgba(255, 255, 255, 0.85)',
+            letterSpacing: '0.04em',
           }}>
-            被打の原因 ランキング
+            被打要因
           </div>
         </div>
         <span style={{
-          fontSize: '0.62rem', color: '#fca5a5', fontWeight: 700,
-          padding: '3px 8px', borderRadius: 999,
-          background: 'rgba(127,29,29,0.4)',
-          border: '1px solid rgba(248,113,113,0.3)',
-          flexShrink: 0,
+          fontSize:      '0.6rem',
+          color:         'rgba(255, 255, 255, 0.5)',
+          fontWeight:    600,
+          letterSpacing: '0.06em',
+          fontVariantNumeric: 'tabular-nums',
         }}>
-          総 {totalReceivedQty} 本
+          TOTAL {totalReceivedQty}
         </span>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* ランキング行 */}
+      <div>
         {ranking.map((item, idx) => {
-          const isTop = idx === 0;
-          const widthPct = Math.round((item.count / maxCount) * 100);
-          const theme = REASON_THEME[item.code];
+          const isTop      = idx === 0;
+          const widthPct   = Math.round((item.count / maxCount) * 100);
+          const isActive   = activeTooltip === item.code;
+          const rankStr    = String(idx + 1).padStart(2, '0');
 
           return (
             <div
               key={item.code}
+              onClick={() => setActiveTooltip(isActive ? null : item.code)}
+              onMouseLeave={() => setActiveTooltip(null)}
               style={{
-                position: 'relative',
-                padding: '6px 9px 7px',
-                borderRadius: 8,
-                background: isTop
-                  ? 'linear-gradient(90deg, rgba(127,29,29,0.35), rgba(60,10,20,0.2))'
-                  : 'rgba(20,10,20,0.4)',
-                border: isTop
-                  ? `1px solid ${theme.bar}aa`
-                  : '1px solid rgba(248,113,113,0.18)',
-                boxShadow: isTop ? `0 0 12px ${theme.glow}` : 'none',
+                display:    'flex',
+                alignItems: 'center',
+                gap:        10,
+                marginBottom: idx === ranking.length - 1 ? 0 : 12,
+                position:   'relative',
+                cursor:     'pointer',
+                userSelect: 'none',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4,
+              {/* ① 順位（等幅・薄色） */}
+              <span style={{
+                flexShrink: 0,
+                width:      18,
+                fontSize:   '0.62rem',
+                fontWeight: 700,
+                color:      'rgba(255, 255, 255, 0.4)',
+                fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+                letterSpacing: '0.04em',
+                textAlign:  'left',
               }}>
-                <span style={{
-                  flexShrink: 0,
-                  width: 18, height: 18, borderRadius: 4,
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '0.62rem', fontWeight: 800,
-                  color: isTop ? '#fff' : 'rgba(252,165,165,0.7)',
-                  background: isTop ? theme.bar : 'rgba(127,29,29,0.4)',
-                  border: isTop ? 'none' : '1px solid rgba(248,113,113,0.3)',
-                  letterSpacing: '0.04em',
-                  textShadow: isTop ? '0 0 4px rgba(0,0,0,0.5)' : 'none',
-                }}>
-                  {idx + 1}
-                </span>
+                {rankStr}
+              </span>
 
-                <span style={{
-                  fontSize: isTop ? '0.82rem' : '0.78rem',
-                  fontWeight: isTop ? 800 : 700,
-                  color: isTop ? '#fff' : theme.text,
-                  letterSpacing: '0.04em',
-                  textShadow: isTop ? `0 0 6px ${theme.glow}` : 'none',
-                }}>
-                  {item.label}
-                </span>
+              {/* ② ラベル（短い） */}
+              <span style={{
+                flexShrink: 0,
+                width:      64,
+                fontSize:   '0.7rem',
+                fontWeight: 700,
+                color:      isActive
+                  ? '#fff'
+                  : 'rgba(255, 255, 255, 0.88)',
+                letterSpacing: '0.04em',
+                whiteSpace: 'nowrap',
+                overflow:   'hidden',
+                textOverflow: 'ellipsis',
+                transition: 'color 0.2s ease',
+              }}>
+                {item.label}
+              </span>
 
-                {isTop && (
-                  <span style={{
-                    flexShrink: 0,
-                    fontSize: '0.55rem', fontWeight: 800,
-                    padding: '2px 7px', borderRadius: 999,
-                    background: `linear-gradient(90deg, ${theme.bar}, #b45cff)`,
-                    color: '#fff', letterSpacing: '0.08em',
-                    boxShadow: `0 0 8px ${theme.glow}`,
-                    animation: 'weakness-top-pulse 1.6s ease-in-out infinite',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    ⚠️ 最優先課題
-                  </span>
-                )}
-
-                <span style={{
-                  marginLeft: 'auto', flexShrink: 0,
-                  fontSize: '0.72rem', fontWeight: 700,
-                  color: isTop ? '#fff' : 'rgba(252,165,165,0.85)',
-                  letterSpacing: '0.04em',
-                }}>
-                  {item.count}本
-                  <span style={{
-                    fontSize: '0.6rem',
-                    color: 'rgba(252,165,165,0.55)',
-                    fontWeight: 600,
-                    marginLeft: 4,
-                  }}>
-                    {item.pct}%
-                  </span>
-                </span>
-              </div>
-
+              {/* ③ バー（Track） */}
               <div style={{
-                position: 'relative',
-                height: 6,
+                flex:         1,
+                position:     'relative',
+                height:       6,
+                background:   'rgba(255, 255, 255, 0.05)',
                 borderRadius: 999,
-                background: 'rgba(0,0,0,0.4)',
-                overflow: 'hidden',
-                border: '1px solid rgba(248,113,113,0.12)',
+                overflow:     'hidden',
               }}>
                 <div style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: `${widthPct}%`,
-                  background: `linear-gradient(90deg, ${theme.bar}, ${theme.bar}cc)`,
+                  position:     'absolute',
+                  inset:        0,
+                  width:        `${widthPct}%`,
+                  background:   '#641914',
                   borderRadius: 999,
-                  boxShadow: isTop
-                    ? `0 0 8px ${theme.glow}, inset 0 0 4px rgba(255,255,255,0.3)`
+                  transition:   'width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  boxShadow:    isTop
+                    ? '0 0 8px rgba(255, 0, 85, 0.4)'
                     : 'none',
-                  transition: 'width 0.6s cubic-bezier(0.34,1.56,0.64,1)',
+                  animation:    isTop
+                    ? 'weakness-pulse-bar 2.4s ease-in-out infinite'
+                    : 'none',
                 }} />
-                {isTop && (
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: `${widthPct}%`,
-                    background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.25) 50%, transparent 100%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'weakness-shimmer 2.4s linear infinite',
-                    borderRadius: 999,
-                  }} />
-                )}
               </div>
+
+              {/* ④ ツールチップ（タップ時のみ） */}
+              {isActive && (
+                <div style={{
+                  position:     'absolute',
+                  bottom:       'calc(100% + 6px)',
+                  right:        0,
+                  zIndex:       10,
+                  background:   'rgba(100, 25, 20, 0.95)',
+                  border:       '1px solid #ff0055',
+                  borderRadius: 4,
+                  padding:      '6px 10px',
+                  color:        '#fff',
+                  whiteSpace:   'nowrap',
+                  boxShadow:    '0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(255, 0, 85, 0.25)',
+                  backdropFilter: 'blur(6px)',
+                  WebkitBackdropFilter: 'blur(6px)',
+                  animation:    'weakness-tooltip-fade 0.18s ease-out',
+                  pointerEvents: 'none',
+                }}>
+                  <div style={{
+                    fontSize:      '0.65rem',
+                    opacity:       0.8,
+                    letterSpacing: '0.04em',
+                    fontWeight:    600,
+                  }}>
+                    {RECEIVED_REASON_FULL_LABELS[item.code]}
+                  </div>
+                  <div style={{
+                    fontSize:      '0.8rem',
+                    fontWeight:    700,
+                    marginTop:     4,
+                    letterSpacing: '0.04em',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    {item.count} pt
+                    <span style={{
+                      fontSize:   '0.6rem',
+                      fontWeight: 600,
+                      opacity:    0.7,
+                      marginLeft: 6,
+                    }}>
+                      ({item.pct}%)
+                    </span>
+                  </div>
+                  {/* ツールチップの矢印 */}
+                  <div style={{
+                    position:     'absolute',
+                    bottom:       -5,
+                    right:        14,
+                    width:        8,
+                    height:       8,
+                    background:   'rgba(100, 25, 20, 0.95)',
+                    borderRight:  '1px solid #ff0055',
+                    borderBottom: '1px solid #ff0055',
+                    transform:    'rotate(45deg)',
+                  }} />
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {top && top.code === 5 && (
-        <div style={{
-          marginTop: 10,
-          padding: '7px 10px',
-          borderRadius: 8,
-          background: 'rgba(75,30,120,0.35)',
-          border: '1px solid rgba(180,60,255,0.45)',
-          fontSize: '0.7rem',
-          color: '#e9d5ff',
-          lineHeight: 1.5,
-          letterSpacing: '0.03em',
-        }}>
-          <span style={{ fontWeight: 800, color: '#fff' }}>※ 手元上がりは最重大の悪癖</span>
-          <br />
-          剣先を下げて構え直し、手の内の握り直しを最優先に。
-        </div>
-      )}
-
       <style>{`
-        @keyframes weakness-top-pulse {
-          0%, 100% { transform: scale(1);   opacity: 1;    }
-          50%      { transform: scale(1.06); opacity: 0.85; }
+        @keyframes weakness-pulse-bar {
+          0%, 100% {
+            box-shadow: 0 0 6px rgba(255, 0, 85, 0.3);
+            opacity: 1;
+          }
+          50% {
+            box-shadow: 0 0 14px rgba(255, 0, 85, 0.6);
+            opacity: 0.92;
+          }
         }
-        @keyframes weakness-shimmer {
-          0%   { background-position:  200% 0; }
-          100% { background-position: -200% 0; }
-        }
-        @keyframes fade-up {
-          0%   { opacity: 0; transform: translateY(8px); }
-          100% { opacity: 1; transform: translateY(0); }
+        @keyframes weakness-tooltip-fade {
+          0% {
+            opacity: 0;
+            transform: translateY(2px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
       `}</style>
     </div>
