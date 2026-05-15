@@ -9,6 +9,8 @@
 // ★ Phase13.2: updateTechniqueRating を完全削除。与打は saveLog の givenTechs に統合。
 // ★ SWR:  useDashboardSWR / useTechniquesSWR / useRivalsSWR / useRivalDashboardSWR を追加。
 //         useDashboardSWR は { dashboard, techniques } を返すよう修正。
+// ★ Phase14: registerUser を追加（新規アカウント作成）。
+//         gasPost の NO_AUTH_POST_ACTIONS に 'register' を追加。
 //
 // =====================================================================
 
@@ -33,6 +35,10 @@ const PROXY = '/api/gas';
 
 // user_id が不要なアクション一覧
 const NO_USER_ID_ACTIONS = ['getEpithetMaster', 'getUsers', 'ping'] as const;
+
+// ★ Phase14: POST でも user_id が不要なアクション一覧
+// （login と register はログイン前に呼ばれるため user_id を持っていない）
+const NO_AUTH_POST_ACTIONS = ['login', 'register'] as const;
 
 // ===== レスポンスパーサー =====
 async function parseGASResponse<T>(res: Response, action: string): Promise<T> {
@@ -80,7 +86,8 @@ async function gasGet<T>(params: Record<string, string>): Promise<T> {
 async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
   const action    = (body.action as string) ?? 'unknown';
   const userId    = getCurrentUserId();
-  const needsUserId = action !== 'login';
+  // ★ Phase14: register も user_id 不要なアクションとして扱う
+  const needsUserId = !(NO_AUTH_POST_ACTIONS as readonly string[]).includes(action);
 
   if (needsUserId && !userId) {
     logger.warn('api', `AUTH_REQUIRED: gasPost blocked (action=${action})`);
@@ -109,6 +116,28 @@ export interface LoginResponse { user_id: string; name: string; role: string; }
 
 export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   return gasPost<LoginResponse>({ action: 'login', ...payload });
+}
+
+// ★ Phase14: 新規アカウント作成
+export interface RegisterPayload  { name: string; password: string; }
+export interface RegisterResponse { user_id: string; name: string; role: string; }
+
+/**
+ * 新規アカウントを作成する。
+ * GAS 側で UserMaster の名前重複チェックとID自動採番を行う。
+ * 成功時は loginUser と同形式の { user_id, name, role } を返す。
+ *
+ * エラーケース:
+ *   - 名前が空または20文字超 → 400
+ *   - パスワードが4文字未満または16文字超 → 400
+ *   - 名前が既に登録されている    → 409
+ *   - 全枠（U9999）が埋まった     → 500
+ *
+ * @param params { name, password }
+ */
+export async function registerUser(params: RegisterPayload): Promise<RegisterResponse> {
+  logger.info('api', `新規登録送信: name=${params.name}`);
+  return gasPost<RegisterResponse>({ action: 'register', ...params });
 }
 
 export async function fetchUsers(): Promise<{ user_id: string; name: string; role: string }[]> {

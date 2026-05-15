@@ -2,18 +2,30 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, LogIn, Eye, EyeOff } from 'lucide-react';
-import { loginUser, fetchUsers } from '@/lib/api';
+import { Loader2, LogIn, Eye, EyeOff, UserPlus } from 'lucide-react';
+import { loginUser, registerUser, fetchUsers } from '@/lib/api';
 import { setAuthUser, isLoggedIn } from '@/lib/auth';
 
 interface UserItem { user_id: string; name: string; role: string; }
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // ★ Phase14: モード切替
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+
+  // ── ログインモード state ──
   const [users, setUsers]         = useState<UserItem[]>([]);
   const [selectedId, setSelected] = useState('');
   const [password, setPassword]   = useState('');
   const [showPw, setShowPw]       = useState(false);
+
+  // ── 新規登録モード state ──
+  const [regName, setRegName]         = useState('');
+  const [regPw, setRegPw]             = useState('');
+  const [regPwConfirm, setRegPwConf]  = useState('');
+  const [showRegPw, setShowRegPw]     = useState(false);
+
   const [loading, setLoading]     = useState(true);
   const [submitting, setSub]      = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -30,6 +42,13 @@ export default function LoginPage() {
       .finally(() => setLoading(false));
   }, [router]);
 
+  // ── モード切替時にエラーをクリア ──
+  function handleModeSwitch(toRegister: boolean) {
+    setIsRegisterMode(toRegister);
+    setError(null);
+  }
+
+  // ── ログイン処理 ──
   async function handleLogin() {
     if (!selectedId || !password) {
       setError('ユーザーとパスコードを入力してください');
@@ -39,8 +58,6 @@ export default function LoginPage() {
     try {
       const user = await loginUser({ user_id: selectedId, password });
       setAuthUser(user);
-      // router.replace だとNext.jsのキャッシュが残りログアウト後に再ログインできないケースがあるため
-      // window.location.href でハードナビゲーションを使用する
       window.location.href = '/';
     } catch {
       setError('パスコードが正しくありません');
@@ -49,10 +66,38 @@ export default function LoginPage() {
     }
   }
 
+  // ★ Phase14: 新規登録処理
+  async function handleRegister() {
+    const trimmedName = regName.trim();
+    if (!trimmedName) { setError('名前を入力してください'); return; }
+    if (regPw.length < 4) { setError('パスコードは4桁で入力してください'); return; }
+    if (regPw !== regPwConfirm) { setError('パスコードが一致しません'); return; }
+
+    setSub(true); setError(null);
+    try {
+      const user = await registerUser({ name: trimmedName, password: regPw });
+      // 自動ログイン
+      setAuthUser(user);
+      window.location.href = '/';
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '新規登録に失敗しました';
+      setError(msg);
+    } finally {
+      setSub(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await handleLogin();
+    if (isRegisterMode) await handleRegister();
+    else                await handleLogin();
   }
+
+  // ── 新規登録ボタンの活性化条件 ──
+  const canRegister =
+    regName.trim().length > 0 &&
+    regPw.length >= 4 &&
+    regPw === regPwConfirm;
 
   return (
     <>
@@ -62,13 +107,18 @@ export default function LoginPage() {
           from { opacity: 0; }
           to   { opacity: 1; }
         }
-          @keyframes pulse-ring {
+        @keyframes pulse-ring {
           0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
           70%  { box-shadow: 0 0 0 10px rgba(99,102,241,0); }
           100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
         }
+        @keyframes mode-switch {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
         .login-card { animation: fadeUp .45s cubic-bezier(.22,1,.36,1) both; }
         .login-logo { animation: fadeUp .4s .05s cubic-bezier(.22,1,.36,1) both; }
+        .mode-form { animation: mode-switch .25s cubic-bezier(.22,1,.36,1) both; }
 
         .user-select {
           appearance: none;
@@ -99,7 +149,7 @@ export default function LoginPage() {
           color: #c7d2fe;
         }
 
-        .pw-input {
+        .pw-input, .name-input {
           width: 100%;
           padding: 0.8rem 2.8rem 0.8rem 1rem;
           border-radius: 12px;
@@ -110,12 +160,12 @@ export default function LoginPage() {
           box-sizing: border-box;
           outline: none;
           transition: border-color .15s, box-shadow .15s;
-          /* iOS PWA でキーボードを確実に起動させるために必要 */
           touch-action: manipulation;
           -webkit-user-select: text;
           user-select: text;
         }
-        .pw-input:focus {
+        .name-input { padding: 0.8rem 1rem; }
+        .pw-input:focus, .name-input:focus {
           border-color: #6366f1 !important;
           box-shadow: 0 0 0 3px rgba(99,102,241,0.25);
         }
@@ -131,13 +181,46 @@ export default function LoginPage() {
         .login-btn:not(:disabled) {
           animation: pulse-ring 2.5s ease-out infinite;
         }
+
+        /* ★ Phase14: モードタブ */
+        .mode-tab-container {
+          display: flex;
+          gap: 0;
+          margin-bottom: 1.5rem;
+          background: rgba(13,11,42,0.6);
+          padding: 4px;
+          border-radius: 12px;
+          border: 1px solid rgba(129,140,248,0.18);
+        }
+        .mode-tab {
+          flex: 1;
+          padding: 0.55rem 0;
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+          font-size: 0.7rem;
+          font-weight: 800;
+          letter-spacing: 0.16em;
+          color: rgba(165,180,252,0.45);
+          border-radius: 8px;
+          transition: all 0.2s cubic-bezier(.22,1,.36,1);
+          touch-action: manipulation;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
+        .mode-tab.active {
+          background: linear-gradient(135deg, rgba(67,56,202,0.45), rgba(99,102,241,0.35));
+          color: #fff;
+          box-shadow: 0 2px 8px rgba(99,102,241,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .mode-tab:not(.active):hover {
+          color: rgba(199,210,254,0.7);
+        }
       `}</style>
 
-      {/*
-        外側コンテナ:
-        - position: relative + overflow: hidden で内側の absolute 装飾を正しくクリップ
-        - overflowY: auto + WebkitOverflowScrolling: touch で iOS PWA のタッチ応答を確保
-      */}
       <div style={{
         position: 'relative',
         minHeight: '100dvh',
@@ -148,11 +231,7 @@ export default function LoginPage() {
         padding: '1.5rem',
       } as React.CSSProperties}>
 
-        {/*
-          グリッドオーバーレイ: fixed → absolute に変更。
-          iOS PWA では position:fixed の要素が pointer-events:none でも
-          タッチイベントに干渉するケースがあるため absolute で代替する。
-        */}
+        {/* グリッドオーバーレイ */}
         <div style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
           backgroundImage:
@@ -165,7 +244,7 @@ export default function LoginPage() {
         <div style={{ width: '100%', maxWidth: 360, position: 'relative', zIndex: 1 }}>
 
           {/* ロゴエリア */}
-          <div className="login-logo" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+          <div className="login-logo" style={{ textAlign: 'center', marginBottom: '2.2rem' }}>
             <div style={{
               width: 80, height: 80, borderRadius: '22%',
               border: '2px solid rgba(129,140,248,0.6)',
@@ -193,18 +272,12 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* ログインカード */}
-          {/*
-            backdropFilter を削除。
-            iOS では backdropFilter が compositing layer を生成し、
-            その内部の input 要素がソフトキーボードを起動できなくなる既知の問題がある。
-            代替として background の不透明度を上げて視覚的な差異を最小化する。
-          */}
+          {/* ログイン/登録カード */}
           <div className="login-card" style={{
             background: 'rgba(13,11,42,0.82)',
             border: '1px solid rgba(129,140,248,0.2)',
             borderRadius: 20,
-            padding: '2rem 1.75rem',
+            padding: '1.6rem 1.75rem 2rem',
             boxShadow: '0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
           }}>
 
@@ -213,117 +286,290 @@ export default function LoginPage() {
                 <Loader2 style={{ width: 28, height: 28, animation: 'spin .8s linear infinite', margin: '0 auto' }} />
               </div>
             ) : (
-              <form onSubmit={handleSubmit} noValidate>
-
-                {/* ユーザー選択（プルダウン） */}
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <label style={{
-                    display: 'block', marginBottom: 7,
-                    fontSize: '0.65rem', fontWeight: 800,
-                    color: 'rgba(129,140,248,0.7)',
-                    letterSpacing: '0.2em',
-                  }}>
-                    USER
-                  </label>
-                  <select
-                    className="user-select"
-                    value={selectedId}
-                    onChange={e => setSelected(e.target.value)}
+              <>
+                {/* ★ Phase14: モードタブ */}
+                <div className="mode-tab-container">
+                  <button
+                    type="button"
+                    className={`mode-tab ${!isRegisterMode ? 'active' : ''}`}
+                    onClick={() => handleModeSwitch(false)}
                   >
-                    {users.map(u => (
-                      <option key={u.user_id} value={u.user_id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </select>
+                    <LogIn style={{ width: 12, height: 12 }} />
+                    LOGIN
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-tab ${isRegisterMode ? 'active' : ''}`}
+                    onClick={() => handleModeSwitch(true)}
+                  >
+                    <UserPlus style={{ width: 12, height: 12 }} />
+                    SIGN UP
+                  </button>
                 </div>
 
-                {/* パスコード */}
-                <div style={{ marginBottom: '1.75rem' }}>
-                  <label style={{
-                    display: 'block', marginBottom: 7,
-                    fontSize: '0.65rem', fontWeight: 800,
-                    color: 'rgba(129,140,248,0.7)',
-                    letterSpacing: '0.2em',
-                  }}>
-                    PASSCODE
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      className="pw-input"
-                      type={showPw ? 'text' : 'password'}
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      maxLength={8}
-                      autoComplete="current-password"
-                      style={{
-                        border: `1.5px solid ${error ? 'rgba(248,113,113,0.6)' : 'rgba(129,140,248,0.3)'}`,
-                        letterSpacing: showPw ? '0.05em' : '0.3em',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPw(v => !v)}
-                      style={{
-                        position: 'absolute', right: 10, top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'rgba(99,102,241,0.7)', padding: 4,
-                        display: 'flex', alignItems: 'center',
-                        touchAction: 'manipulation',
-                      }}
-                    >
-                      {showPw
-                        ? <EyeOff style={{ width: 15, height: 15 }} />
-                        : <Eye    style={{ width: 15, height: 15 }} />}
-                    </button>
-                  </div>
-                </div>
+                <form onSubmit={handleSubmit} noValidate className="mode-form" key={isRegisterMode ? 'reg' : 'login'}>
 
-                {/* エラー */}
-                {error && (
-                  <div style={{
-                    marginBottom: '1.25rem', padding: '0.6rem 0.9rem',
-                    background: 'rgba(239,68,68,0.12)',
-                    border: '1px solid rgba(239,68,68,0.35)',
-                    borderRadius: 10, fontSize: '0.78rem',
-                    color: '#fca5a5', textAlign: 'center',
-                    letterSpacing: '0.02em',
-                  }}>
-                    {error}
-                  </div>
-                )}
+                  {/* ====================================================== */}
+                  {/* LOGIN モード                                           */}
+                  {/* ====================================================== */}
+                  {!isRegisterMode && (
+                    <>
+                      {/* ユーザー選択 */}
+                      <div style={{ marginBottom: '1.25rem' }}>
+                        <label style={{
+                          display: 'block', marginBottom: 7,
+                          fontSize: '0.65rem', fontWeight: 800,
+                          color: 'rgba(129,140,248,0.7)',
+                          letterSpacing: '0.2em',
+                        }}>
+                          USER
+                        </label>
+                        <select
+                          className="user-select"
+                          value={selectedId}
+                          onChange={e => setSelected(e.target.value)}
+                        >
+                          {users.map(u => (
+                            <option key={u.user_id} value={u.user_id}>
+                              {u.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                {/* ログインボタン */}
-                <button
-                  type="submit"
-                  className="login-btn"
-                  disabled={submitting || !selectedId || !password}
-                  style={{
-                    width: '100%', padding: '0.9rem',
-                    borderRadius: 12, border: 'none',
-                    background: submitting || !password
-                      ? 'rgba(99,102,241,0.25)'
-                      : 'linear-gradient(135deg,#4338ca 0%,#6366f1 100%)',
-                    color: password ? '#fff' : 'rgba(199,210,254,0.35)',
-                    fontSize: '0.8rem', fontWeight: 800,
-                    fontFamily: 'inherit',
-                    cursor: submitting || !password ? 'not-allowed' : 'pointer',
-                    display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', gap: 8,
-                    transition: 'all .2s cubic-bezier(.22,1,.36,1)',
-                    boxShadow: password ? '0 4px 20px rgba(99,102,241,0.35)' : 'none',
-                    letterSpacing: '0.18em',
-                    touchAction: 'manipulation',
-                  }}
-                >
-                  {submitting
-                    ? <><Loader2 style={{ width: 16, height: 16, animation: 'spin .8s linear infinite' }} />LOADING...</>
-                    : <><LogIn   style={{ width: 16, height: 16 }} />LOGIN</>}
-                </button>
+                      {/* パスコード */}
+                      <div style={{ marginBottom: '1.75rem' }}>
+                        <label style={{
+                          display: 'block', marginBottom: 7,
+                          fontSize: '0.65rem', fontWeight: 800,
+                          color: 'rgba(129,140,248,0.7)',
+                          letterSpacing: '0.2em',
+                        }}>
+                          PASSCODE
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            className="pw-input"
+                            type={showPw ? 'text' : 'password'}
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            placeholder="••••••••"
+                            maxLength={8}
+                            autoComplete="current-password"
+                            style={{
+                              border: `1.5px solid ${error ? 'rgba(248,113,113,0.6)' : 'rgba(129,140,248,0.3)'}`,
+                              letterSpacing: showPw ? '0.05em' : '0.3em',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPw(v => !v)}
+                            style={{
+                              position: 'absolute', right: 10, top: '50%',
+                              transform: 'translateY(-50%)',
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              color: 'rgba(99,102,241,0.7)', padding: 4,
+                              display: 'flex', alignItems: 'center',
+                              touchAction: 'manipulation',
+                            }}
+                          >
+                            {showPw
+                              ? <EyeOff style={{ width: 15, height: 15 }} />
+                              : <Eye    style={{ width: 15, height: 15 }} />}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
-              </form>
+                  {/* ====================================================== */}
+                  {/* SIGN UP モード                                         */}
+                  {/* ====================================================== */}
+                  {isRegisterMode && (
+                    <>
+                      {/* 名前 */}
+                      <div style={{ marginBottom: '1.1rem' }}>
+                        <label style={{
+                          display: 'block', marginBottom: 7,
+                          fontSize: '0.65rem', fontWeight: 800,
+                          color: 'rgba(129,140,248,0.7)',
+                          letterSpacing: '0.2em',
+                        }}>
+                          NAME（名前）
+                        </label>
+                        <input
+                          className="name-input"
+                          type="text"
+                          value={regName}
+                          onChange={e => setRegName(e.target.value)}
+                          placeholder="例: 山田 太郎"
+                          maxLength={20}
+                          autoComplete="name"
+                          style={{
+                            border: `1.5px solid ${error ? 'rgba(248,113,113,0.6)' : 'rgba(129,140,248,0.3)'}`,
+                          }}
+                        />
+                        <p style={{
+                          margin: '4px 2px 0', fontSize: '0.6rem',
+                          color: 'rgba(165,180,252,0.4)',
+                          letterSpacing: '0.04em',
+                        }}>
+                          ※ 同じ名前は登録できません（最大20文字）
+                        </p>
+                      </div>
+
+                      {/* パスコード */}
+                      <div style={{ marginBottom: '1.1rem' }}>
+                        <label style={{
+                          display: 'block', marginBottom: 7,
+                          fontSize: '0.65rem', fontWeight: 800,
+                          color: 'rgba(129,140,248,0.7)',
+                          letterSpacing: '0.2em',
+                        }}>
+                          PASSCODE（4桁）
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            className="pw-input"
+                            type={showRegPw ? 'text' : 'password'}
+                            inputMode="numeric"
+                            value={regPw}
+                            onChange={e => setRegPw(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                            placeholder="••••"
+                            maxLength={4}
+                            autoComplete="new-password"
+                            style={{
+                              border: `1.5px solid ${error ? 'rgba(248,113,113,0.6)' : 'rgba(129,140,248,0.3)'}`,
+                              letterSpacing: showRegPw ? '0.1em' : '0.4em',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowRegPw(v => !v)}
+                            style={{
+                              position: 'absolute', right: 10, top: '50%',
+                              transform: 'translateY(-50%)',
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              color: 'rgba(99,102,241,0.7)', padding: 4,
+                              display: 'flex', alignItems: 'center',
+                              touchAction: 'manipulation',
+                            }}
+                          >
+                            {showRegPw
+                              ? <EyeOff style={{ width: 15, height: 15 }} />
+                              : <Eye    style={{ width: 15, height: 15 }} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* パスコード確認 */}
+                      <div style={{ marginBottom: '1.5rem' }}>
+                        <label style={{
+                          display: 'block', marginBottom: 7,
+                          fontSize: '0.65rem', fontWeight: 800,
+                          color: 'rgba(129,140,248,0.7)',
+                          letterSpacing: '0.2em',
+                        }}>
+                          PASSCODE 確認
+                        </label>
+                        <input
+                          className="pw-input"
+                          type={showRegPw ? 'text' : 'password'}
+                          inputMode="numeric"
+                          value={regPwConfirm}
+                          onChange={e => setRegPwConf(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                          placeholder="••••"
+                          maxLength={4}
+                          autoComplete="new-password"
+                          style={{
+                            border: `1.5px solid ${
+                              regPwConfirm.length > 0 && regPw !== regPwConfirm
+                                ? 'rgba(248,113,113,0.6)'
+                                : regPwConfirm.length > 0 && regPw === regPwConfirm
+                                  ? 'rgba(34,197,94,0.5)'
+                                  : 'rgba(129,140,248,0.3)'
+                            }`,
+                            paddingRight: '1rem',
+                            letterSpacing: showRegPw ? '0.1em' : '0.4em',
+                          }}
+                        />
+                        {regPwConfirm.length > 0 && regPw !== regPwConfirm && (
+                          <p style={{
+                            margin: '4px 2px 0', fontSize: '0.62rem',
+                            color: '#fca5a5', fontWeight: 700,
+                          }}>
+                            ✕ パスコードが一致しません
+                          </p>
+                        )}
+                        {regPwConfirm.length > 0 && regPw === regPwConfirm && regPw.length === 4 && (
+                          <p style={{
+                            margin: '4px 2px 0', fontSize: '0.62rem',
+                            color: '#86efac', fontWeight: 700,
+                          }}>
+                            ✓ パスコードが一致しました
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* エラー */}
+                  {error && (
+                    <div style={{
+                      marginBottom: '1.25rem', padding: '0.6rem 0.9rem',
+                      background: 'rgba(239,68,68,0.12)',
+                      border: '1px solid rgba(239,68,68,0.35)',
+                      borderRadius: 10, fontSize: '0.78rem',
+                      color: '#fca5a5', textAlign: 'center',
+                      letterSpacing: '0.02em',
+                    }}>
+                      {error}
+                    </div>
+                  )}
+
+                  {/* 送信ボタン */}
+                  <button
+                    type="submit"
+                    className="login-btn"
+                    disabled={
+                      submitting ||
+                      (isRegisterMode ? !canRegister : (!selectedId || !password))
+                    }
+                    style={{
+                      width: '100%', padding: '0.9rem',
+                      borderRadius: 12, border: 'none',
+                      background: submitting || (isRegisterMode ? !canRegister : !password)
+                        ? 'rgba(99,102,241,0.25)'
+                        : isRegisterMode
+                          ? 'linear-gradient(135deg,#6d28d9 0%,#7c3aed 100%)'
+                          : 'linear-gradient(135deg,#4338ca 0%,#6366f1 100%)',
+                      color: (isRegisterMode ? canRegister : password) ? '#fff' : 'rgba(199,210,254,0.35)',
+                      fontSize: '0.8rem', fontWeight: 800,
+                      fontFamily: 'inherit',
+                      cursor: submitting || (isRegisterMode ? !canRegister : !password) ? 'not-allowed' : 'pointer',
+                      display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', gap: 8,
+                      transition: 'all .2s cubic-bezier(.22,1,.36,1)',
+                      boxShadow: (isRegisterMode ? canRegister : password)
+                        ? (isRegisterMode
+                            ? '0 4px 20px rgba(124,58,237,0.4)'
+                            : '0 4px 20px rgba(99,102,241,0.35)')
+                        : 'none',
+                      letterSpacing: '0.18em',
+                      touchAction: 'manipulation',
+                    }}
+                  >
+                    {submitting ? (
+                      <><Loader2 style={{ width: 16, height: 16, animation: 'spin .8s linear infinite' }} />LOADING...</>
+                    ) : isRegisterMode ? (
+                      <><UserPlus style={{ width: 16, height: 16 }} />REGISTER</>
+                    ) : (
+                      <><LogIn style={{ width: 16, height: 16 }} />LOGIN</>
+                    )}
+                  </button>
+
+                </form>
+              </>
             )}
           </div>
 

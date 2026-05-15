@@ -318,7 +318,7 @@ export default function PlaystyleCharts({
           <div style={COLUMN_PANEL_STYLE}>
             <div style={COLUMN_HEADER_STYLE}>
               <p style={COLUMN_TITLE_STYLE}>ACTION BALANCE</p>
-//              <p style={COLUMN_SUBTITLE_STYLE}>外輪＝与打 / 内輪＝被打</p>
+{/*               <p style={COLUMN_SUBTITLE_STYLE}>外輪＝与打 / 内輪＝被打</p> */}
             </div>
 
             <div style={{ width: '100%', height: 200, flex: 1 }}>
@@ -438,7 +438,7 @@ export default function PlaystyleCharts({
           <div style={COLUMN_PANEL_STYLE}>
             <div style={COLUMN_HEADER_STYLE}>
               <p style={COLUMN_TITLE_STYLE}>BODY PART SCORE</p>
-              <p style={COLUMN_SUBTITLE_STYLE}>部位ごとの与打 vs 被打</p>
+{/*               <p style={COLUMN_SUBTITLE_STYLE}>部位ごとの与打 vs 被打</p> */}
             </div>
 
             <div style={{ width: '100%', flex: 1, display: 'flex', alignItems: 'center' }}>

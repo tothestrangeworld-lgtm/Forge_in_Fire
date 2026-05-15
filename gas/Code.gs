@@ -69,6 +69,13 @@
 //   - saveLog を拡張: body.givenTechs[] を受け取り、user_techniques を UPSERT、
 //     technique_logs に追記、合算XPを user_status / xp_history へ一回だけ書き込む
 //   - 獲得XPの内訳を返却: xp_from_practice / xp_from_received / xp_from_given
+// ★ Phase14: 新規アカウント作成機能
+//   - doPost に register アクションを追加
+//   - registerUser(body) を新設:
+//     ・name 重複チェック（trim 済み完全一致）
+//     ・ID自動採番（U0001 〜 U9999）
+//     ・UserMaster 末尾に [newId, name, password, 'user'] を追加
+//     ・user_status 等の初期化は既存 getter が自動で 0XP を返すため不要
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -140,13 +147,11 @@ function writeXpHistory(ss, userId, type, amount, reason, totalXpAfter, level) {
     var sheet = ss.getSheetByName(SHEET_XP_HIST);
     if (!sheet) {
       sheet = ss.insertSheet(SHEET_XP_HIST);
-      // ★ Phase9.5: title 列を削除し 7列ヘッダーに変更
       sheet.appendRow(['user_id', 'date', 'type', 'amount', 'reason', 'total_xp_after', 'level']);
       sheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
       sheet.setFrozenRows(1);
     }
     var ts = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
-    // ★ Phase9.5: title を除いた 7要素配列
     sheet.appendRow([userId, ts, type, amount, reason, totalXpAfter, level]);
   } catch(e) { console.error('writeXpHistory failed:', e); }
 }
@@ -248,6 +253,7 @@ function doGet(e) {
 
 // =====================================================================
 // C. doPost
+// ★ Phase14: register アクションを追加
 // =====================================================================
 function doPost(e) {
   var action = 'unknown';
@@ -257,6 +263,7 @@ function doPost(e) {
     gasLog('INFO', action, 'doPost', { user_id: body.user_id || '' });
     switch (action) {
       case 'login':                  return login(body);
+      case 'register':               return registerUser(body);          // ★ Phase14
       case 'saveLog':                return saveLog(body);
       case 'updateProfile':          return updateProfile(body);
       case 'resetStatus':            return resetStatus(body);
@@ -331,6 +338,81 @@ function login(body) {
 
   gasLog('INFO', 'login', 'ログイン成功: ' + matched[0]);
   return createResponse({ user_id: String(matched[0]), name: String(matched[1]), role: String(matched[3]) });
+}
+
+// =====================================================================
+// ★ Phase14: 新規アカウント作成
+//
+// 概要:
+//   UserMaster に新規ユーザーを追加する。
+//   - 名前重複チェック（trim 後の完全一致）
+//   - ID自動採番（既存IDから最大の連番を取得して +1）
+//   - role は固定で 'user'（管理者は手動でシート編集して付与）
+//
+//   user_status / user_tasks 等の初期化は不要。
+//   既存の各 getter が自動で 0XP / 空配列を返すため、UserMaster への
+//   追加のみで完結する。初回 saveLog 時に user_status 行が自動作成される。
+//
+// body: { action: 'register', name: string, password: string }
+// 戻り値: { user_id, name, role } （loginUser と同形式）
+// =====================================================================
+function registerUser(body) {
+  var name     = body.name;
+  var password = body.password;
+
+  // ── 1. 入力検証 ──
+  if (!name) return createError('name は必須です', 400);
+  name = String(name).trim();
+  if (name.length === 0)   return createError('name は必須です', 400);
+  if (name.length > 20)    return createError('name は20文字以内で指定してください', 400);
+
+  if (!password)           return createError('password は必須です', 400);
+  password = String(password);
+  if (password.length < 4) return createError('password は4文字以上で指定してください', 400);
+  if (password.length > 16) return createError('password は16文字以内で指定してください', 400);
+
+  // ── 2. UserMaster ロード ──
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = getUserMasterSheet(ss);
+  var rows  = sheet.getDataRange().getValues();
+
+  // ── 3. 名前重複チェック ──
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][1]).trim() === name) {
+      gasLog('WARN', 'registerUser', '名前重複: ' + name);
+      return createError('この名前は既に使用されています。別の名前を指定してください。', 409);
+    }
+  }
+
+  // ── 4. ID自動採番 ──
+  // 既存IDから最大の連番を取得し +1 する。
+  // 形式: 'U0001', 'U0002', ... 'U9999'
+  var maxNum = 0;
+  for (var j = 1; j < rows.length; j++) {
+    var existingId = String(rows[j][0] || '');
+    var match      = existingId.match(/^U(\d+)$/);
+    if (match) {
+      var num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxNum) maxNum = num;
+    }
+  }
+
+  var newNum = maxNum + 1;
+  if (newNum > 9999) {
+    return createError('ユーザーIDの上限に達しました（U9999）', 500);
+  }
+  var newId = 'U' + ('000' + newNum).slice(-4);
+
+  // ── 5. 末尾に追加 ──
+  sheet.appendRow([newId, name, password, 'user']);
+  gasLog('INFO', 'registerUser', '新規アカウント作成: ' + newId + ' (' + name + ')');
+
+  // ── 6. レスポンス（loginUser と同じ形式） ──
+  return createResponse({
+    user_id: newId,
+    name:    name,
+    role:    'user',
+  });
 }
 
 // =====================================================================
@@ -916,16 +998,6 @@ function getTechniques(params) {
   return createResponse(techs);
 }
 
-/**
- * updateTechniqueRating ★ Phase8 完全刷新
- * ★ Phase9.5: title 関連を削除
- *
- * body: { user_id, id (technique_id), quantity (1-5), quality (1-5) }
- *
- * user_status 新列構成（Phase9.5）:
- *   [0]=user_id, [1]=total_xp, [2]=level, [3]=last_practice_date,
- *   [4]=last_decay_date, [5]=real_rank, [6]=motto, [7]=favorite_technique
- */
 // =====================================================================
 // ★ Phase13.2: updateTechniqueRating 関数は完全削除。
 // 与打の記録は saveLog の givenTechs[] に統合された。
