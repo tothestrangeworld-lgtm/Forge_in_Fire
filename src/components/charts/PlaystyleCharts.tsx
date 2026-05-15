@@ -159,33 +159,15 @@ export default function PlaystyleCharts({
     ].filter(d => d.value > 0);
 
     // ─────────────────────────────
-    // ★ Phase13.3: 部位別 与打/被打 比較データ
+    // ★ Phase13.3.2: 部位別 与打/被打 デュアルレーダーデータ
+    // 4軸（面・小手・胴・突き）で必ず固定。データ無し部位は 0 で埋める。
+    // レーダーチャートは「カタチ」が重要なため、データ0でも軸を描画する。
     // ─────────────────────────────
-    const allBodyParts = Array.from(new Set<string>([
-      ...BODY_PART_AXIS,
-      ...Object.keys(givenByBodyPart),
-      ...Object.keys(receivedByBodyPart),
-    ]));
-
-    const orderedBodyParts = [
-      ...BODY_PART_AXIS.filter(bp => allBodyParts.includes(bp)),
-      ...allBodyParts.filter(bp => !BODY_PART_AXIS.includes(bp)),
-    ];
-
-    const maxRadarVal = Math.max(
-      1,
-      ...orderedBodyParts.map(bp => givenByBodyPart[bp] ?? 0),
-      ...orderedBodyParts.map(bp => receivedByBodyPart[bp] ?? 0),
-    );
-
-    const radarData = orderedBodyParts
-      .filter(bp => (givenByBodyPart[bp] ?? 0) > 0 || (receivedByBodyPart[bp] ?? 0) > 0)
-      .map(bp => ({
-        subject:  bp,
-        given:    Math.round((givenByBodyPart[bp]    ?? 0) * 10) / 10,
-        received: Math.round((receivedByBodyPart[bp] ?? 0) * 10) / 10,
-        fullMark: maxRadarVal,
-      }));
+    const radarData = BODY_PART_AXIS.map(bp => ({
+      subject:  bp,
+      given:    Math.round((givenByBodyPart[bp]    ?? 0) * 10) / 10,
+      received: Math.round((receivedByBodyPart[bp] ?? 0) * 10) / 10,
+    }));
 
     // ─────────────────────────────
     // BaseStyle（剣風相性のキー）

@@ -1,26 +1,42 @@
 'use client';
 
 // =====================================================================
-// RadarChart.tsx（Phase13.3: 攻防比較型プログレスバー）
+// RadarChart.tsx（Phase13.3.2: デュアル・レーダーチャート）
 //
 // 【設計方針】
-//   1項目（部位）に対して「与打（Blue）」と「被打（Red）」の
-//   2本のバーを並列表示する。
+//   面・小手・胴・突き の4軸に対して、
+//   「与打（GIVEN）」と「被打（RECEIVED）」の形状を重ね合わせて
+//   プレイヤーの「攻防のカタチ」を可視化する。
 //
-//   - 与打：シアン～インディゴ系のグラデーション
-//   - 被打：クリムゾン～オレンジ系のグラデーション
-//   - スケールは「両方の最大値」で正規化（同一スケール比較を保証）
-//   - 被打データが無い場合は与打のみの片面表示にフォールバック
+//   - 与打：深い藍色 #1875BF（自分の攻めの広がり）
+//   - 被打：暗紅色   #641914（打たれた隙の広がり）
+//   - 両者を半透明で重ねることで、攻防の「形状差」が直感的に見える
 // =====================================================================
 
-interface RadarDataPoint {
-  subject:  string;
-  /** 与打スコア（既存互換のため score も受け取る） */
-  given?:   number;
-  score?:   number;
-  /** ★ Phase13.3: 被打スコア */
-  received?: number;
-  fullMark: number;
+import {
+  RadarChart as RechartsRadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+
+// =====================================================================
+// カラー定数（渋めのサイバー和風）
+// =====================================================================
+const COLOR_GIVEN    = '#1875BF';   // 深い藍色:  自分の攻め
+const COLOR_RECEIVED = '#641914';   // 暗紅色:   打たれた隙
+
+// =====================================================================
+// 型定義
+// =====================================================================
+export interface RadarDataPoint {
+  subject:  string;   // 軸ラベル: '面' | '小手' | '胴' | '突き'
+  given:    number;   // 与打スコア
+  received: number;   // 被打スコア
 }
 
 interface Props {
@@ -28,350 +44,250 @@ interface Props {
 }
 
 // =====================================================================
-// カラーテーマ
+// カスタム Tooltip
 // =====================================================================
-
-/** 与打（Blue系）のカラー */
-function givenColor(ratio: number): { from: string; to: string; glow: string } {
-  if (ratio >= 0.85) return { from: '#0891b2', to: '#22d3ee', glow: 'rgba(34,211,238,0.5)' };
-  if (ratio >= 0.65) return { from: '#4f46e5', to: '#818cf8', glow: 'rgba(129,140,248,0.45)' };
-  if (ratio >= 0.4)  return { from: '#1e40af', to: '#60a5fa', glow: 'rgba(96,165,250,0.35)' };
-  return              { from: '#1e1b4b', to: '#4338ca', glow: 'rgba(67,56,202,0.25)' };
+interface TooltipPayloadItem {
+  name:   string;
+  value:  number;
+  color:  string;
+  dataKey: string;
 }
 
-/** 被打（Red系）のカラー */
-function receivedColor(ratio: number): { from: string; to: string; glow: string } {
-  if (ratio >= 0.85) return { from: '#9f1239', to: '#fb7185', glow: 'rgba(251,113,133,0.55)' };
-  if (ratio >= 0.65) return { from: '#b91c1c', to: '#f87171', glow: 'rgba(248,113,113,0.5)' };
-  if (ratio >= 0.4)  return { from: '#7f1d1d', to: '#ef4444', glow: 'rgba(239,68,68,0.4)' };
-  return              { from: '#450a0a', to: '#991b1b', glow: 'rgba(153,27,27,0.3)' };
+interface CustomTooltipProps {
+  active?:  boolean;
+  payload?: TooltipPayloadItem[];
+  label?:   string;
 }
 
-// =====================================================================
-// 1本のバー
-// =====================================================================
-
-interface SingleBarProps {
-  label:    string;        // 'GIVEN' | 'RECEIVED'
-  labelJa:  string;        // '与打' | '被打'
-  score:    number;
-  fullMark: number;        // 表示用の絶対上限（pt表示用）
-  scaleMax: number;        // バー幅正規化用の最大値（与打/被打の最大）
-  variant:  'given' | 'received';
-}
-
-function SingleBar({ label, labelJa, score, fullMark, scaleMax, variant }: SingleBarProps) {
-  const ratio  = scaleMax > 0 ? score / scaleMax : 0;
-  const pctOfFullmark = fullMark > 0 ? Math.round((score / fullMark) * 100) : 0;
-  const colors = variant === 'given' ? givenColor(ratio) : receivedColor(ratio);
-  const barPct = Math.min(100, Math.max(0, Math.round(ratio * 100)));
-
-  const isEmpty = score <= 0;
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null;
 
   return (
     <div style={{
-      display:        'flex',
-      alignItems:     'center',
-      gap:            6,
-      opacity:        isEmpty ? 0.45 : 1,
+      background:    'rgba(5, 4, 18, 0.95)',
+      border:        '1px solid rgba(24, 117, 191, 0.45)',
+      borderRadius:  10,
+      padding:       '8px 12px',
+      boxShadow:     '0 0 14px rgba(24, 117, 191, 0.25)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
+      minWidth:      120,
     }}>
-      {/* 左ラベル: 与打/被打 */}
-      <span style={{
-        flexShrink:    0,
-        width:         34,
-        fontSize:      '0.55rem',
+      <div style={{
+        fontSize:      '0.78rem',
         fontWeight:    800,
-        color:         variant === 'given' ? '#a5b4fc' : '#fca5a5',
-        letterSpacing: '0.1em',
-        textAlign:     'left',
-        textTransform: 'uppercase',
+        color:         '#fff',
+        marginBottom:  6,
+        letterSpacing: '0.06em',
+        borderBottom:  '1px solid rgba(255,255,255,0.1)',
+        paddingBottom: 4,
       }}>
         {label}
-      </span>
-
-      {/* バートラック */}
-      <div style={{
-        flex:         1,
-        minWidth:     0,
-        height:       7,
-        background:   'rgba(99,102,241,0.08)',
-        borderRadius: 999,
-        overflow:     'hidden',
-        position:     'relative',
-        border:       '1px solid rgba(255,255,255,0.04)',
-      }}>
-        {!isEmpty && (
-          <div style={{
-            width:        `${barPct}%`,
-            height:       '100%',
-            background:   `linear-gradient(90deg, ${colors.from}, ${colors.to})`,
-            borderRadius: 999,
-            boxShadow:    `0 0 6px ${colors.glow}`,
-            transition:   'width .6s cubic-bezier(.4,0,.2,1)',
-            position:     'relative',
-          }}>
-            {/* バー先端のグロー点 */}
-            {barPct > 6 && (
-              <div style={{
-                position:    'absolute',
-                right:        0,
-                top:          '50%',
-                transform:    'translateY(-50%)',
-                width:        5,
-                height:       5,
-                borderRadius: '50%',
-                background:   colors.to,
-                boxShadow:    `0 0 6px ${colors.glow}, 0 0 10px ${colors.glow}`,
-              }} />
-            )}
-          </div>
-        )}
       </div>
-
-      {/* 右側スコア */}
-      <span style={{
-        flexShrink: 0,
-        minWidth:   42,
-        textAlign:  'right',
-        fontSize:   '0.68rem',
-        fontWeight: 800,
-        color:      isEmpty
-          ? 'rgba(165,180,252,0.35)'
-          : (variant === 'given' ? colors.to : colors.to),
-        letterSpacing: '0.02em',
-      }}>
-        {Math.round(score)}
-        <span style={{
-          fontSize: '0.55rem',
-          fontWeight: 600,
-          color: 'rgba(165,180,252,0.45)',
-          marginLeft: 2,
+      {payload.map((item, i) => (
+        <div key={i} style={{
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'space-between',
+          gap:            10,
+          fontSize:       '0.7rem',
+          padding:        '2px 0',
         }}>
-          pt
-        </span>
-      </span>
-
-      {/* 視覚的な日本語ラベル（補足） */}
-      <span style={{
-        flexShrink: 0,
-        width: 22,
-        fontSize: '0.55rem',
-        color: 'rgba(165,180,252,0.35)',
-        fontWeight: 600,
-        textAlign: 'right',
-      }}>
-        {labelJa}
-      </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              display:      'inline-block',
+              width:        8,
+              height:       8,
+              borderRadius: '50%',
+              background:   item.color,
+              boxShadow:    `0 0 4px ${item.color}`,
+            }} />
+            <span style={{
+              color:      'rgba(199,210,254,0.85)',
+              fontWeight: 700,
+            }}>
+              {item.name}
+            </span>
+          </div>
+          <span style={{
+            color:      '#fff',
+            fontWeight: 800,
+            textShadow: `0 0 4px ${item.color}`,
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            {Math.round(item.value)}
+            <span style={{
+              fontSize:   '0.6rem',
+              fontWeight: 600,
+              color:      'rgba(165,180,252,0.6)',
+              marginLeft: 2,
+              textShadow: 'none',
+            }}>
+              pt
+            </span>
+          </span>
+        </div>
+      ))}
     </div>
+  );
+}
+
+// =====================================================================
+// カスタム軸ラベル（部位名を強調表示）
+// =====================================================================
+type SvgTextAnchor = 'inherit' | 'end' | 'start' | 'middle';
+
+interface CustomAxisTickProps {
+  payload?:    { value: string };
+  x?:          number;
+  y?:          number;
+  textAnchor?: string;
+}
+
+function CustomAxisTick({ payload, x, y, textAnchor }: CustomAxisTickProps) {
+  if (!payload || x === undefined || y === undefined) return null;
+
+  // recharts から渡される textAnchor を SVG の正規型に narrowing
+  const anchor: SvgTextAnchor =
+    textAnchor === 'start' || textAnchor === 'end' || textAnchor === 'middle' || textAnchor === 'inherit'
+      ? textAnchor
+      : 'middle';
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        textAnchor={anchor}
+        fill="#a5b4fc"
+        fontSize={13}
+        fontWeight={800}
+        letterSpacing="0.06em"
+        style={{
+          fontFamily: 'M PLUS Rounded 1c, sans-serif',
+          filter:     'drop-shadow(0 0 4px rgba(165, 180, 252, 0.4))',
+        }}
+      >
+        {payload.value}
+      </text>
+    </g>
   );
 }
 
 // =====================================================================
 // メインコンポーネント
 // =====================================================================
-
 export default function RadarChart({ data }: Props) {
   if (!data?.length) return null;
 
-  // 既存呼び出し側で score プロパティを使っている場合の互換: given にフォールバック
-  const normalized = data.map(d => ({
-    subject:  d.subject,
-    given:    d.given    ?? d.score ?? 0,
-    received: d.received ?? 0,
-    fullMark: d.fullMark,
-  }));
+  // データの有無チェック
+  const hasGiven    = data.some(d => d.given    > 0);
+  const hasReceived = data.some(d => d.received > 0);
 
-  // 与打/被打すべての値の中で最大値（バー幅正規化に使用）
-  const scaleMax = Math.max(
-    1,
-    ...normalized.map(d => d.given),
-    ...normalized.map(d => d.received),
-  );
+  // 全軸が空ならフォールバック
+  if (!hasGiven && !hasReceived) {
+    return (
+      <p style={{
+        textAlign: 'center',
+        fontSize:  '0.78rem',
+        color:     'rgba(165,180,252,0.4)',
+        padding:   '1rem 0',
+        margin:    0,
+      }}>
+        部位別の集計データがありません
+      </p>
+    );
+  }
 
-  // 被打データの有無
-  const hasReceived = normalized.some(d => d.received > 0);
+  // 全データ最大値（スケール統一用）
+  const allValues = data.flatMap(d => [d.given, d.received]);
+  const maxValue  = Math.max(1, ...allValues);
+  // 軸の上限は最大値の少し上に余裕を持たせる
+  const axisMax   = Math.ceil(maxValue * 1.1);
 
   return (
-    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {normalized.map((item, i) => {
-        const totalRatio = item.fullMark > 0
-          ? (item.given + item.received) / item.fullMark
-          : 0;
-        const isMostStruck =
-          hasReceived &&
-          item.received > 0 &&
-          item.received === Math.max(...normalized.map(d => d.received));
-
-        return (
-          <div
-            key={item.subject}
-            style={{
-              padding:      '8px 10px 9px',
-              borderRadius: 10,
-              background:   isMostStruck
-                ? 'linear-gradient(135deg, rgba(127,29,29,0.18), rgba(20,10,20,0.3))'
-                : 'rgba(99,102,241,0.04)',
-              border:       isMostStruck
-                ? '1px solid rgba(248,113,113,0.4)'
-                : '1px solid rgba(99,102,241,0.12)',
-              boxShadow:    isMostStruck ? '0 0 10px rgba(239,68,68,0.18)' : 'none',
-              animation:    `fade-up .35s cubic-bezier(.4,0,.2,1) ${i * 60}ms both`,
-            }}
+    <div style={{ width: '100%', position: 'relative' }}>
+      {/* レーダーチャート本体 */}
+      <div style={{ width: '100%', height: 280 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RechartsRadarChart
+            data={data}
+            margin={{ top: 18, right: 28, bottom: 12, left: 28 }}
           >
-            {/* 部位ヘッダー行 */}
-            <div style={{
-              display:        'flex',
-              alignItems:     'baseline',
-              justifyContent: 'space-between',
-              marginBottom:   6,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{
-                  fontSize:      '0.86rem',
-                  fontWeight:    800,
-                  color:         isMostStruck ? '#fff' : '#c7d2fe',
-                  letterSpacing: '0.04em',
-                  fontFamily:    'M PLUS Rounded 1c, sans-serif',
-                  textShadow:    isMostStruck ? '0 0 6px rgba(239,68,68,0.5)' : 'none',
-                }}>
-                  {item.subject}
-                </span>
-                {isMostStruck && (
-                  <span style={{
-                    fontSize:      '0.5rem',
-                    fontWeight:    800,
-                    color:         '#fff',
-                    background:    'linear-gradient(90deg, #ef4444, #b45cff)',
-                    padding:       '2px 6px',
-                    borderRadius:  999,
-                    letterSpacing: '0.08em',
-                    boxShadow:     '0 0 6px rgba(239,68,68,0.5)',
-                  }}>
-                    要警戒
-                  </span>
-                )}
-              </div>
+            {/* グリッド：薄い蜘蛛の巣 */}
+            <PolarGrid
+              stroke="rgba(255,255,255,0.1)"
+              strokeWidth={1}
+              gridType="polygon"
+            />
 
-              {/* 攻防バランス比率 */}
-              {hasReceived && item.given + item.received > 0 && (() => {
-                const givenRatio = item.given / (item.given + item.received);
-                const recvRatio  = item.received / (item.given + item.received);
-                return (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    fontSize: '0.55rem', fontWeight: 700,
-                    letterSpacing: '0.04em',
-                  }}>
-                    <span style={{ color: '#7dd3fc' }}>{Math.round(givenRatio * 100)}</span>
-                    <span style={{ color: 'rgba(165,180,252,0.4)' }}>:</span>
-                    <span style={{ color: '#fb7185' }}>{Math.round(recvRatio * 100)}</span>
-                  </div>
-                );
-              })()}
-            </div>
+            {/* 軸ラベル：部位名 */}
+            <PolarAngleAxis
+              dataKey="subject"
+              tick={<CustomAxisTick />}
+            />
 
-            {/* 与打バー */}
-            <div style={{ marginBottom: hasReceived ? 4 : 0 }}>
-              <SingleBar
-                label="GIVEN"
-                labelJa="与"
-                score={item.given}
-                fullMark={item.fullMark}
-                scaleMax={scaleMax}
-                variant="given"
+            {/* 半径軸（数値ラベルは非表示にして洗練感を出す） */}
+            <PolarRadiusAxis
+              angle={90}
+              domain={[0, axisMax]}
+              tick={false}
+              axisLine={false}
+            />
+
+            {/* 与打レイヤー */}
+            {hasGiven && (
+              <Radar
+                name="与打"
+                dataKey="given"
+                stroke={COLOR_GIVEN}
+                fill={COLOR_GIVEN}
+                fillOpacity={0.35}
+                strokeWidth={2}
+                isAnimationActive={false}
               />
-            </div>
+            )}
 
-            {/* 被打バー（被打データがどこかにある場合のみ表示） */}
+            {/* 被打レイヤー */}
             {hasReceived && (
-              <SingleBar
-                label="RECVD"
-                labelJa="被"
-                score={item.received}
-                fullMark={item.fullMark}
-                scaleMax={scaleMax}
-                variant="received"
+              <Radar
+                name="被打"
+                dataKey="received"
+                stroke={COLOR_RECEIVED}
+                fill={COLOR_RECEIVED}
+                fillOpacity={0.35}
+                strokeWidth={2}
+                isAnimationActive={false}
               />
             )}
-          </div>
-        );
-      })}
 
-      {/* 合計サマリー */}
-      {normalized.length > 1 && (() => {
-        const totalGiven    = normalized.reduce((s, d) => s + d.given, 0);
-        const totalReceived = normalized.reduce((s, d) => s + d.received, 0);
-        const totalSum      = totalGiven + totalReceived;
-        const givenPct = totalSum > 0 ? (totalGiven / totalSum) * 100 : 100;
-        const recvPct  = totalSum > 0 ? (totalReceived / totalSum) * 100 : 0;
+            <Tooltip content={<CustomTooltip />} />
 
-        return (
-          <div style={{
-            marginTop:    4,
-            padding:      '10px 12px',
-            background:   'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(127,29,29,0.10))',
-            borderRadius: 10,
-            border:       '1px solid rgba(99,102,241,0.18)',
-          }}>
-            <div style={{
-              display:        'flex',
-              justifyContent: 'space-between',
-              alignItems:     'center',
-              marginBottom:   hasReceived ? 6 : 0,
-            }}>
-              <span style={{
-                fontSize:      '0.6rem',
-                fontWeight:    800,
-                color:         'rgba(199,210,254,0.7)',
-                letterSpacing: '0.14em',
-              }}>
-                ATTACK / DEFENSE BALANCE
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#7dd3fc' }}>
-                  {totalGiven}
-                </span>
-                {hasReceived && (
-                  <>
-                    <span style={{ color: 'rgba(165,180,252,0.4)' }}>:</span>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#fb7185' }}>
-                      {Math.round(totalReceived)}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* スタックバー（与打:被打の比率） */}
-            {hasReceived && totalSum > 0 && (
-              <div style={{
-                position:     'relative',
-                height:       8,
-                borderRadius: 999,
-                overflow:     'hidden',
-                background:   'rgba(0,0,0,0.4)',
-                border:       '1px solid rgba(255,255,255,0.05)',
-                display:      'flex',
-              }}>
-                <div style={{
-                  width:      `${givenPct}%`,
-                  height:     '100%',
-                  background: 'linear-gradient(90deg, #4f46e5, #22d3ee)',
-                  boxShadow:  '0 0 6px rgba(34,211,238,0.4)',
-                  transition: 'width .6s cubic-bezier(.4,0,.2,1)',
-                }} />
-                <div style={{
-                  width:      `${recvPct}%`,
-                  height:     '100%',
-                  background: 'linear-gradient(90deg, #b91c1c, #ef4444)',
-                  boxShadow:  '0 0 6px rgba(239,68,68,0.4)',
-                  transition: 'width .6s cubic-bezier(.4,0,.2,1)',
-                }} />
-              </div>
-            )}
-          </div>
-        );
-      })()}
+            <Legend
+              iconType="circle"
+              iconSize={9}
+              wrapperStyle={{
+                fontSize:      11,
+                paddingTop:    8,
+                letterSpacing: '0.06em',
+              }}
+              formatter={(value) => {
+                const isGiven = value === '与打';
+                const color   = isGiven ? COLOR_GIVEN : COLOR_RECEIVED;
+                return (
+                  <span style={{
+                    color:      color,
+                    fontWeight: 800,
+                    textShadow: `0 0 6px ${color}88`,
+                    letterSpacing: '0.04em',
+                    marginRight: 4,
+                  }}>
+                    {value}
+                  </span>
+                );
+              }}
+            />
+          </RechartsRadarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
