@@ -85,6 +85,32 @@ export interface EpithetResult {
   favoritePartTitle: string;
   /** レベル称号（title_master から取得。例: "初段"）*/
   levelTitle:        string;
+
+    // ★ DEBUG: 一時的な可視化用フィールド（リリース前に削除予定）
+    _debug?: EpithetDebugInfo;
+}
+
+/**
+ * ★ DEBUG: 二つ名判定プロセスの可視化情報
+ * 開発環境でのデバッグ確認用。本番ビルド時は UI 側の表示制御で非表示化。
+ */
+export interface EpithetDebugInfo {
+  /** subCategory 別の累計ポイント（全件）。降順ソート済み */
+  subTotalsSorted:   Array<{ name: string; pts: number }>;
+  /** 上位3件（ポイント降順抽出後・SUBCATEGORY_ORDER 適用前） */
+  top3Raw:           string[];
+  /** 上位3件を SUBCATEGORY_ORDER でソートしたもの */
+  top3Sorted:        string[];
+  /** 最終的に EpithetMaster と照合した triggerKey */
+  triggerKey:        string;
+  /** マスタヒットの可否 */
+  matched:           boolean;
+  /** マスタの styleCombo エントリ件数（参照可能件数） */
+  masterStyleCount:  number;
+  /** マスタにある triggerValue の例（最大5件、検索ヒントになる） */
+  masterTriggerSamples: string[];
+  /** SubCategory のうち SUBCATEGORY_ORDER に未登録のもの（タイポチェック用） */
+  unknownSubcategories: string[];
 }
 
 // =====================================================================
@@ -193,27 +219,26 @@ export function calcEpithet(
     subTotals[t.subCategory] = (subTotals[t.subCategory] ?? 0) + t.points;
   });
 
-  // 上位3つを抽出
-  // 主キー: ポイント降順
-  // 副キー（同点時）: SUBCATEGORY_ORDER における indexOf 昇順（未登録は末尾）
-  const top3: string[] = Object.entries(subTotals)
-    .sort(([nameA, ptsA], [nameB, ptsB]) => {
-      if (ptsB !== ptsA) return ptsB - ptsA;
-      // 同点時: SUBCATEGORY_ORDER の順で先のものを優先
-      const ia = SUBCATEGORY_ORDER.indexOf(nameA);
-      const ib = SUBCATEGORY_ORDER.indexOf(nameB);
-      if (ia === -1 && ib === -1) return nameA < nameB ? -1 : nameA > nameB ? 1 : 0;
+  // ★ DEBUG: subTotals を [{name, pts}] に整形して降順ソート
+  const subTotalsSorted = Object.entries(subTotals)
+    .map(([name, pts]) => ({ name, pts }))
+    .sort((a, b) => {
+      if (b.pts !== a.pts) return b.pts - a.pts;
+      const ia = SUBCATEGORY_ORDER.indexOf(a.name);
+      const ib = SUBCATEGORY_ORDER.indexOf(b.name);
+      if (ia === -1 && ib === -1) return a.name < b.name ? -1 : 1;
       if (ia === -1) return 1;
       if (ib === -1) return -1;
       return ia - ib;
-    })
-    .slice(0, 3)
-    .map(([name]) => name);
+    });
+
+  // 上位3つを抽出
+  const top3: string[] = subTotalsSorted.slice(0, 3).map(e => e.name);
 
   // ★ Phase9.1 bugfix:
   // 検索キー = 上位3つを SUBCATEGORY_ORDER 順でソートしてカンマ結合
-  // （Python の sorted() と完全一致させるため localeCompare を廃止）
-  const triggerKey: string = sortBySubcategoryOrder(top3).join(',');
+  const top3Sorted: string[] = sortBySubcategoryOrder(top3);
+  const triggerKey: string   = top3Sorted.join(',');
 
   // EpithetMaster から検索（category は case-insensitive）
   const entry = epithetMaster.find(
@@ -234,11 +259,59 @@ export function calcEpithet(
     rawRarity === 'R'  ? 'R'  :
     'N';
 
+  // =====================================================================
+  // ★ DEBUG: 判定プロセスの構造化ログ出力
+  // =====================================================================
+  const masterStyleCombo = epithetMaster.filter(
+    e => e.category.toLowerCase() === 'stylecombo'
+  );
+  const unknownSubcategories = Object.keys(subTotals)
+    .filter(name => SUBCATEGORY_ORDER.indexOf(name) === -1);
+
+  const debugInfo: EpithetDebugInfo = {
+    subTotalsSorted,
+    top3Raw:                top3,
+    top3Sorted,
+    triggerKey,
+    matched:                !!entry,
+    masterStyleCount:       masterStyleCombo.length,
+    masterTriggerSamples:   masterStyleCombo.slice(0, 5).map(e => e.triggerValue),
+    unknownSubcategories,
+  };
+
+  // ブラウザコンソールにグループ表示
+  if (typeof window !== 'undefined' && console.groupCollapsed) {
+    console.groupCollapsed(
+      `%c[Epithet Debug] ${entry ? '✅ MATCHED' : '❌ UNMATCHED'} → "${epithetName}" (${epithetRarity})`,
+      `color: ${entry ? '#22c55e' : '#ef4444'}; font-weight: bold; font-size: 12px;`
+    );
+    console.log('📊 SubCategory 累計ポイント（降順）:');
+    console.table(subTotalsSorted);
+    console.log('🥉 上位3件（抽出順）:', top3);
+    console.log('🔀 上位3件（SUBCATEGORY_ORDER 適用後）:', top3Sorted);
+    console.log('🔑 生成された triggerKey:', `"${triggerKey}"`);
+    console.log('🎯 マスタヒット:', entry ? entry : '(未マッチ)');
+    if (!entry && masterStyleCombo.length > 0) {
+      console.warn(
+        '⚠️ マスタの triggerValue サンプル（最大5件）:',
+        masterStyleCombo.slice(0, 5).map(e => `"${e.triggerValue}"`)
+      );
+    }
+    if (unknownSubcategories.length > 0) {
+      console.warn(
+        '⚠️ SUBCATEGORY_ORDER に未登録のカテゴリ（タイポの可能性）:',
+        unknownSubcategories
+      );
+    }
+    console.groupEnd();
+  }
+
   return {
     epithetName,
     epithetRarity,
     epithetDescription,
     favoritePartTitle,
     levelTitle,
+    _debug: debugInfo,   // ★ DEBUG: 一時的に返却値に含める
   };
 }
