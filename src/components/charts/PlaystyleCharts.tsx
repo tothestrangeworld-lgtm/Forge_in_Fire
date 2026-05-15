@@ -28,7 +28,7 @@ interface Props {
 // 外側=与打（青系）、内側=被打（赤系）の二重ドーナツ
 // =====================================================================
 // 与打（外側ドーナツ・蒼系）
-const COLOR_GIVEN_OFFENSE  = '#1875BF';   // 明るいao攻めの光）
+const COLOR_GIVEN_OFFENSE  = '#1875BF';   // 明るいao（攻めの光）
 const COLOR_GIVEN_DEFENSE  = '#0D3F66';   // 深いao（守りの静寂）
 
 // 被打（内側ドーナツ・紅系）
@@ -42,6 +42,43 @@ const TOOLTIP_STYLE = {
   background: '#1e1b4b', border: 'none',
   borderRadius: 10, color: '#fff',
   fontSize: 12, padding: '8px 12px',
+};
+
+// =====================================================================
+// ★ Phase13.3 final: 2カラム共通レイアウト用スタイル
+// =====================================================================
+const COLUMN_PANEL_STYLE: React.CSSProperties = {
+  background:   'rgba(255,255,255,0.04)',
+  borderRadius: 14,
+  padding:      '0.85rem 0.6rem 0.7rem',
+  border:       '1px solid rgba(129,140,248,0.15)',
+  display:      'flex',
+  flexDirection: 'column',
+  // 横並び時: 各カラムが画面の半分弱を占める
+  // 縦並び時(wrap): 100%幅まで広がる
+  flex:         '1 1 280px',
+  minWidth:     0,
+};
+
+const COLUMN_HEADER_STYLE: React.CSSProperties = {
+  textAlign:     'center',
+  marginBottom:  6,
+};
+
+const COLUMN_TITLE_STYLE: React.CSSProperties = {
+  margin:        0,
+  fontSize:      '0.6rem',
+  fontWeight:    800,
+  color:         'rgba(165,180,252,0.7)',
+  letterSpacing: '0.18em',
+};
+
+const COLUMN_SUBTITLE_STYLE: React.CSSProperties = {
+  margin:        '2px 0 0',
+  fontSize:      '0.55rem',
+  fontWeight:    600,
+  color:         'rgba(199,210,254,0.5)',
+  letterSpacing: '0.05em',
 };
 
 // =====================================================================
@@ -116,12 +153,11 @@ export default function PlaystyleCharts({
     // 被打: 部位別 + ★ Phase13.3: ActionType別の集計
     // ─────────────────────────────
     const receivedByBodyPart:   Record<string, number> = {};
-    let receivedOffenseTotal = 0;   // 被打のうち、相手の仕掛け技で打たれた合計
-    let receivedDefenseTotal = 0;   // 被打のうち、相手の応じ技で打たれた合計
+    let receivedOffenseTotal = 0;
+    let receivedDefenseTotal = 0;
     let totalReceivedPts     = 0;
 
     if (receivedStats?.byTechnique) {
-      // technique_id → { actionType, bodyPart } の引きマップ
       const techMap: Record<string, { actionType?: string; bodyPart?: string }> = {};
       techniqueMaster.forEach(m => {
         techMap[m.id] = { actionType: m.actionType, bodyPart: m.bodyPart };
@@ -135,21 +171,17 @@ export default function PlaystyleCharts({
         if (pts <= 0) return;
         totalReceivedPts += pts;
 
-        // 部位別集計
         const bp = entry.bodyPart || techMap[entry.techniqueId]?.bodyPart || '未分類';
         receivedByBodyPart[bp] = (receivedByBodyPart[bp] ?? 0) + pts;
 
-        // ★ Phase13.3: ActionType別集計（被打側）
         const at = techMap[entry.techniqueId]?.actionType;
         if (at === '応じ技')      receivedDefenseTotal += pts;
-        else                      receivedOffenseTotal += pts; // 仕掛け技 or 不明 は仕掛け扱い
+        else                      receivedOffenseTotal += pts;
       });
     }
 
     // ─────────────────────────────
     // ★ Phase13.3: ACTION BALANCE 二重ドーナツデータ
-    //   - 外側（与打）: 仕掛け / 応じ
-    //   - 内側（被打）: 仕掛け / 応じ
     // ─────────────────────────────
     const givenDonutData = [
       { name: '与打・仕掛け', value: offenseTotal, color: COLOR_GIVEN_OFFENSE, layer: 'given' as const },
@@ -163,7 +195,6 @@ export default function PlaystyleCharts({
 
     // ─────────────────────────────
     // ★ Phase13.3.2: 部位別 与打/被打 デュアルレーダーデータ
-    // 4軸（面・小手・胴・突き）で必ず固定。データ無し部位は 0 で埋める。
     // ─────────────────────────────
     const radarData = BODY_PART_AXIS.map(bp => ({
       subject:  bp,
@@ -181,7 +212,7 @@ export default function PlaystyleCharts({
       .map(([key]) => key);
 
     // ─────────────────────────────
-    // 弱点ランキング（count 降順ソート済み）
+    // 弱点ランキング
     // ─────────────────────────────
     const reasonRanking: Array<{ code: ReceivedReason; label: string; count: number; pct: number }> = [];
     if (receivedStats?.byReason) {
@@ -237,179 +268,160 @@ export default function PlaystyleCharts({
     );
   }
 
+  // ─────────────────────────────────────────────
+  // ★ Phase13.3 final: 各サブツリーの表示可否判定
+  // ─────────────────────────────────────────────
+  const hasDonut = givenDonutData.length > 0 || receivedDonutData.length > 0;
+  const hasRadar = radarData.some(d => d.given > 0 || d.received > 0);
+
   return (
     <>
       {/* ====================================================== */}
-      {/* 上段: ACTION BALANCE 二重ドーナツ                      */}
+      {/* ★ Phase13.3 final: ACTION BALANCE + BODY PART SCORE 2カラム */}
       {/* ====================================================== */}
       <div style={{
-        background:   'rgba(255,255,255,0.04)',
-        borderRadius: 14,
-        padding:      '0.85rem 0.6rem 0.7rem',
-        border:       '1px solid rgba(129,140,248,0.15)',
-        marginBottom: 12,
+        display:        'flex',
+        flexDirection:  'row',
+        flexWrap:       'wrap',     // 狭い画面では自動的に縦並びに
+        justifyContent: 'space-between',
+        alignItems:     'stretch',  // 高さを揃える
+        gap:            10,
+        marginBottom:   12,
       }}>
-        <div style={{
-          textAlign:     'center',
-          marginBottom:  6,
-        }}>
-          <p style={{
-            margin:        0,
-            fontSize:      '0.6rem',
-            fontWeight:    800,
-            color:         'rgba(165,180,252,0.7)',
-            letterSpacing: '0.18em',
-          }}>
-            ACTION BALANCE
-          </p>
-        </div>
 
-        <div style={{ width: '100%', height: 200 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              {/* ★ Phase13.3: 内側ドーナツ = 被打（仕掛け / 応じ） */}
-              {receivedDonutData.length > 0 && (
-                <Pie
-                  data={receivedDonutData}
-                  cx="50%" cy="50%"
-                  innerRadius="34%"
-                  outerRadius="56%"
-                  paddingAngle={3}
-                  dataKey="value"
-                  labelLine={false}
-                  nameKey="name"
-                  stroke="rgba(0,0,0,0.5)"
-                  strokeWidth={1}
-                >
-                  {receivedDonutData.map((entry, i) => (
-                    <Cell key={`recv-${i}`} fill={entry.color} />
-                  ))}
-                </Pie>
-              )}
+        {/* ────────────────────────────────────── */}
+        {/* カラム①: ACTION BALANCE                */}
+        {/* ────────────────────────────────────── */}
+        {hasDonut && (
+          <div style={COLUMN_PANEL_STYLE}>
+            <div style={COLUMN_HEADER_STYLE}>
+              <p style={COLUMN_TITLE_STYLE}>ACTION BALANCE</p>
+              <p style={COLUMN_SUBTITLE_STYLE}>外輪＝与打 / 内輪＝被打</p>
+            </div>
 
-              {/* ★ Phase13.3: 外側ドーナツ = 与打（仕掛け / 応じ） */}
-              {givenDonutData.length > 0 && (
-                <Pie
-                  data={givenDonutData}
-                  cx="50%" cy="50%"
-                  innerRadius="62%"
-                  outerRadius="84%"
-                  paddingAngle={3}
-                  dataKey="value"
-                  labelLine={false}
-                  nameKey="name"
-                  stroke="rgba(0,0,0,0.4)"
-                  strokeWidth={1}
-                >
-                  {givenDonutData.map((entry, i) => (
-                    <Cell key={`given-${i}`} fill={entry.color} />
-                  ))}
-                </Pie>
-              )}
+            <div style={{ width: '100%', height: 200, flex: 1 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  {/* 内側ドーナツ = 被打 */}
+                  {receivedDonutData.length > 0 && (
+                    <Pie
+                      data={receivedDonutData}
+                      cx="50%" cy="50%"
+                      innerRadius="34%"
+                      outerRadius="56%"
+                      paddingAngle={3}
+                      dataKey="value"
+                      labelLine={false}
+                      nameKey="name"
+                      stroke="rgba(0,0,0,0.5)"
+                      strokeWidth={1}
+                    >
+                      {receivedDonutData.map((entry, i) => (
+                        <Cell key={`recv-${i}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  )}
 
-              {/* 中央ラベル */}
-              {(totalGiven > 0 || totalReceivedPts > 0) && (
-                <DonutCenterLabel totalGiven={totalGiven} totalReceived={totalReceivedPts} />
-              )}
+                  {/* 外側ドーナツ = 与打 */}
+                  {givenDonutData.length > 0 && (
+                    <Pie
+                      data={givenDonutData}
+                      cx="50%" cy="50%"
+                      innerRadius="62%"
+                      outerRadius="84%"
+                      paddingAngle={3}
+                      dataKey="value"
+                      labelLine={false}
+                      nameKey="name"
+                      stroke="rgba(0,0,0,0.4)"
+                      strokeWidth={1}
+                    >
+                      {givenDonutData.map((entry, i) => (
+                        <Cell key={`given-${i}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  )}
 
-              <PieTooltip
-                contentStyle={TOOLTIP_STYLE}
-                formatter={(value: number, _name, item) => {
-                  const isGiven = givenDonutData.some(d => d.name === item.payload.name);
-                  const layerTotal = isGiven
-                    ? givenDonutData.reduce((s, d) => s + d.value, 0)
-                    : receivedDonutData.reduce((s, d) => s + d.value, 0);
-                  const pct = layerTotal > 0 ? Math.round((value / layerTotal) * 100) : 0;
-                  return [`${value} pt（${pct}%）`, item.payload.name];
-                }}
-              />
+                  {/* 中央ラベル */}
+                  {(totalGiven > 0 || totalReceivedPts > 0) && (
+                    <DonutCenterLabel totalGiven={totalGiven} totalReceived={totalReceivedPts} />
+                  )}
 
-              <Legend
-                iconType="circle"
-                iconSize={8}
-                wrapperStyle={{
-                  fontSize: 10,
-                  color: '#c7d2fe',
-                  paddingTop: 8,
-                  letterSpacing: '0.04em',
-                }}
-                payload={[
-                  ...givenDonutData.map((d, i) => ({
-                    value: d.name,
-                    type: 'circle' as const,
-                    color: d.color,
-                    id: `given-${i}`,
-                  })),
-                  ...receivedDonutData.map((d, i) => ({
-                    value: d.name,
-                    type: 'circle' as const,
-                    color: d.color,
-                    id: `recv-${i}`,
-                  })),
-                ]}
-                formatter={(value, entry) => {
-                  const allData = [...givenDonutData, ...receivedDonutData];
-                  const item = allData.find(a => a.name === value);
-                  return (
-                    <span style={{ color: entry.color, fontWeight: 700 }}>
-                      {value}
-                      <span style={{
-                        color: 'rgba(199,210,254,0.55)',
-                        fontWeight: 600,
-                        marginLeft: 4,
-                      }}>
-                        {item?.value ?? 0}
-                      </span>
-                    </span>
-                  );
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+                  <PieTooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    formatter={(value: number, _name, item) => {
+                      const isGiven = givenDonutData.some(d => d.name === item.payload.name);
+                      const layerTotal = isGiven
+                        ? givenDonutData.reduce((s, d) => s + d.value, 0)
+                        : receivedDonutData.reduce((s, d) => s + d.value, 0);
+                      const pct = layerTotal > 0 ? Math.round((value / layerTotal) * 100) : 0;
+                      return [`${value} pt（${pct}%）`, item.payload.name];
+                    }}
+                  />
 
-      {/* ====================================================== */}
-      {/* 中段: 部位別 与打/被打 デュアルレーダーチャート         */}
-      {/* ====================================================== */}
-      <div style={{
-        background:   'rgba(255,255,255,0.04)',
-        borderRadius: 14,
-        padding:      '0.85rem 0.7rem',
-        border:       '1px solid rgba(129,140,248,0.15)',
-        marginBottom: 12,
-      }}>
-        <div style={{ marginBottom: 10 }}>
-          <p style={{
-            margin:        0,
-            fontSize:      '0.6rem',
-            fontWeight:    800,
-            color:         'rgba(165,180,252,0.7)',
-            letterSpacing: '0.18em',
-          }}>
-            BODY PART SCORE
-          </p>
-          <p style={{
-            margin:        '2px 0 0',
-            fontSize:      '0.55rem',
-            fontWeight:    600,
-            color:         'rgba(199,210,254,0.5)',
-            letterSpacing: '0.05em',
-          }}>
-            部位ごとの与打 vs 被打
-          </p>
-        </div>
-
-        {radarData.length > 0 ? (
-          <RadarChart data={radarData} />
-        ) : (
-          <p style={{
-            textAlign:'center', fontSize:'0.78rem',
-            color: 'rgba(165,180,252,0.4)', padding: '1rem 0', margin: 0,
-          }}>
-            部位別の集計データがありません
-          </p>
+                  <Legend
+                    iconType="circle"
+                    iconSize={7}
+                    wrapperStyle={{
+                      fontSize:      9,
+                      color:         '#c7d2fe',
+                      paddingTop:    6,
+                      letterSpacing: '0.04em',
+                      lineHeight:    1.5,
+                    }}
+                    payload={[
+                      ...givenDonutData.map((d, i) => ({
+                        value: d.name,
+                        type:  'circle' as const,
+                        color: d.color,
+                        id:    `given-${i}`,
+                      })),
+                      ...receivedDonutData.map((d, i) => ({
+                        value: d.name,
+                        type:  'circle' as const,
+                        color: d.color,
+                        id:    `recv-${i}`,
+                      })),
+                    ]}
+                    formatter={(value, entry) => {
+                      const allData = [...givenDonutData, ...receivedDonutData];
+                      const item    = allData.find(a => a.name === value);
+                      return (
+                        <span style={{ color: entry.color, fontWeight: 700 }}>
+                          {value}
+                          <span style={{
+                            color:      'rgba(199,210,254,0.55)',
+                            fontWeight: 600,
+                            marginLeft: 3,
+                          }}>
+                            {item?.value ?? 0}
+                          </span>
+                        </span>
+                      );
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         )}
+
+        {/* ────────────────────────────────────── */}
+        {/* カラム②: BODY PART SCORE              */}
+        {/* ────────────────────────────────────── */}
+        {hasRadar && (
+          <div style={COLUMN_PANEL_STYLE}>
+            <div style={COLUMN_HEADER_STYLE}>
+              <p style={COLUMN_TITLE_STYLE}>BODY PART SCORE</p>
+              <p style={COLUMN_SUBTITLE_STYLE}>部位ごとの与打 vs 被打</p>
+            </div>
+
+            <div style={{ width: '100%', flex: 1, display: 'flex', alignItems: 'center' }}>
+              <RadarChart data={radarData} />
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* ====================================================== */}
@@ -640,12 +652,6 @@ function MatchupTag({ matchup, onClick }: TagProps) {
 
 // =====================================================================
 // ★ Phase13.3.3: WEAKNESS ANALYSIS（冷徹な脆弱性メーター）
-//
-// 設計方針:
-//   - 引き算の美学: 装飾を排し、データのみで語る
-//   - 1行完結型: 順位 / ラベル / バー の3カラム構成
-//   - ポイント数は常時非表示。タップ時のみツールチップで表示
-//   - 第1位のみパルスアニメーションで微かな注意喚起
 // =====================================================================
 
 interface WeaknessRankItem {
@@ -678,9 +684,9 @@ function WeaknessAnalysisBlock({
       background:   'rgba(10, 5, 8, 0.6)',
       border:       '1px solid rgba(100, 25, 20, 0.45)',
       position:     'relative',
-      overflow:     'visible', // ツールチップがはみ出せるように
+      overflow:     'visible',
     }}>
-      {/* ヘッダー（簡素化） */}
+      {/* ヘッダー */}
       <div style={{
         display:        'flex',
         alignItems:     'center',
@@ -744,7 +750,7 @@ function WeaknessAnalysisBlock({
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {/* ① 順位（等幅・薄色） */}
+              {/* ① 順位 */}
               <span style={{
                 flexShrink: 0,
                 width:      18,
@@ -758,7 +764,7 @@ function WeaknessAnalysisBlock({
                 {rankStr}
               </span>
 
-              {/* ② ラベル（短い） */}
+              {/* ② ラベル */}
               <span style={{
                 flexShrink: 0,
                 width:      64,
@@ -776,7 +782,7 @@ function WeaknessAnalysisBlock({
                 {item.label}
               </span>
 
-              {/* ③ バー（Track） */}
+              {/* ③ バー */}
               <div style={{
                 flex:         1,
                 position:     'relative',
@@ -801,7 +807,7 @@ function WeaknessAnalysisBlock({
                 }} />
               </div>
 
-              {/* ④ ツールチップ（タップ時のみ） */}
+              {/* ④ ツールチップ */}
               {isActive && (
                 <div style={{
                   position:     'absolute',
@@ -845,7 +851,6 @@ function WeaknessAnalysisBlock({
                       ({item.pct}%)
                     </span>
                   </div>
-                  {/* ツールチップの矢印 */}
                   <div style={{
                     position:     'absolute',
                     bottom:       -5,
