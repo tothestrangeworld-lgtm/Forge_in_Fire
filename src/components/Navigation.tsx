@@ -4,28 +4,24 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Swords, Users, LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
-
-type NavUser = {
-  name: string;
-  user_id: string;
-} | null;
+// ★ Phase13.7: auth.ts の公式APIを使用
+import { getAuthUser, logoutAndRedirect } from '@/lib/auth';
+import type { AuthUser } from '@/lib/auth';
 
 export default function Navigation() {
   const pathname  = usePathname();
-  const [user, setUser] = useState<NavUser>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
+  // ★ Phase13.7: localStorage に直接アクセスせず、getAuthUser() を使用
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('user');
-      if (stored) setUser(JSON.parse(stored));
-    } catch {
-      /* ignore */
-    }
+    setUser(getAuthUser());
   }, []);
 
+  // ★ Phase13.7: 自前で localStorage.removeItem() するのではなく、
+  // auth.ts が提供する公式APIを使うことで、認証データの削除と
+  // ハードナビゲーションを一括で正しく実行する。
   const handleLogout = () => {
-    localStorage.removeItem('user');
-    window.location.href = '/login';
+    logoutAndRedirect();
   };
 
   const isActive = (href: string) =>
