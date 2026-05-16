@@ -778,3 +778,23 @@ export interface GivenTechniqueSelection {
   quantity:    number;          // 1〜5
   quality:     GivenStrikeQuality; // 1〜5
 }
+
+// src/types/index.ts の末尾あたりに追加
+
+// =====================================================================
+// Rivals (門下生) 一覧用型
+// =====================================================================
+export interface Rival {
+  user_id: string;
+  name:    string;
+  role:    'admin' | 'user';
+  level:   number;
+  // ★ 修正: 文字列でアクセス可能であることを明示
+  masteryStats: {
+    [key: string]: number; 
+    '面': number;
+    '小手': number;
+    '胴': number;
+    '突き': number;
+  };
+}

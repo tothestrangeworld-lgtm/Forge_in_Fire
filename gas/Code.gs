@@ -302,11 +302,42 @@ function getUserMasterSheet(ss) {
 
 function getUsers() {
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = getUserMasterSheet(ss);
-  var rows  = sheet.getDataRange().getValues();
-  var users = rows.slice(1)
+  var umSheet = getUserMasterSheet(ss);
+  var stSheet = ss.getSheetByName(SHEET_STATUS);
+  var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
+  var tm      = getTechniqueMasterData(ss);
+  
+  var umRows = umSheet.getDataRange().getValues();
+  var stRows = stSheet ? stSheet.getDataRange().getValues() : [];
+  var utRows = utSheet ? utSheet.getDataRange().getValues() : [];
+  
+  // マップ作成
+  var statusMap = {};
+  for(var i=1; i<stRows.length; i++) statusMap[String(stRows[i][0])] = { xp: stRows[i][1], lvl: stRows[i][2] };
+  
+  var masteryMap = {}; // userId -> { "面": 0, "小手": 0, ... }
+  for(var j=1; j<utRows.length; j++) {
+    var uid = String(utRows[j][0]);
+    var tid = String(utRows[j][1]);
+    var pts = Number(utRows[j][2]) || 0;
+    var tech = tm.find(function(m){ return m.id === tid; });
+    if(uid && tech) {
+      if(!masteryMap[uid]) masteryMap[uid] = {"面":0,"小手":0,"胴":0,"突き":0};
+      if(masteryMap[uid].hasOwnProperty(tech.bodyPart)) masteryMap[uid][tech.bodyPart] += pts;
+    }
+  }
+
+  var users = umRows.slice(1)
     .filter(function(r){ return r[0]; })
-    .map(function(r){ return { user_id: String(r[0]), name: String(r[1]), role: String(r[3]) }; });
+    .map(function(r){
+      var uid = String(r[0]);
+      var stat = statusMap[uid] || { xp: 0, lvl: 1 };
+      return { 
+        user_id: uid, name: String(r[1]), role: String(r[3]), 
+        level: stat.lvl,
+        masteryStats: masteryMap[uid] || {"面":0,"小手":0,"胴":0,"突き":0}
+      };
+    });
   return createResponse(users);
 }
 
