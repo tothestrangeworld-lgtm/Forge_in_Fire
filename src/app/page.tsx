@@ -1,7 +1,7 @@
 // src/app/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react'; // useMemoを追加
 import { RotateCcw, Loader2, TrendingDown, Settings } from 'lucide-react';
 import Link from 'next/link';
 import type { EpithetMasterEntry, UserTask, Achievement } from '@/types';
@@ -63,16 +63,42 @@ export default function DashboardPage() {
   const peerLogs = data.peerLogs ?? [];
 
   // スコア分布データの算出
+  // 修正後のロジック
+  const dailyLogs = useMemo(() => {
+    if (!logs) return [];
+    const map = new Map<string, Map<string, { score: number; count: number }>>();
+
+    logs.forEach(log => {
+      if (!map.has(log.date)) map.set(log.date, new Map());
+      const tasks = map.get(log.date)!;
+      const current = tasks.get(log.item_name) || { score: 0, count: 0 };
+      tasks.set(log.item_name, {
+        score: current.score + log.score,
+        count: current.count + 1
+      });
+    });
+    return map;
+  }, [logs]);
+
   const scoreDistData = activeTasks.map(t => {
     const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let selfTotalPts = 0, selfTotalCount = 0;
-    (logs ?? []).slice(-50).forEach(l => {
-      if (l.item_name === t.task_text) {
-        const s = l.score as number;
-        if (s >= 1 && s <= 5) selfDist[s] = (selfDist[s] ?? 0) + 1;
-        selfTotalPts += s; selfTotalCount++;
+
+    // 集約済み dailyLogs から日付単位で走査
+    dailyLogs.forEach((tasks, date) => {
+      const taskData = tasks.get(t.task_text);
+      if (taskData) {
+        // 平均スコアを算出して集計（複数回記録がある日はその日の平均をドットにする）
+        const avgScore = Math.round(taskData.score / taskData.count);
+        if (avgScore >= 1 && avgScore <= 5) {
+          selfDist[avgScore] = (selfDist[avgScore] ?? 0) + 1;
+        }
+        selfTotalPts += taskData.score;
+        selfTotalCount += taskData.count;
       }
     });
+
+    // peerDist の処理（peerLogs は仕様上、他者評価ログなのでここではそのまま）
     const peerDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let peerTotalPts = 0, peerTotalCount = 0;
     peerLogs.slice(-50).forEach(l => {
@@ -82,6 +108,7 @@ export default function DashboardPage() {
         peerTotalPts += s; peerTotalCount++;
       }
     });
+    
     return {
       taskText: t.task_text,
       selfDist, selfTotalPts, selfTotalCount,
