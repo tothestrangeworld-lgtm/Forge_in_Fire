@@ -1,8 +1,8 @@
 // src/app/page.tsx
 'use client';
 
-import { useState, useEffect, useMemo } from 'react'; // useMemoを追加
-import { RotateCcw, Loader2, TrendingDown, Settings } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { RotateCcw, TrendingDown, Settings } from 'lucide-react';
 import Link from 'next/link';
 import type { EpithetMasterEntry, UserTask, Achievement } from '@/types';
 import {
@@ -29,8 +29,9 @@ export default function DashboardPage() {
 
   const { data: swrData, error: swrError, isLoading, mutate } = useDashboardSWR();
 
-  const data       = swrData?.dashboard ?? null;
-  const techniques = swrData?.techniques ?? [];
+  // レスポンス構造に合わせて dashboardData を取得
+  const dashboardData = swrData?.dashboard ?? null;
+  const techniques    = swrData?.techniques ?? [];
 
   const error = swrError instanceof Error && swrError.message !== 'AUTH_REQUIRED'
     ? swrError.message
@@ -44,65 +45,57 @@ export default function DashboardPage() {
       .catch(() => setAchiev({ unlocked: 0, total: 0 }));
   }, []);
 
-  if (isLoading) return <DashboardSkeleton />;
-  if (error)     return <ErrorState message={error} />;
-  if (!data)     return null;
-
-  const { status, logs, decay, xpHistory, tasks } = data;
-  const tm         = data.titleMaster;
-  const em         = data.epithetMaster ?? [] as EpithetMasterEntry[];
-  const techMaster = data.techniqueMaster ?? [];
-  const level      = calcLevelFromXp(status.total_xp);
-
-  const matchupMaster = data.matchupMaster ?? [];
-  const peersStyle    = data.peersStyle    ?? [];
-
-  const epithet: EpithetResult = calcEpithet(techniques, em, level, tm);
-
-  const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
-  const peerLogs = data.peerLogs ?? [];
-
-  // スコア分布データの算出
-  // 修正後のロジック
-  // 修正後のロジック: Map ではなく Object (Record) を使用する
+  // 日付・タスク単位での集約（Reactフック順序維持のため早期リターンなし）
   const dailyLogs = useMemo(() => {
-    if (!logs) return {};
-    // Record<date, Record<item_name, { score: number, count: number }>>
     const map: Record<string, Record<string, { score: number; count: number }>> = {};
+    if (!dashboardData?.logs) return map;
 
-    logs.forEach(log => {
+    dashboardData.logs.forEach(log => {
       if (!log.date) return;
       if (!map[log.date]) map[log.date] = {};
       
       const tasks = map[log.date];
       const current = tasks[log.item_name] || { score: 0, count: 0 };
-      
       tasks[log.item_name] = {
-        score: current.score + log.score,
+        score: current.score + (log.score ?? 0),
         count: current.count + 1
       };
     });
     return map;
-  }, [logs]);
+  }, [dashboardData?.logs]);
 
+  if (isLoading) return <DashboardSkeleton />;
+  if (error)     return <ErrorState message={error} />;
+  if (!dashboardData) return null;
+
+  const { status, logs, decay, xpHistory, tasks } = dashboardData;
+  const tm         = dashboardData.titleMaster;
+  const em         = dashboardData.epithetMaster ?? [] as EpithetMasterEntry[];
+  const techMaster = dashboardData.techniqueMaster ?? [];
+  const level      = calcLevelFromXp(status.total_xp);
+
+  const matchupMaster = dashboardData.matchupMaster ?? [];
+  const peersStyle    = dashboardData.peersStyle    ?? [];
+
+  const epithet: EpithetResult = calcEpithet(techniques, em, level, tm);
+  const activeTasks: UserTask[] = (tasks ?? []).filter(t => t.status === 'active');
+  const peerLogs = dashboardData.peerLogs ?? [];
+
+  // スコア分布データの算出（集約済み dailyLogs を使用）
   const scoreDistData = activeTasks.map(t => {
     const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let selfTotalPts = 0, selfTotalCount = 0;
 
-    // Object のキー（日付）をループ
     Object.keys(dailyLogs).forEach(date => {
       const taskData = dailyLogs[date][t.task_text];
       if (taskData) {
         const avgScore = Math.round(taskData.score / taskData.count);
-        if (avgScore >= 1 && avgScore <= 5) {
-          selfDist[avgScore] = (selfDist[avgScore] ?? 0) + 1;
-        }
+        if (avgScore >= 1 && avgScore <= 5) selfDist[avgScore] = (selfDist[avgScore] ?? 0) + 1;
         selfTotalPts += taskData.score;
         selfTotalCount += taskData.count;
       }
     });
 
-    // peerDist の処理（peerLogs は仕様上、他者評価ログなのでここではそのまま）
     const peerDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let peerTotalPts = 0, peerTotalCount = 0;
     peerLogs.slice(-50).forEach(l => {
@@ -112,12 +105,7 @@ export default function DashboardPage() {
         peerTotalPts += s; peerTotalCount++;
       }
     });
-    
-    return {
-      taskText: t.task_text,
-      selfDist, selfTotalPts, selfTotalCount,
-      peerDist, peerTotalPts, peerTotalCount,
-    };
+    return { taskText: t.task_text, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount };
   });
 
   const hasScoreData = scoreDistData.some(d => d.selfTotalCount > 0 || d.peerTotalCount > 0);
@@ -137,16 +125,7 @@ export default function DashboardPage() {
           <span className="section-title">稽古記録アプリ</span>
           <h1 className="kanji-title" style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0 }}>百錬自得</h1>
         </div>
-        <button
-          onClick={() => setShowReset(v => !v)}
-          style={{
-            width: 32, height: 32, borderRadius: 8,
-            border: '1.5px solid rgba(99,102,241,0.2)',
-            background: 'rgba(15,14,42,0.6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', color: 'rgba(99,102,241,0.5)',
-          }}
-        >
+        <button onClick={() => setShowReset(v => !v)} style={{ width: 32, height: 32, borderRadius: 8, border: '1.5px solid rgba(99,102,241,0.2)', background: 'rgba(15,14,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(99,102,241,0.5)' }}>
           <RotateCcw style={{ width: 14, height: 14 }} />
         </button>
       </header>
@@ -155,78 +134,34 @@ export default function DashboardPage() {
         <div className="hud-card animate-fade-up" style={{ marginBottom: '0.75rem', border: '1px solid rgba(239,68,68,0.3)' }}>
           <p style={{ fontWeight: 700, color: '#f87171', fontSize: '0.85rem', margin: '0 0 6px' }}>⚠️ レベルリセット</p>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => setShowReset(false)}
-              style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)', background: 'rgba(15,14,42,0.6)', cursor: 'pointer', fontSize: '0.8rem', color: 'rgba(129,140,248,0.6)' }}
-            >
-              キャンセル
-            </button>
-            <button
-              onClick={handleReset}
-              disabled={resetting}
-              style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.15)', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}
-            >
-              リセットする
-            </button>
+            <button onClick={() => setShowReset(false)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)', background: 'rgba(15,14,42,0.6)', cursor: 'pointer', fontSize: '0.8rem', color: 'rgba(129,140,248,0.6)' }}>キャンセル</button>
+            <button onClick={handleReset} disabled={resetting} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.15)', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>リセットする</button>
           </div>
         </div>
       )}
 
-      {/* 減衰警告 */}
       {isDecaying && (
         <div className="hud-card animate-fade-up" style={{ marginBottom: '0.75rem', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <TrendingDown color="#f87171" size={20} />
-          <p style={{ color: '#f87171', fontSize: '0.8rem', margin: 0, fontWeight: 700 }}>
-            稽古の間隔が空いているため、XPが減衰しています。
-          </p>
+          <p style={{ color: '#f87171', fontSize: '0.8rem', margin: 0, fontWeight: 700 }}>稽古の間隔が空いているため、XPが減衰しています。</p>
         </div>
       )}
 
-      {/* UserStatusCard（showSettingsLink=true で歯車アイコンを表示） */}
       <div className="animate-fade-up delay-100" style={{ marginBottom: '0.75rem' }}>
-        <UserStatusCard
-          userName={user?.name ?? '剣士'}
-          epithet={epithet}
-          totalXp={status.total_xp}
-          level={level}
-          realRank={status.real_rank}
-          motto={status.motto}
-          achiev={achiev}
-          showSettingsLink={true}
-        />
+        <UserStatusCard userName={user?.name ?? '剣士'} epithet={epithet} totalXp={status.total_xp} level={level} realRank={status.real_rank} motto={status.motto} achiev={achiev} showSettingsLink={true} />
       </div>
 
-      {/* ★ Phase-ex3: 課題別評価スコア分布 — TaskScoreDistCard へ移譲 */}
       <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span className="section-title">課題別 評価スコア分布（直近50回）</span>
-          <Link
-            href="/settings/tasks"
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 26, height: 26,
-              borderRadius: 7,
-              border: '1px solid rgba(99,102,241,0.25)',
-              background: 'rgba(15,14,42,0.6)',
-              color: 'rgba(99,102,241,0.55)',
-              textDecoration: 'none',
-              flexShrink: 0,
-            }}
-            title="課題登録設定へ"
-            aria-label="課題登録設定へ"
-          >
+          <span className="section-title">課題別 評価スコア分布（直近50日）</span>
+          <Link href="/settings/tasks" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 7, border: '1px solid rgba(99,102,241,0.25)', background: 'rgba(15,14,42,0.6)', color: 'rgba(99,102,241,0.55)', textDecoration: 'none', flexShrink: 0 }}>
             <Settings style={{ width: 13, height: 13 }} />
           </Link>
         </div>
 
         {hasScoreData ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-            {scoreDistData.map(({
-              taskText,
-              selfDist, selfTotalPts, selfTotalCount,
-              peerDist, peerTotalPts, peerTotalCount,
-            }) => {
-              // インサイト判定
+            {scoreDistData.map(({ taskText, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount }) => {
               let insight = '';
               if (peerTotalCount > 0 && selfTotalCount > 0) {
                 const s = selfTotalPts / selfTotalCount;
@@ -235,97 +170,39 @@ export default function DashboardPage() {
                 else if (s - p >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
                 else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
               }
-
-              // 進捗ステータス
               const mastery = calcMasteryStatus(logs ?? [], taskText);
-
-              return (
-                <TaskScoreDistCard
-                  key={taskText}
-                  taskText={taskText}
-                  selfDist={selfDist}
-                  selfTotalPts={selfTotalPts}
-                  selfTotalCount={selfTotalCount}
-                  peerDist={peerDist}
-                  peerTotalPts={peerTotalPts}
-                  peerTotalCount={peerTotalCount}
-                  mastery={mastery}
-                  insight={insight}
-                />
-              );
+              return <TaskScoreDistCard key={taskText} taskText={taskText} selfDist={selfDist} selfTotalPts={selfTotalPts} selfTotalCount={selfTotalCount} peerDist={peerDist} peerTotalPts={peerTotalPts} peerTotalCount={peerTotalCount} mastery={mastery} insight={insight} />;
             })}
           </div>
         ) : (
-          <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'rgba(99,102,241,0.4)', padding: '1.5rem 0', margin: 0 }}>
-            評価項目を設定して稽古を記録すると、ここにスコア分布が表示されます
-          </p>
+          <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'rgba(99,102,241,0.4)', padding: '1.5rem 0', margin: 0 }}>評価項目を設定して稽古を記録すると、ここにスコア分布が表示されます</p>
         )}
       </div>
 
-      {/* XP推移グラフ */}
       {xpHistory && xpHistory.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">XP獲得推移</span>
-          <div style={{ height: 160, marginTop: 12 }}>
-            <XPTimelineChart xpHistory={xpHistory} />
-          </div>
+          <div style={{ height: 160, marginTop: 12 }}><XPTimelineChart xpHistory={xpHistory} /></div>
         </div>
       )}
 
-      {/* SkillGrid（技の修練度） */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">Skill Grid</span>
-          <div style={{ height: 450, marginTop: 12 }}>
-          <SkillGrid
-            techniques={techniques}
-            signatureTechId={status.favorite_technique}
-            receivedStats={data.receivedStats}
-          />
-          </div>
+          <div style={{ height: 450, marginTop: 12 }}><SkillGrid techniques={techniques} signatureTechId={status.favorite_technique} receivedStats={dashboardData.receivedStats} /></div>
         </div>
       )}
 
-      {/* プレイスタイル分析 */}
       {techniques.length > 0 && (
         <div className="hud-card animate-fade-up delay-300" style={{ marginBottom: '1rem' }}>
           <span className="section-title">PLAY STYLE</span>
-          <PlaystyleCharts
-            techniques={techniques}
-            matchupMaster={matchupMaster}
-            peersStyle={peersStyle}
-            techniqueMaster={techMaster}
-            receivedStats={data.receivedStats}
-          />
+          <PlaystyleCharts techniques={techniques} matchupMaster={matchupMaster} peersStyle={peersStyle} techniqueMaster={techMaster} receivedStats={dashboardData.receivedStats} />
         </div>
       )}
-
     </div>
   );
 }
 
-// ユーティリティ・スケルトン等
-function calcStreak(dates: string[]): number {
-  const unique = [...new Set(dates)].sort().reverse();
-  if (!unique.length) return 0;
-  const today = new Date(); today.setHours(0,0,0,0);
-  let streak = 0;
-  for (let i = 0; i < unique.length; i++) {
-    const d = new Date(unique[i]); d.setHours(0,0,0,0);
-    const expected = new Date(today); expected.setDate(today.getDate() - i);
-    if (d.getTime() === expected.getTime()) streak++; else break;
-  }
-  return streak;
-}
-
-function ChartSkeleton({ h }: { h: number }) {
-  return <div style={{ height: h, borderRadius: 16, background: 'rgba(99,102,241,0.06)' }} />;
-}
-
-function DashboardSkeleton() {
-  return <div style={{ padding: '1.5rem 1rem' }}><div style={{ height: 200, borderRadius: 16, background: 'rgba(99,102,241,0.06)' }} /></div>;
-}
-
-function ErrorState({ message }: { message: string }) {
-  return <div style={{ padding: '5rem 2rem', textAlign: 'center' }}>{message}</div>;
-}
+function ChartSkeleton({ h }: { h: number }) { return <div style={{ height: h, borderRadius: 16, background: 'rgba(99,102,241,0.06)' }} />; }
+function DashboardSkeleton() { return <div style={{ padding: '1.5rem 1rem' }}><div style={{ height: 200, borderRadius: 16, background: 'rgba(99,102,241,0.06)' }} /></div>; }
+function ErrorState({ message }: { message: string }) { return <div style={{ padding: '5rem 2rem', textAlign: 'center' }}>{message}</div>; }
