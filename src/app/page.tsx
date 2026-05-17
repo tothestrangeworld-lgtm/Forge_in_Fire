@@ -64,18 +64,23 @@ export default function DashboardPage() {
 
   // スコア分布データの算出
   // 修正後のロジック
+  // 修正後のロジック: Map ではなく Object (Record) を使用する
   const dailyLogs = useMemo(() => {
-    if (!logs) return [];
-    const map = new Map<string, Map<string, { score: number; count: number }>>();
+    if (!logs) return {};
+    // Record<date, Record<item_name, { score: number, count: number }>>
+    const map: Record<string, Record<string, { score: number; count: number }>> = {};
 
     logs.forEach(log => {
-      if (!map.has(log.date)) map.set(log.date, new Map());
-      const tasks = map.get(log.date)!;
-      const current = tasks.get(log.item_name) || { score: 0, count: 0 };
-      tasks.set(log.item_name, {
+      if (!log.date) return;
+      if (!map[log.date]) map[log.date] = {};
+      
+      const tasks = map[log.date];
+      const current = tasks[log.item_name] || { score: 0, count: 0 };
+      
+      tasks[log.item_name] = {
         score: current.score + log.score,
         count: current.count + 1
-      });
+      };
     });
     return map;
   }, [logs]);
@@ -84,11 +89,10 @@ export default function DashboardPage() {
     const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let selfTotalPts = 0, selfTotalCount = 0;
 
-    // 集約済み dailyLogs から日付単位で走査
-    dailyLogs.forEach((tasks, date) => {
-      const taskData = tasks.get(t.task_text);
+    // Object のキー（日付）をループ
+    Object.keys(dailyLogs).forEach(date => {
+      const taskData = dailyLogs[date][t.task_text];
       if (taskData) {
-        // 平均スコアを算出して集計（複数回記録がある日はその日の平均をドットにする）
         const avgScore = Math.round(taskData.score / taskData.count);
         if (avgScore >= 1 && avgScore <= 5) {
           selfDist[avgScore] = (selfDist[avgScore] ?? 0) + 1;
