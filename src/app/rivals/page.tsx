@@ -18,9 +18,9 @@ export default function RivalsPage() {
       if (sortKey === 'ID') return a.user_id.localeCompare(b.user_id);
       if (sortKey === 'LEVEL') return (b.level ?? 0) - (a.level ?? 0);
       const part = sortKey.split(':')[1];
-      // アクセス時にインデックスアクセスを許可させるため、型をキャストする
-      const pA = (a.masteryStats as Record<string, number>)[part] ?? 0;
-      const pB = (b.masteryStats as Record<string, number>)[part] ?? 0;
+      // masteryStats が undefined の場合に備え、オプショナルチェーンで安全にアクセスする
+      const pA = (a.masteryStats as Record<string, number> | undefined)?.[part] ?? 0;
+      const pB = (b.masteryStats as Record<string, number> | undefined)?.[part] ?? 0;
       return pB - pA;
     });
   }, [rivals, sortKey]);
