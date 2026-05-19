@@ -69,6 +69,7 @@
 //   - saveLog を拡張: body.givenTechs[] を受け取り、user_techniques を UPSERT、
 //     technique_logs に追記、合算XPを user_status / xp_history へ一回だけ書き込む
 //   - 獲得XPの内訳を返却: xp_from_practice / xp_from_received / xp_from_given
+// 変更後
 // ★ Phase14: 新規アカウント作成機能
 //   - doPost に register アクションを追加
 //   - registerUser(body) を新設:
@@ -76,6 +77,16 @@
 //     ・ID自動採番（U0001 〜 U9999）
 //     ・UserMaster 末尾に [newId, name, password, 'user'] を追加
 //     ・user_status 等の初期化は既存 getter が自動で 0XP を返すため不要
+// ★ Phase15: 試合時特大レバレッジ（×10）
+//   - DBスキーマ拡張:
+//       technique_logs:          末尾(H列, index=7)に is_match 列を追加
+//       received_technique_logs: 末尾(H列, index=7)に is_match 列を追加
+//   - saveLog の givenTechs[] / receivedTechs[] に isMatch (boolean) を受け入れ
+//     isMatch=true の場合:
+//       - 与打:  earnedPts (XP) ×10、user_techniques.Points への加算 ×10
+//       - 被打:  earnedXp (5*qty) ×10 → 計 50*qty となる
+//   - 各ログシートの新 is_match 列に boolean を保存
+//   - getReceivedStatsData: is_match=true の行は receivedPoints を ×10 して集計
 // =====================================================================
 
 var SPREADSHEET_ID       = '1jmXq7bdvSG_HVjTe0ArEAi8xStmVfh_FpIb90TxYS5I';
@@ -213,17 +224,20 @@ var SEVERITY_MULT_GAS = { 1: 1.0, 2: 1.2, 3: 1.5, 4: 2.0, 5: 3.0 };
  * received_technique_logs シートを取得（なければ自動作成）★ Phase13
  * 列: id(0), user_id(1), date(2), technique_id(3), quantity(4), reason(5), xp_earned(6)
  */
+// 変更後
 function getReceivedTechLogsSheet(ss) {
   var sheet = ss.getSheetByName(SHEET_RECEIVED_TECH_LOGS);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_RECEIVED_TECH_LOGS);
-    sheet.appendRow(['id', 'user_id', 'date', 'technique_id', 'quantity', 'reason', 'xp_earned']);
-    sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    // ★ Phase15: is_match 列を追加（8列構成）
+    sheet.appendRow(['id', 'user_id', 'date', 'technique_id', 'quantity', 'reason', 'xp_earned', 'is_match']);
+    sheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
     sheet.setFrozenRows(1);
-    gasLog('INFO', 'getReceivedTechLogsSheet', 'received_technique_logs シートを自動作成しました（Phase13）');
+    gasLog('INFO', 'getReceivedTechLogsSheet', 'received_technique_logs シートを自動作成しました（Phase15: is_match列追加）');
   }
   return sheet;
 }
+
 
 // =====================================================================
 // B. doGet
@@ -537,6 +551,7 @@ function saveLog(body) {
   var receivedXp         = 0;
   var receivedSavedCount = 0;
 
+// 変更後
   if (receivedTechs && Array.isArray(receivedTechs) && receivedTechs.length > 0) {
     var rtlSheet  = getReceivedTechLogsSheet(ss);
     var ts        = nowJstTs();
@@ -546,22 +561,31 @@ function saveLog(body) {
       var techId   = rt && rt.techniqueId ? String(rt.techniqueId) : '';
       var quantity = parseInt(rt && rt.quantity);
       var reason   = parseInt(rt && rt.reason);
+      // ★ Phase15: 試合フラグ
+      var isMatch  = rt && rt.isMatch === true;
 
       if (!techId) return;
       if (isNaN(quantity) || quantity < 1 || quantity > 5) return;
       if (isNaN(reason)   || reason   < 1 || reason   > 5) return;
 
-      var earned = 25 * quantity;
+      // ★ Phase15: 試合時は特大レバレッジ ×10
+      // 通常: 25 * quantity (= 5XP × 5倍正直記録ボーナス)
+      // 試合: 25 * quantity * 10 = ベース50倍
+      var matchMult = isMatch ? 10 : 1;
+      var earned    = 25 * quantity * matchMult;
+
       receivedXp         += earned;
       receivedSavedCount += 1;
 
+      // ★ Phase15: 8列目に is_match (boolean) を追加
       validRows.push([
-        Utilities.getUuid(), userId, date, techId, quantity, reason, earned,
+        Utilities.getUuid(), userId, date, techId, quantity, reason, earned, isMatch,
       ]);
     });
 
     if (validRows.length > 0) {
-      rtlSheet.getRange(rtlSheet.getLastRow() + 1, 1, validRows.length, 7).setValues(validRows);
+      // ★ Phase15: 8列で書き込み
+      rtlSheet.getRange(rtlSheet.getLastRow() + 1, 1, validRows.length, 8).setValues(validRows);
       gasLog('INFO', 'saveLog', 'received_techs saved user=' + userId,
         { count: receivedSavedCount, xp: receivedXp });
     }
@@ -574,6 +598,7 @@ function saveLog(body) {
   var givenXp          = 0;
   var givenSavedCount  = 0;
 
+// 変更後
   if (givenTechs && Array.isArray(givenTechs) && givenTechs.length > 0) {
     var QUANTITY_BASE = { 1: 10, 2: 20, 3: 30, 4: 40, 5: 50 };
     var QUALITY_MULT  = { 1: 0.1, 2: 0.5, 3: 1.0, 4: 2.0, 5: 5.0 };
@@ -593,13 +618,14 @@ function saveLog(body) {
     }
 
     // technique_logs シート
+    // ★ Phase15: 8列構成（is_match 列を追加）
     var tlSheet = ss.getSheetByName(SHEET_TECH_LOGS);
     if (!tlSheet) {
       tlSheet = ss.insertSheet(SHEET_TECH_LOGS);
-      tlSheet.appendRow(['user_id', 'date', 'technique_id', 'quantity', 'quality', 'xp_earned', 'feedback']);
-      tlSheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+      tlSheet.appendRow(['user_id', 'date', 'technique_id', 'quantity', 'quality', 'xp_earned', 'feedback', 'is_match']);
+      tlSheet.getRange(1,1,1,8).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
       tlSheet.setFrozenRows(1);
-      gasLog('INFO', 'saveLog', 'technique_logs シートを自動作成しました（Phase13.2）');
+      gasLog('INFO', 'saveLog', 'technique_logs シートを自動作成しました（Phase15: is_match列追加）');
     }
 
     var utRows  = utSheet.getDataRange().getValues();
@@ -610,6 +636,8 @@ function saveLog(body) {
       var techId   = gt && gt.techniqueId ? String(gt.techniqueId) : '';
       var quantity = parseInt(gt && gt.quantity);
       var quality  = parseInt(gt && gt.quality);
+      // ★ Phase15: 試合フラグ
+      var isMatch  = gt && gt.isMatch === true;
 
       if (!techId) return;
       if (isNaN(quantity) || quantity < 1 || quantity > 5) return;
@@ -619,11 +647,17 @@ function saveLog(body) {
         return;
       }
 
-      var earned = Math.ceil(QUANTITY_BASE[quantity] * QUALITY_MULT[quality]);
+      // ★ Phase15: 試合時は XP・分析ポイント共に ×10
+      var matchMult = isMatch ? 10 : 1;
+      var baseEarned = Math.ceil(QUANTITY_BASE[quantity] * QUALITY_MULT[quality]);
+      var earned     = baseEarned * matchMult;
+
       givenXp         += earned;
       givenSavedCount += 1;
 
       // user_techniques を UPSERT
+      // ★ Phase15: Points への加算も earned (×10 適用済み) を使うため、
+      //   分析チャート（SkillGrid 等）にも自動で 10倍が反映される
       var utRowIdx = -1;
       for (var i = 1; i < utRows.length; i++) {
         if (String(utRows[i][0]) === String(userId) && String(utRows[i][1]) === String(techId)) {
@@ -647,16 +681,18 @@ function saveLog(body) {
         utRows[utRowIdx][6] = '';
       }
 
-      // technique_logs に追記
-      newTlRows.push([userId, tsGiven, techId, quantity, quality, earned, '']);
+      // ★ Phase15: technique_logs に is_match を追加（8列）
+      newTlRows.push([userId, tsGiven, techId, quantity, quality, earned, '', isMatch]);
     });
 
     if (newTlRows.length > 0) {
-      tlSheet.getRange(tlSheet.getLastRow() + 1, 1, newTlRows.length, 7).setValues(newTlRows);
+      // ★ Phase15: 8列で書き込み
+      tlSheet.getRange(tlSheet.getLastRow() + 1, 1, newTlRows.length, 8).setValues(newTlRows);
       gasLog('INFO', 'saveLog', 'given_techs saved user=' + userId,
         { count: givenSavedCount, xp: givenXp });
     }
   }
+
 
   // ─────────────────────────────────────────────
   // Step 4. ★ Phase13.2: user_status / xp_history を「一回だけ」書き込む
@@ -1766,7 +1802,8 @@ function getReceivedStatsData(ss, userId, techniqueMasterCache) {
   // techMap: { techId: { totalQuantity, receivedPoints, reasonBreakdown } }
   var techMap = {};
 
-  // 列: id(0), user_id(1), date(2), technique_id(3), quantity(4), reason(5), xp_earned(6)
+// 変更後
+  // 列: id(0), user_id(1), date(2), technique_id(3), quantity(4), reason(5), xp_earned(6), is_match(7) ★ Phase15
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (String(r[1]) !== String(userId)) continue;
@@ -1778,8 +1815,15 @@ function getReceivedStatsData(ss, userId, techniqueMasterCache) {
     if (!techId || quantity < 1) continue;
     if (reason < 1 || reason > 5) continue;
 
+    // ★ Phase15: is_match の判定（boolean / 文字列 'TRUE' / 'true' を受容）
+    var rawMatch = r[7];
+    var isMatch  = (rawMatch === true) ||
+                   (typeof rawMatch === 'string' && rawMatch.toUpperCase() === 'TRUE');
+    var matchMult = isMatch ? 10 : 1;
+
     var sevMult = SEVERITY_MULT_GAS[reason] || 1.0;
-    var pts     = quantity * sevMult;
+    // ★ Phase15: 試合時は分析ポイントも ×10
+    var pts     = quantity * sevMult * matchMult;
 
     totalReceived  += quantity;
     totalPoints    += pts;
@@ -1797,6 +1841,7 @@ function getReceivedStatsData(ss, userId, techniqueMasterCache) {
     techMap[techId].receivedPoints  += pts;
     techMap[techId].reasonBreakdown[reason] += quantity;
   }
+
 
   // techMap → 配列化、技マスタとJOIN、receivedPoints 降順でソート
   var byTechnique = Object.keys(techMap).map(function(tid) {

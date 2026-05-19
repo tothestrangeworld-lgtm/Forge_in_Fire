@@ -443,12 +443,27 @@ export default function RecordPage() {
     const submittedTaskTexts = activeTasks.map(t => t.task_text);
 
     try {
-      const validReceived = receivedTechSelections.filter(r =>
-        r.techniqueId && r.quantity >= 1 && r.quantity <= 5 && r.reason >= 1 && r.reason <= 5
-      );
-      const validGiven = givenTechSelections.filter(g =>
-        g.techniqueId && g.quantity >= 1 && g.quantity <= 5 && g.quality >= 1 && g.quality <= 5
-      );
+// 変更後
+const validReceived = receivedTechSelections
+        .filter(r =>
+          r.techniqueId && r.quantity >= 1 && r.quantity <= 5 && r.reason >= 1 && r.reason <= 5
+        )
+        .map(r => ({
+          techniqueId: r.techniqueId,
+          quantity:    r.quantity,
+          reason:      r.reason,
+          isMatch:     r.isMatch === true,   // ★ Phase15: 確実に boolean で送信
+        }));
+      const validGiven = givenTechSelections
+        .filter(g =>
+          g.techniqueId && g.quantity >= 1 && g.quantity <= 5 && g.quality >= 1 && g.quality <= 5
+        )
+        .map(g => ({
+          techniqueId: g.techniqueId,
+          quantity:    g.quantity,
+          quality:     g.quality,
+          isMatch:     g.isMatch === true,   // ★ Phase15: 確実に boolean で送信
+        }));
 
       const res = await saveLog({
         date,
@@ -456,6 +471,7 @@ export default function RecordPage() {
         ...(validGiven.length > 0    ? { givenTechs:    validGiven }    : {}),
         ...(validReceived.length > 0 ? { receivedTechs: validReceived } : {}),
       });
+
       setResult({
         xp:    res.xp_earned,
         title: titleForLevel(calcLevelFromXp(res.total_xp), dashboard?.titleMaster),
@@ -871,7 +887,7 @@ function GivenTechniqueRecordSection({
 
   function addRow() {
     if (techMaster.length === 0) return;
-    onChange([...selections, { techniqueId: techMaster[0].id, quantity: 3, quality: 3 }]);
+    onChange([...selections, { techniqueId: techMaster[0].id, quantity: 3, quality: 3, isMatch: false }]);
   }
   function removeRow(idx: number) {
     onChange(selections.filter((_, i) => i !== idx));
@@ -880,6 +896,7 @@ function GivenTechniqueRecordSection({
     onChange(selections.map((s, i) => i === idx ? { ...s, ...patch } : s));
   }
 
+  // 変更後
   return (
     <SymmetrySection
       theme={theme}
@@ -889,7 +906,7 @@ function GivenTechniqueRecordSection({
     >
       <TechTable
         theme={theme}
-        headers={['技', '量', '質']}
+        headers={['試合', '技', '量', '質']}
         emptyText="記録なし"
         hasRows={selections.length > 0}
       >
@@ -905,6 +922,8 @@ function GivenTechniqueRecordSection({
             thirdValue={sel.quality}
             thirdLabels={GIVEN_QUALITY_LABELS}
             onThirdChange={v => updateRow(idx, { quality: v as GivenStrikeQuality })}
+            isMatch={sel.isMatch ?? false}
+            onMatchChange={v => updateRow(idx, { isMatch: v })}
             onRemove={() => removeRow(idx)}
             disabled={disabled}
           />
@@ -957,7 +976,7 @@ function ReceivedTechniqueRecordSection({
     if (techMaster.length === 0) return;
     onChange([
       ...selections,
-      { techniqueId: techMaster[0].id, quantity: 1, reason: 1 },
+      { techniqueId: techMaster[0].id, quantity: 1, reason: 1, isMatch: false },
     ]);
   }
   function removeRow(idx: number) {
@@ -967,37 +986,41 @@ function ReceivedTechniqueRecordSection({
     onChange(selections.map((s, i) => i === idx ? { ...s, ...patch } : s));
   }
 
-  return (
-    <SymmetrySection
+// 変更後
+return (
+  <SymmetrySection
+    theme={theme}
+    titleEn="RECEIVED STRIKES"
+    titleJa="被打"
+    Icon={Shield}
+    warning
+  >
+    <TechTable
       theme={theme}
-      titleEn="RECEIVED STRIKES"
-      titleJa="被打"
-      Icon={Shield}
-      warning
+      headers={['試合', '技', '量', '原因']}
+      emptyText="記録なし"
+      hasRows={selections.length > 0}
     >
-      <TechTable
-        theme={theme}
-        headers={['技', '量', '原因']}
-        emptyText="記録なし"
-        hasRows={selections.length > 0}
-      >
-        {selections.map((sel, idx) => (
-          <TechRow
-            key={idx}
-            theme={theme}
-            techMaster={techMaster}
-            techniqueId={sel.techniqueId}
-            onTechChange={v => updateRow(idx, { techniqueId: v })}
-            quantity={sel.quantity}
-            onQuantityChange={v => updateRow(idx, { quantity: v })}
-            thirdValue={sel.reason}
-            thirdLabels={RECEIVED_REASON_FULL_LABELS}
-            onThirdChange={v => updateRow(idx, { reason: v as ReceivedReason })}
-            onRemove={() => removeRow(idx)}
-            disabled={disabled}
-          />
-        ))}
-      </TechTable>
+      {selections.map((sel, idx) => (
+        <TechRow
+          key={idx}
+          theme={theme}
+          techMaster={techMaster}
+          techniqueId={sel.techniqueId}
+          onTechChange={v => updateRow(idx, { techniqueId: v })}
+          quantity={sel.quantity}
+          onQuantityChange={v => updateRow(idx, { quantity: v })}
+          thirdValue={sel.reason}
+          thirdLabels={RECEIVED_REASON_FULL_LABELS}
+          onThirdChange={v => updateRow(idx, { reason: v as ReceivedReason })}
+          isMatch={sel.isMatch ?? false}
+          onMatchChange={v => updateRow(idx, { isMatch: v })}
+          onRemove={() => removeRow(idx)}
+          disabled={disabled}
+        />
+      ))}
+    </TechTable>
+
 
       <button
         type="button"
@@ -1029,16 +1052,19 @@ function ReceivedTechniqueRecordSection({
 // ★ Phase13.2: テーブル共通レイアウト
 // =====================================================================
 
+// 変更後
 interface TechTableProps {
   theme:    typeof THEME_GIVEN;
-  headers:  [string, string, string];
+  headers:  [string, string, string, string];
   emptyText: string;
   hasRows:  boolean;
   children: React.ReactNode;
 }
 
-// Grid columns: [技] 1fr / [量] 44px / [質/原因] 50px / [×] 26px
-const GRID_COLUMNS = '1fr 44px 50px 26px';
+// ★ Phase15: 5列構成 [試合] 28px / [技] 1fr / [量] 38px / [質/原因] 44px / [×] 24px
+// flex-wrap: nowrap を grid で実現。最小幅を厳密に詰めて、スマホ375px幅でも
+// 折り返しが起きないように調整。
+const GRID_COLUMNS = '28px minmax(0, 1fr) 38px 44px 24px';
 
 function TechTable({ theme, headers, emptyText, hasRows, children }: TechTableProps) {
   return (
@@ -1047,18 +1073,20 @@ function TechTable({ theme, headers, emptyText, hasRows, children }: TechTablePr
       <div style={{
         display:        'grid',
         gridTemplateColumns: GRID_COLUMNS,
-        gap:            6,
-        padding:        '0 4px 6px',
+        gap:            4,
+        padding:        '0 2px 6px',
         fontSize:       '0.55rem',
         fontWeight:     700,
         color:          theme.fg,
-        letterSpacing:  '0.12em',
+        letterSpacing:  '0.08em',
         textTransform:  'uppercase',
         opacity:        0.75,
+        whiteSpace:     'nowrap',
       }}>
-        <span>{headers[0]}</span>
-        <span style={{ textAlign:'center' }}>{headers[1]}</span>
+        <span style={{ textAlign:'center' }}>{headers[0]}</span>
+        <span>{headers[1]}</span>
         <span style={{ textAlign:'center' }}>{headers[2]}</span>
+        <span style={{ textAlign:'center' }}>{headers[3]}</span>
         <span></span>
       </div>
 
@@ -1082,6 +1110,8 @@ function TechTable({ theme, headers, emptyText, hasRows, children }: TechTablePr
   );
 }
 
+
+// 変更後
 interface TechRowProps {
   theme:           typeof THEME_GIVEN;
   techMaster:      TechniqueMasterEntry[];
@@ -1092,6 +1122,8 @@ interface TechRowProps {
   thirdValue:      number;
   thirdLabels:     Record<number, string>;
   onThirdChange:   (next: number) => void;
+  isMatch:         boolean;                    // ★ Phase15
+  onMatchChange:   (next: boolean) => void;    // ★ Phase15
   onRemove:        () => void;
   disabled?:       boolean;
 }
@@ -1101,6 +1133,7 @@ function TechRow({
   techniqueId, onTechChange,
   quantity, onQuantityChange,
   thirdValue, thirdLabels, onThirdChange,
+  isMatch, onMatchChange,
   onRemove, disabled,
 }: TechRowProps) {
 
@@ -1117,14 +1150,44 @@ function TechRow({
       style={{
         display:        'grid',
         gridTemplateColumns: GRID_COLUMNS,
-        gap:            6,
+        gap:            4,
         alignItems:     'center',
-        padding:        '5px 4px',
-        background:     theme.bg,
-        border:         `1px solid ${theme.borderSoft}`,
+        padding:        '5px 2px',
+        background:     isMatch
+          ? `linear-gradient(135deg, rgba(255,215,0,0.12), ${theme.bg})`
+          : theme.bg,
+        border:         `1px solid ${isMatch ? 'rgba(255,215,0,0.5)' : theme.borderSoft}`,
         borderRadius:   8,
+        boxShadow:      isMatch ? '0 0 8px rgba(255,215,0,0.25) inset' : 'none',
+        transition:     'all 0.2s ease',
+        flexWrap:       'nowrap',
       }}
     >
+      {/* ★ Phase15: 試合チェックボックス */}
+      <label style={{
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'center',
+        cursor:         disabled ? 'not-allowed' : 'pointer',
+        height:         28,
+      }}>
+        <input
+          type="checkbox"
+          checked={isMatch}
+          disabled={disabled}
+          onChange={e => onMatchChange(e.target.checked)}
+          style={{
+            width:        18,
+            height:       18,
+            margin:       0,
+            cursor:       disabled ? 'not-allowed' : 'pointer',
+            accentColor:  '#ffd700',
+            flexShrink:   0,
+          }}
+          aria-label="試合フラグ"
+        />
+      </label>
+
       {/* 技プルダウン */}
       <select
         value={techniqueId}
@@ -1132,18 +1195,23 @@ function TechRow({
         onChange={e => onTechChange(e.target.value)}
         style={{
           minWidth:     0,
+          maxWidth:     '100%',
+          width:        '100%',
           background:   theme.bgInput,
           border:       `1px solid ${theme.borderSoft}`,
           color:        '#e0e7ff',
           borderRadius: 6,
-          padding:      '5px 4px',
-          fontSize:     '0.78rem',
+          padding:      '5px 2px',
+          fontSize:     '0.72rem',
           fontWeight:   700,
           fontFamily:   'inherit',
           outline:      'none',
           appearance:   'none',
           WebkitAppearance: 'none',
           height:       28,
+          textOverflow: 'ellipsis',
+          overflow:     'hidden',
+          whiteSpace:   'nowrap',
         }}
       >
         {techMaster.map(m => (
@@ -1159,7 +1227,7 @@ function TechRow({
         options={QUANTITY_LABELS}
         onChange={onQuantityChange}
         disabled={disabled}
-        width={44}
+        width={38}
         textColor={theme.accent}
         borderColor={theme.borderSoft}
         bgColor={theme.bgInput}
@@ -1171,7 +1239,7 @@ function TechRow({
         options={thirdLabels}
         onChange={onThirdChange}
         disabled={disabled}
-        width={50}
+        width={44}
         textColor={theme.accent}
         borderColor={theme.borderSoft}
         bgColor={theme.bgInput}
@@ -1183,8 +1251,8 @@ function TechRow({
         disabled={disabled}
         onClick={onRemove}
         style={{
-          width:      26,
-          height:     26,
+          width:      24,
+          height:     24,
           borderRadius: 6,
           border:     `1px solid ${theme.borderSoft}`,
           background: 'transparent',
@@ -1197,6 +1265,7 @@ function TechRow({
           justifyContent:'center',
           fontFamily: 'inherit',
           padding:    0,
+          flexShrink: 0,
         }}
         aria-label="削除"
       >
@@ -1205,3 +1274,4 @@ function TechRow({
     </div>
   );
 }
+

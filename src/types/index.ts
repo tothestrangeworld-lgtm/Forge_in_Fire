@@ -690,11 +690,15 @@ export const SEVERITY_MULT: Record<ReceivedReason, number> = {
  *  - quantity:    打たれた回数（1〜5）。正直記録ボーナス +5XP × quantity の対象。
  *  - reason:      被打原因コード（1〜5）。深刻度係数の指定にも使用。
  */
+// 変更後
 export interface ReceivedTechniqueSelection {
   techniqueId: string;
   quantity:    number;
   reason:      ReceivedReason;
+  /** ★ Phase15: 試合時特大レバレッジ。true の場合 XP・分析ポイント共に ×10。 */
+  isMatch?:    boolean;
 }
+
 
 /**
  * 被打統計の1技ぶんエントリ。getDashboard.receivedStats.byTechnique[] の要素。
@@ -773,10 +777,13 @@ export const RECEIVED_REASON_FULL_LABELS: Record<ReceivedReason, string> = {
  *  - quantity:    打った回数（1〜5）
  *  - quality:     打突の質（1〜5）
  */
+// 変更後
 export interface GivenTechniqueSelection {
   techniqueId: string;
   quantity:    number;          // 1〜5
   quality:     GivenStrikeQuality; // 1〜5
+  /** ★ Phase15: 試合時特大レバレッジ。true の場合 XP・分析ポイント共に ×10。 */
+  isMatch?:    boolean;
 }
 
 // src/types/index.ts の末尾あたりに追加
