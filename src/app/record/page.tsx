@@ -1163,13 +1163,14 @@ function TechRow({
         flexWrap:       'nowrap',
       }}
     >
-      {/* ★ Phase15: 試合チェックボックス */}
+      {/* ★ Phase15: 試合チェックボックス（カスタム描画でダークテーマに馴染ませる） */}
       <label style={{
         display:        'flex',
         alignItems:     'center',
         justifyContent: 'center',
         cursor:         disabled ? 'not-allowed' : 'pointer',
         height:         28,
+        position:       'relative',
       }}>
         <input
           type="checkbox"
@@ -1177,15 +1178,48 @@ function TechRow({
           disabled={disabled}
           onChange={e => onMatchChange(e.target.checked)}
           style={{
+            // ブラウザのデフォルトUIを完全リセット
+            appearance:       'none',
+            WebkitAppearance: 'none',
+            MozAppearance:    'none',
             width:        18,
             height:       18,
             margin:       0,
             cursor:       disabled ? 'not-allowed' : 'pointer',
-            accentColor:  '#ffd700',
+            // ★ 未選択時: ダークテーマに馴染む背景／選択時: 金色で目立たせる
+            background:   isMatch
+              ? 'linear-gradient(135deg, #ffd700, #f59e0b)'
+              : theme.bgInput,
+            border:       isMatch
+              ? '1px solid rgba(255,215,0,0.85)'
+              : `1px solid ${theme.borderSoft}`,
+            borderRadius: 4,
             flexShrink:   0,
+            outline:      'none',
+            transition:   'all 0.15s ease',
+            boxShadow:    isMatch
+              ? '0 0 6px rgba(255,215,0,0.55)'
+              : 'none',
+            position:     'relative',
           }}
           aria-label="試合フラグ"
         />
+        {/* チェックマーク（選択時のみ表示） */}
+        {isMatch && (
+          <span style={{
+            position:       'absolute',
+            top:            '50%',
+            left:           '50%',
+            transform:      'translate(-50%, -54%)',
+            color:          '#1e1b4b',
+            fontSize:       '13px',
+            fontWeight:     900,
+            pointerEvents:  'none',
+            lineHeight:     1,
+          }}>
+            ✓
+          </span>
+        )}
       </label>
 
       {/* 技プルダウン */}
