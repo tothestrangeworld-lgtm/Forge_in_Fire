@@ -478,7 +478,7 @@ useEffect(() => {
                 </button>
               ) : (
                 <p className="locked-msg">
-                  <AlertTriangle size={16} /> 本日の試合上限に到達しました
+                  <AlertTriangle size={16} /> 本日の試合上限に到達
                 </p>
               )}
             </div>
@@ -489,8 +489,8 @@ useEffect(() => {
           <div className="overlay">
             <div className="locked-box">
               <AlertTriangle size={32} />
-              <h2>本日の仮想稽古、終了</h2>
-              <p>1日3試合まで挑戦可能です。明日また鍛錬されよ。</p>
+              <h2>本日の仮想稽古終了</h2>
+              <p>1日3試合まで</p>
               {bestTimeMs !== null && (
                 <p className="locked-best">
                   <Trophy size={14} /> 自己ベスト: {formatTime(bestTimeMs)}

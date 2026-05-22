@@ -7,10 +7,15 @@
 ★ Phase 15 にて「試合時特大レバレッジ（×10）」機能を実装。日々の稽古と試合の
 データ価値を明確に分離し、試合記録に対して XP・分析ポイント共に 10倍 の重みを与える。
 
+★ Phase 16 にて、エンドコンテンツ「刹那ノ見切（反射神経養成ミニゲーム）」を実装。
+1日3試合制限のサイバー和風UI反射神経シミュレータで、継続率向上と
+「懸待一致」の感覚養成を目的とする。
+
 ## 2. 技術スタック
 - **Frontend**: Next.js 15 (App Router), React, TypeScript
 - **Styling**: Tailwind CSS
 - **Charts / UI**: Recharts (Playstyle/Radar), React Flow (SkillGrid), Lucide React (Icons)
+- **Game UI**: SVG + CSS Animations (cubic-bezier easing) for `/minigame` ★ Phase 16
 - **Backend / Database**: Google Apps Script (GAS) + Google Sheets
 - **Hosting**: Cloudflare Pages
 - **Web Push**: Cloudflare Workers + VAPID
@@ -30,6 +35,7 @@ C:\Forge_in_Fire
 │   │   ├── api/          # Next.js API Routes (GAS中継, Push配信用)
 │   │   ├── debug/        # 開発・デバッグ用画面
 │   │   ├── login/        # ログイン・新規登録画面
+│   │   ├── minigame/     # ★ Phase 16: 刹那ノ見切（反射神経養成ミニゲーム）
 │   │   ├── record/       # 稽古記録画面（与打・被打・課題一括登録／試合フラグ付き）
 │   │   ├── rivals/       # 門下生一覧（プルダウンソート対応）＆詳細画面
 │   │   ├── settings/     # プロフィール・課題設定画面
@@ -40,9 +46,9 @@ C:\Forge_in_Fire
 │   ├── components/       # UIコンポーネント
 │   │   ├── charts/       # グラフ・可視化コンポーネント（SkillGrid, RadarChart等）
 │   │   ├── AuthGuard.tsx # 認証ガード・リダイレクト処理
-│   │   └── Navigation.tsx# 下部ナビゲーションバー
+│   │   └── Navigation.tsx# 下部ナビゲーションバー（刹那ノ見切リンク含む）
 │   ├── lib/              # 共通ロジック・APIクライアント
-│   │   ├── api.ts        # GAS通信クライアント (SWRラッパー)
+│   │   ├── api.ts        # GAS通信クライアント (SWRラッパー、ミニゲームAPI含む)
 │   │   ├── auth.ts       # 認証状態管理 (localStorage)
 │   │   ├── epithet.ts    # 称号計算ロジック
 │   │   ├── mastery.ts    # 部位別修練度計算
@@ -54,8 +60,11 @@ C:\Forge_in_Fire
 ├── open-next.config.ts   # OpenNext 設定
 ├── tailwind.config.ts    # Tailwind 設定
 └── wrangler.toml         # Cloudflare Workers デプロイ設定
-4. データフロー概要
-4.1 稽古記録フロー（与打・被打・課題評価）
+```
+
+## 4. データフロー概要
+### 4.1 稽古記録フロー（与打・被打・課題評価）
+```text
 [Frontend: /record]
   │
   │  ユーザー入力:
@@ -83,7 +92,10 @@ C:\Forge_in_Fire
   - technique_logs (is_match 列付き)
   - received_technique_logs (is_match 列付き)
   - user_techniques (Points は試合時 ×10 反映済み)
-4.2 ダッシュボード描画フロー
+```
+
+### 4.2 ダッシュボード描画フロー
+```text
 [Frontend: /]
   │
   ↓
@@ -102,17 +114,62 @@ C:\Forge_in_Fire
   - PlaystyleChart  ← user_techniques.Points 集計
   - 弱点ヒートマップ ← receivedStats.byTechnique (試合分は ×10 反映済み)
   - レーダーチャート ← receivedStats.byReason
-5. 試合時特大レバレッジ仕様（Phase 15）
-5.1 設計思想
+```
+
+### 4.3 反射神経ミニゲームフロー（★ Phase 16）
+```text
+[Frontend: /minigame マウント]
+  │
+  ↓
+[GAS: doGet → getMinigameStatus]
+  │  → todayPlayed / dailyLimit / remaining / locked / bestTimeMs を返却
+  ↓
+[Frontend: phase = 'idle' or 'locked']
+  │
+  │  ユーザーが「試合開始」をタップ
+  ↓
+[3本勝負ループ（クライアント完結）]
+  │  各本:
+  │    - waiting (1.5〜3.5s ランダム待機)
+  │    - reacting (8パターンのいずれかが発動、duration 内でタップ)
+  │       └ 8パターン: 出端小手/面返し胴/出端面/小手返し面/小手抜き面/
+  │                     合い小手面/飛び込み面/飛び込み小手
+  │    - performance.now() で 1ms 精度の反応速度計測
+  │    - result (1.4s フィードバック演出)
+  │  ×3回繰り返し
+  ↓
+[Frontend: phase = 'matchEnd']
+  │  calcRank(成功本数, 平均反応速度) → 'S'/'A'/'B'/'C'/'F'
+  ↓
+[GAS: doPost → saveMinigameResult]
+  │
+  │  1. サーバーサイドで本日プレイ数を再検証（3件以上なら 429）
+  │  2. ランクに応じたXPを計算（S=30, A=20, B=10, C=5, F=2）
+  │  3. minigame_scores に1行追記（UUID, user_id, ts, avgMs, rank, xp）
+  │  4. user_status.total_xp / level を更新（last_practice_date は更新しない）
+  │  5. xp_history に1行追記（reason: '刹那ノ見切（ランク: X / 平均: 0.NNNs）'）
+  ↓
+[Frontend: リザルト画面]
+  - ランク演出（S/A/B/C/F の色分け＋ポップアニメ）
+  - 獲得XP表示
+  - 自己ベスト更新表示
+  - 次の試合へボタン or 「本日上限到達」表示
+```
+
+## 5. 試合時特大レバレッジ仕様（Phase 15）
+### 5.1 設計思想
 日々の地稽古と公式試合は、剣士にとってまったく価値の異なる経験である。
 試合は「実戦データ」として希少性が高く、与打・被打ともに通常記録の 10倍の重み を与える。
 1試合の記録が、平均的な10日分の稽古に相当する経験値・分析ポイントとして集計される。
-5.2 入力UI（/record 画面）
+
+### 5.2 入力UI（/record 画面）
 与打セクション・被打セクションの各行に 「試合」チェックボックス を配置（左端）。
 チェックが入ると、行全体が金色グロウで強調され、視覚的に試合記録であることを明示。
 1回の saveLog 呼び出し内で、試合記録と通常記録を混在させて保存可能。
-5.3 計算ロジック（GAS saveLog）
-与打 (givenTechs[])
+
+### 5.3 計算ロジック（GAS saveLog）
+**与打 (givenTechs[])**
+```javascript
 var matchMult  = isMatch ? 10 : 1;
 var baseEarned = Math.ceil(QUANTITY_BASE[quantity] * QUALITY_MULT[quality]);
 var earned     = baseEarned * matchMult;
@@ -122,51 +179,78 @@ givenXp += earned;
 
 // user_techniques.Points にも earned (×10適用済み) を加算
 // → SkillGrid / PlaystyleChart にそのまま反映される
-量	質	通常時XP	試合時XP
-1 (少ない)	1 (偶然)	1	10
-3 (標準的)	3 (確実)	30	300
-5 (多い)	5 (無想)	250	2,500
-被打 (receivedTechs[])
+```
+
+| 量 | 質 | 通常時XP | 試合時XP |
+|---|---|---|---|
+| 1 (少ない) | 1 (偶然) | 1 | 10 |
+| 3 (標準的) | 3 (確実) | 30 | 300 |
+| 5 (多い) | 5 (無想) | 250 | 2,500 |
+
+**被打 (receivedTechs[])**
+```javascript
 var matchMult = isMatch ? 10 : 1;
 var earned    = 25 * quantity * matchMult;
 //              └┬┘
 //          5XP × 5倍正直記録ボーナス
-量	通常時XP	試合時XP
-1	25	250
-3	75	750
-5	125	1,250
-被打分析ポイント (getReceivedStatsData)
+```
+
+| 量 | 通常時XP | 試合時XP |
+|---|---|---|
+| 1 | 25 | 250 |
+| 3 | 75 | 750 |
+| 5 | 125 | 1,250 |
+
+**被打分析ポイント (getReceivedStatsData)**
+```javascript
 var sevMult   = SEVERITY_MULT_GAS[reason]; // 1.0 〜 3.0
 var matchMult = isMatch ? 10 : 1;
 var pts       = quantity * sevMult * matchMult;
-量	原因 (係数)	通常時pts	試合時pts
-1	攻め負け (1.0)	1.0	10.0
-3	居着き (1.5)	4.5	45.0
-5	手元上がり (3.0)	15.0	150.0
-5.4 互換性
+```
+
+| 量 | 原因 (係数) | 通常時pts | 試合時pts |
+|---|---|---|---|
+| 1 | 攻め負け (1.0) | 1.0 | 10.0 |
+| 3 | 居着き (1.5) | 4.5 | 45.0 |
+| 5 | 手元上がり (3.0) | 15.0 | 150.0 |
+
+### 5.4 互換性
 既存の technique_logs / received_technique_logs の過去レコードは is_match 列が空セル。
-GAS は is_match === true || is_match === 'TRUE' の判定で読み込むため、空セルは自動的に 通常記録（×1） として扱われる。
+GAS は `is_match === true || is_match === 'TRUE'` の判定で読み込むため、空セルは自動的に 通常記録（×1） として扱われる。
 過去データの再計算は不要。
-6. XP・レベル・称号システム
-6.1 XPカーブ
+
+## 6. XP・レベル・称号システム
+### 6.1 XPカーブ
+```
 xpForLevel(n) = floor(100 * (n-1)^1.8)
+```
 レベル1〜99の指数カーブ。
-レベル50到達に必要なXP: 約 35,000
-レベル99到達に必要なXP: 約 545,000
-6.2 称号（Title）
+- レベル50到達に必要なXP: 約 35,000
+- レベル99到達に必要なXP: 約 545,000
+
+### 6.2 称号（Title）
 レベル区切りで自動付与（title_master シート参照）。
 例: 入門 → 素振り → 初段 → ... → 範士 → 剣聖 → 剣神 → 剣道の神
-6.3 二つ名（Epithet）
+
+### 6.3 二つ名（Epithet）
 プレイスタイルに応じて動的に付与される追加称号。
 EpithetMaster のレア度（N / R / SR）でフロント側のスタイル装飾を切り替え。
-6.4 XP減衰
+
+### 6.4 XP減衰
 最終稽古日から3日以上空くと毎日減衰。
+```
 dailyPenalty(d) = floor(20 * (d-3)^1.3)
-6.5 段位倍率（課題評価）
+```
+
+### 6.5 段位倍率（課題評価）
+```javascript
 { 初段:1.2, 弐段:1.5, 参段:1.8, 四段:2.2, 五段:2.7,
   六段:3.4, 七段:4.2, 八段:5.0 }
-7. 他者評価システム（見取り稽古）
-7.1 評価レベル倍率
+```
+
+## 7. 他者評価システム（見取り稽古）
+### 7.1 評価レベル倍率
+```javascript
 function getPeerMultiplier(level) {
   if (level >= 80) return 5.0;
   if (level >= 60) return 3.0;
@@ -175,20 +259,28 @@ function getPeerMultiplier(level) {
   if (level >= 20) return 1.2;
   return 1.0;
 }
-7.2 XP配分（Phase13.6）
-評価された側（target）: ceil(totalScoreSum * 4 * mult) XP
-評価した側（evaluator）: evaluatedTasks.length * 20 XP（見取り稽古ボーナス・倍率なし）
-7.3 匿名化（Phase-ex1）
+```
+
+### 7.2 XP配分（Phase13.6）
+- 評価された側（target）: `ceil(totalScoreSum * 4 * mult)` XP
+- 評価した側（evaluator）: `evaluatedTasks.length * 20` XP（見取り稽古ボーナス・倍率なし）
+
+### 7.3 匿名化（Phase-ex1）
 xp_history.reason には評価者名を含めず、「剣友からの評価（N課題・合計スコア: M）」と記録。
-8. PWAプッシュ通知システム（Phase 12）
-8.1 トリガー
+
+## 8. PWAプッシュ通知システム（Phase 12）
+### 8.1 トリガー
 GAS の時間ベーストリガー（毎日21時実行・dailyPushJob）。
-8.2 通知優先度（1ユーザーにつき1通知）
-優先度	カテゴリ	タイトル	本文
-1	decay_warning	XP減衰警告	【警告】最終稽古記録から48時間経過。明日からXPが減衰します。
-2	achievement	実績リーチ	実績解除の予兆あり。
-3	peer_eval	他者評価サマリー	あなたの稽古が評価されました。
-8.3 配信フロー
+
+### 8.2 通知優先度（1ユーザーにつき1通知）
+| 優先度 | カテゴリ | タイトル | 本文 |
+|---|---|---|---|
+| 1 | decay_warning | XP減衰警告 | 【警告】最終稽古記録から48時間経過。明日からXPが減衰します。 |
+| 2 | achievement | 実績リーチ | 実績解除の予兆あり。 |
+| 3 | peer_eval | 他者評価サマリー | あなたの稽古が評価されました。 |
+
+### 8.3 配信フロー
+```text
 GAS dailyPushJob
   ↓ POST /api/push/send (token認証)
 Next.js API Route (Cloudflare Pages)
@@ -196,15 +288,109 @@ Next.js API Route (Cloudflare Pages)
 ServiceWorker
   ↓
 ユーザー端末
-9. データ削除・リセット
-ユーザー単位での削除は deleteRowsByUserId(sheet, userId) で実装。
-clearContents() は使用禁止（他ユーザーへの影響を防ぐため）。
-10. 開発・デプロイ
-GAS: clasp でデプロイ。Code.gs をスプレッドシートにバインド。
-Frontend: pnpm build && wrangler pages deploy でCloudflare Pagesへデプロイ。
-環境変数:
-NEXT_PUBLIC_GAS_URL: GAS WebApp URL
-PUSH_INTERNAL_TOKEN: GAS-Next.js 間共有シークレット
-VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY: Web Push用
-GAS スクリプトプロパティ: PUSH_INTERNAL_TOKEN, NEXT_API_BASE
-最終更新: Phase 15 完了時点（試合時特大レバレッジ実装）
+```
+
+## 9. 反射神経ミニゲーム『刹那ノ見切』仕様（★ Phase 16）
+
+### 9.1 設計思想
+剣道には「懸待一致」「機を見る」という、相手の起こりや居着きを瞬時に察知して
+反応する精神的な技が存在する。これを Web 上で疑似体験できるエンドコンテンツとして実装。
+日々の稽古記録の「終わったらやることがない」状態を解消し、継続率向上の起爆剤とする。
+
+### 9.2 ゲームコンセプト
+- **1試合 = 3本勝負**: 3本連続で起こり/居着きが発動し、正しい部位を正しいタイミングでタップする
+- **1日3試合まで**: サーバーサイドで日付境界を判定。連日プレイの動機付け
+- **8パターンの判断**: 応じ技6種＋仕掛け技（居着き察知）2種を不規則に発動
+- **物理リアリティ**: 全アニメーションが `cubic-bezier(0.5-0.7, 0, 1, ...)` の徐々に加速イージングで「タメと打突の冴え」を再現
+
+### 9.3 8パターン詳細
+| ID | 成功技名 | 正解部位 | 制限時間 | カテゴリ | 失敗ラベル |
+|:---|:---|:---:|:---:|:---|:---|
+| A | 出端小手 | 小手 | 800ms | 応じ技 | 被弾 |
+| B | 面返し胴 | 胴 | 380ms | 応じ技 | 被弾 |
+| C | 出端面 | 面 | 500ms | 応じ技 | 被弾 |
+| D | 小手返し面 | 面 | 400ms | 応じ技 | 被弾 |
+| E | 小手抜き面 | 面 | 500ms | 応じ技 | 被弾 |
+| F | 合い小手面 | 小手 | 300ms | 応じ技 | 被弾 |
+| G | 飛び込み面 | 面 | 500ms | 仕掛け技 | 見逃し |
+| H | 飛び込み小手 | 小手 | 500ms | 仕掛け技 | 見逃し |
+
+### 9.4 ランク制スコアリング
+| 条件 | ランク | 付与XP |
+|:---|:---:|:---:|
+| 全本(3/3)成功 かつ 平均 < 0.30s | S | 30 |
+| 全本(3/3)成功 かつ 平均 < 0.45s | A | 20 |
+| 全本(3/3)成功 もしくは 平均 < 0.60s | B | 10 |
+| 1本以上成功（上記未達） | C | 5 |
+| 全本失敗 | F | 2（参加賞） |
+
+### 9.5 フロントエンド実装（src/app/minigame/page.tsx）
+- **完全クライアント完結のゲームループ**: アニメーション・反応速度計測・ランク判定はすべてフロントで実行。サーバーは結果保存のみ受け持つ
+- **SVG ワイヤーフレーム剣士**: `viewBox="0 0 300 500"` の単一 SVG 内に面・小手・胴・竹刀を浮遊配置。`<filter>` の `feGaussianBlur` + `feMerge` でネオングロウを表現
+- **CSS アニメーション**: 8パターンを `:global(.anim-A)` 〜 `:global(.anim-H)` で切り替え。`transform-origin` と `cubic-bezier()` で剣道の物理を再現
+- **逆パース竹刀**: 剣先（y=92, 幅14px）から柄尻（y=388, 幅2px）に向かう完全下細りの逆パースで、一人称視点の迫力を演出
+- **厳密な当たり判定**: 透明 `<rect>` を排除し、可視 `<polygon>` 自体に `onClick`/`onTouchStart` を付与。装飾は全て `pointer-events: none`
+- **`performance.now()`** による 1ms 精度の反応速度計測
+- **Stale Closure 対策**: `roundIdxRef` / `matchCountRef` / `isSubmittingRef` を導入し、`setTimeout` 経由のクロージャからも常に最新値を参照可能。二重送信完全防止
+
+### 9.6 バックエンドAPI（GAS）
+
+**`getMinigameStatus(params)` (GET)**
+- 入力: `{ user_id }`
+- 処理: minigame_scores から本日プレイ数をカウント、自己ベスト平均反応速度を算出
+- 出力: `{ todayPlayed, dailyLimit, remaining, locked, bestTimeMs }`
+
+**`saveMinigameResult(body)` (POST)**
+- 入力: `{ user_id, averageTime: number, rank: 'S'|'A'|'B'|'C'|'F' }`
+- 処理:
+  1. 入力検証（rank が有効値か、averageTime が0以上か）
+  2. **サーバーサイドで本日プレイ数を再検証**（3件以上なら 429）
+  3. ランクに応じたXPを計算
+  4. minigame_scores に1行追記
+  5. user_status.total_xp / level を更新（**last_practice_date は更新しない**）
+  6. xp_history に1行追記
+- 出力: `{ saved, earnedXp, totalXp, level, todayPlayed, remaining, locked, averageTime, rank }`
+
+### 9.7 既存テーブルへの副次的影響
+| テーブル | 影響 |
+|:---|:---|
+| `user_status` | `total_xp` / `level` に earnedXp が加算される。`last_practice_date` は **更新しない**（ミニゲームは稽古日数に含めない設計） |
+| `xp_history` | `type='gain'` / `reason` に「刹那ノ見切（ランク: X / 平均: 0.NNNs）」を含む行が追加される |
+| その他 | 影響なし。XP減衰判定・実績解除判定・既存チャート集計には一切干渉しない |
+
+### 9.8 ゲームフェーズ遷移
+```text
+loading → idle → waiting → reacting ─┬─→ result → waiting → ... (3回)
+   ↓        ↑       ↑                 ↓                        ↓
+  error   locked   ←───── result ←──── (success/fail)        matchEnd
+                                                                ↓
+                                                            submitting
+                                                                ↓
+                                                            matchEnd (XP表示)
+```
+
+## 10. データ削除・リセット
+ユーザー単位での削除は `deleteRowsByUserId(sheet, userId)` で実装。
+`clearContents()` は使用禁止（他ユーザーへの影響を防ぐため）。
+
+## 11. 開発・デプロイ
+- **GAS**: clasp でデプロイ。Code.gs をスプレッドシートにバインド
+- **Frontend**: `pnpm build && wrangler pages deploy` でCloudflare Pagesへデプロイ
+- **環境変数**:
+  - `NEXT_PUBLIC_GAS_URL`: GAS WebApp URL
+  - `PUSH_INTERNAL_TOKEN`: GAS-Next.js 間共有シークレット
+  - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`: Web Push用
+- **GAS スクリプトプロパティ**: `PUSH_INTERNAL_TOKEN`, `NEXT_API_BASE`
+
+## 12. パフォーマンス特性
+| 操作 | 平均レスポンス | 備考 |
+|---|---|---|
+| getDashboard | 8〜12秒 | 多数のシートを集計するため重い |
+| saveLog | 4〜8秒 | 与打/被打/課題の3系統を一括処理 |
+| getMinigameStatus | 4〜8秒 | ★ Phase 16: 全行スキャン |
+| saveMinigameResult | 4〜8秒 | ★ Phase 16: 検証＋3シート書き込み |
+
+> GAS の制約上、シートアクセスは1回 1〜2秒のオーバーヘッドがある。フロントは SWR キャッシュ＋ローディング演出で吸収。
+
+---
+最終更新: Phase 16 完了時点（刹那ノ見切・反射神経養成ミニゲーム実装）

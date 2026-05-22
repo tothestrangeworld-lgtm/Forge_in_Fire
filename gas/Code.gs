@@ -727,7 +727,7 @@ function saveLog(body) {
   // xp_history は「課題」「与打」「被打」の構成を1行のreasonに集約
   var reasonParts = ['稽古記録（' + date + '・' + items.length + '項目）'];
   if (givenSavedCount > 0)    reasonParts.push('与打 ' + givenSavedCount + '件');
-  if (receivedSavedCount > 0) reasonParts.push('被打 ' + receivedSavedCount + '件 [+正直記録ボーナス]');
+  if (receivedSavedCount > 0) reasonParts.push('被打 ' + receivedSavedCount + '件');
   var reasonText = reasonParts.join(' / ');
 
   writeXpHistory(ss, userId, 'gain', totalEarnedXp, reasonText, newXp, newLevel);
