@@ -116,6 +116,9 @@ var SHEET_MATCHUP_MASTER      = 'MatchupMaster';       // BaseStyle, MatchType, 
 // システム用
 var SHEET_ERRORLOGS      = 'error_logs';
 
+// ★ Phase16: 反射神経ミニゲーム『刹那ノ見切』のスコアシート
+var SHEET_MINIGAME_SCORES = 'minigame_scores'; // id, user_id, created_at, average_time, rank, earned_xp
+
 // =====================================================================
 // A. ユーティリティ
 // =====================================================================
@@ -253,8 +256,9 @@ function doGet(e) {
       case 'getTechniques':        return getTechniques(e.parameter);
       case 'getEpithetMaster':     return getEpithetMaster();
       case 'getUsers':             return getUsers();
-      case 'getAchievements':      return getAchievements(e.parameter);      // ★ Phase6
-      case 'getTodayEvaluations':  return getTodayEvaluations(e.parameter);  // ★ Phase7
+      case 'getAchievements':      return getAchievements(e.parameter);
+      case 'getTodayEvaluations':  return getTodayEvaluations(e.parameter);
+      case 'getMinigameStatus':    return getMinigameStatus(e.parameter);   // ★ Phase16 追加
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -264,6 +268,7 @@ function doGet(e) {
     return createError('Server error: ' + err.message, 500);
   }
 }
+
 
 // =====================================================================
 // C. doPost
@@ -277,15 +282,15 @@ function doPost(e) {
     gasLog('INFO', action, 'doPost', { user_id: body.user_id || '' });
     switch (action) {
       case 'login':                  return login(body);
-      case 'register':               return registerUser(body);          // ★ Phase14
+      case 'register':               return registerUser(body);
       case 'saveLog':                return saveLog(body);
       case 'updateProfile':          return updateProfile(body);
       case 'resetStatus':            return resetStatus(body);
-      // ★ Phase13.2: updateTechniqueRating は廃止。saveLog の givenTechs に統合済み。
       case 'updateTasks':            return updateTasks(body);
       case 'archiveTask':            return archiveTask(body);
       case 'evaluatePeer':           return evaluatePeer(body);
-      case 'savePushSubscription':   return savePushSubscription(body); // ★ Phase12
+      case 'savePushSubscription':   return savePushSubscription(body);
+      case 'saveMinigameResult':     return saveMinigameResult(body);  // ★ Phase16 追加
       default:
         gasLog('WARN', action, 'Unknown action');
         return createError('Unknown action: ' + action);
@@ -2666,4 +2671,265 @@ function testPushJobNow() {
   dailyPushJob();
   console.log('=== END ===');
   console.log('error_logs シートで詳細を確認してください。');
+}
+
+// =====================================================================
+// Q. 反射神経ミニゲーム『刹那ノ見切』★ Phase16
+//
+// 概要:
+//   1日3試合（=9本）までの制限付き反射神経ゲーム。
+//   毎試合の平均反応速度・ランクを minigame_scores に記録し、
+//   ランクに応じたXPをユーザーに付与する。
+//
+// minigame_scores シート列構成（6列）:
+//   A: id            UUID
+//   B: user_id       ユーザーID
+//   C: created_at    記録日時 (yyyy-MM-dd HH:mm:ss)
+//   D: average_time  平均反応速度（ミリ秒、整数）
+//   E: rank          'S' | 'A' | 'B' | 'C' | 'F' (失敗)
+//   F: earned_xp     付与されたXP
+//
+// XP配分（既存の稽古XPバランスとの整合を保つ控えめ設定）:
+//   S(全本成功・平均0.30s未満): 30 XP
+//   A(全本成功・平均0.45s未満): 20 XP
+//   B(全本成功 もしくは 平均0.60s未満): 10 XP
+//   C(1本以上成功):              5 XP
+//   F(全本失敗):                 2 XP（参加賞）
+//
+// 制限:
+//   1日3試合まで。サーバーサイドで日付（Asia/Tokyo）境界を判定。
+// =====================================================================
+
+var MINIGAME_DAILY_LIMIT = 3;
+
+/**
+ * minigame_scores シートを取得（なければ自動作成）
+ */
+function getMinigameScoresSheet(ss) {
+  var sheet = ss.getSheetByName(SHEET_MINIGAME_SCORES);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_MINIGAME_SCORES);
+    sheet.appendRow(['id', 'user_id', 'created_at', 'average_time', 'rank', 'earned_xp']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    sheet.setFrozenRows(1);
+    gasLog('INFO', 'getMinigameScoresSheet', 'minigame_scores シートを自動作成しました（Phase16）');
+  }
+  return sheet;
+}
+
+/**
+ * 本日（Asia/Tokyo）の minigame_scores 行をフィルタする
+ * created_at の先頭10文字（yyyy-MM-dd）で today と一致する行のみ返す。
+ */
+function filterTodayMinigameRows(sheet, userId, todayStr) {
+  var rows = sheet.getDataRange().getValues();
+  var result = [];
+  // 列: id(0), user_id(1), created_at(2), average_time(3), rank(4), earned_xp(5)
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[1]) !== String(userId)) continue;
+    var dateStr = toDateStr(r[2]);
+    if (dateStr === todayStr) {
+      result.push(r);
+    }
+  }
+  return result;
+}
+
+/**
+ * ユーザーの自己ベストタイムを取得（ms単位、なければ null）
+ * average_time が最小の行の値を返す。
+ */
+function getMinigameBestTime(sheet, userId) {
+  var rows = sheet.getDataRange().getValues();
+  var best = null;
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r[1]) !== String(userId)) continue;
+    var t = parseInt(r[3]);
+    if (isNaN(t) || t <= 0) continue;
+    if (best === null || t < best) best = t;
+  }
+  return best;
+}
+
+/**
+ * getMinigameStatus ★ Phase16
+ * 今日のプレイ回数と過去の自己ベストタイムを取得する。
+ *
+ * GET params: { user_id }
+ * 戻り値:
+ *   {
+ *     todayPlayed:   number,          // 0〜3
+ *     dailyLimit:    number,          // 3
+ *     remaining:     number,          // dailyLimit - todayPlayed
+ *     locked:        boolean,         // 上限到達ならtrue
+ *     bestTimeMs:    number | null,   // 自己ベスト平均反応速度（ms）
+ *   }
+ */
+function getMinigameStatus(params) {
+  var userId = params.user_id;
+  if (!userId) return createError('user_id は必須です', 400);
+
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = getMinigameScoresSheet(ss);
+
+  var todayStr = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  var todayRows = filterTodayMinigameRows(sheet, userId, todayStr);
+  var bestTime  = getMinigameBestTime(sheet, userId);
+
+  var todayPlayed = todayRows.length;
+  var remaining   = Math.max(0, MINIGAME_DAILY_LIMIT - todayPlayed);
+
+  gasLog('INFO', 'getMinigameStatus',
+    'user=' + userId + ' played=' + todayPlayed + '/' + MINIGAME_DAILY_LIMIT +
+    ' best=' + (bestTime !== null ? bestTime + 'ms' : 'none'));
+
+  return createResponse({
+    todayPlayed: todayPlayed,
+    dailyLimit:  MINIGAME_DAILY_LIMIT,
+    remaining:   remaining,
+    locked:      todayPlayed >= MINIGAME_DAILY_LIMIT,
+    bestTimeMs:  bestTime,
+  });
+}
+
+/**
+ * ランクに応じたXPを返す
+ * 仕様書通り:
+ *   S=30, A=20, B=10, C=5, F=2
+ */
+function calcMinigameXp(rank) {
+  switch (String(rank)) {
+    case 'S': return 30;
+    case 'A': return 20;
+    case 'B': return 10;
+    case 'C': return 5;
+    case 'F': return 2;
+    default:  return 5; // 不明な値は最低限のCを付与
+  }
+}
+
+/**
+ * saveMinigameResult ★ Phase16
+ * 試合結果を minigame_scores に保存し、ランクに応じてXPを付与する。
+ *
+ * body: {
+ *   action:      'saveMinigameResult',
+ *   user_id:     string,
+ *   averageTime: number (ミリ秒),
+ *   rank:        'S' | 'A' | 'B' | 'C' | 'F'
+ * }
+ *
+ * 戻り値:
+ *   {
+ *     saved:           true,
+ *     earnedXp:        number,
+ *     totalXp:         number,
+ *     level:           number,
+ *     todayPlayed:     number,    // 保存後の本日プレイ数
+ *     remaining:       number,    // 残りプレイ可能数
+ *     locked:          boolean,
+ *     averageTime:     number,
+ *     rank:            string,
+ *   }
+ *
+ * バリデーション:
+ *   - 本日プレイ数が既に3回に達している場合は 429 エラー
+ *   - rank が不正値（S/A/B/C/F以外）の場合は 400 エラー
+ *   - averageTime が負数または非数の場合は 400 エラー
+ */
+function saveMinigameResult(body) {
+  var userId      = body.user_id;
+  var averageTime = body.averageTime;
+  var rank        = body.rank;
+
+  // ── 1. 入力検証 ──
+  if (!userId) return createError('user_id は必須です', 400);
+
+  var avgMs = parseInt(averageTime);
+  if (isNaN(avgMs) || avgMs < 0) {
+    return createError('averageTime は0以上の数値で指定してください', 400);
+  }
+
+  var validRanks = ['S', 'A', 'B', 'C', 'F'];
+  rank = String(rank || '').toUpperCase();
+  if (validRanks.indexOf(rank) === -1) {
+    return createError('rank は S/A/B/C/F のいずれかで指定してください', 400);
+  }
+
+  // ── 2. 本日プレイ数チェック（サーバーサイドバリデーション） ──
+  var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var mgSheet   = getMinigameScoresSheet(ss);
+  var todayStr  = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  var todayRows = filterTodayMinigameRows(mgSheet, userId, todayStr);
+
+  if (todayRows.length >= MINIGAME_DAILY_LIMIT) {
+    gasLog('WARN', 'saveMinigameResult',
+      'daily limit reached user=' + userId + ' played=' + todayRows.length);
+    return createError('本日のプレイ上限（' + MINIGAME_DAILY_LIMIT + '試合）に達しています。', 429);
+  }
+
+  // ── 3. XP計算 ──
+  var earnedXp = calcMinigameXp(rank);
+
+  // ── 4. minigame_scores に保存 ──
+  var ts = nowJstTs();
+  mgSheet.appendRow([
+    Utilities.getUuid(),
+    userId,
+    ts,
+    avgMs,
+    rank,
+    earnedXp,
+  ]);
+
+  // ── 5. user_status へXP加算 ──
+  var statSheet = ss.getSheetByName(SHEET_STATUS);
+  if (!statSheet) return createError('user_status シートが存在しません', 500);
+
+  var statRows  = filterRowsByUserId(statSheet, userId);
+  var hasRow    = statRows.length > 0;
+  var currentXp = hasRow ? (parseInt(statRows[0][1]) || 0) : 0;
+  var newXp     = currentXp + earnedXp;
+  var newLevel  = calcLevel(newXp);
+
+  if (hasRow) {
+    var allRows = statSheet.getDataRange().getValues();
+    for (var r = allRows.length; r >= 2; r--) {
+      if (String(allRows[r-1][0]) === String(userId)) {
+        // ★ Phase9.5: col2=total_xp, col3=level
+        statSheet.getRange(r, 2).setValue(newXp);
+        statSheet.getRange(r, 3).setValue(newLevel);
+        break;
+      }
+    }
+  } else {
+    // 8列で新規挿入（last_practice_date は更新しない: ミニゲームは稽古日数に含めない）
+    statSheet.appendRow([userId, newXp, newLevel, '', todayStr, '', '', '']);
+  }
+
+  // ── 6. xp_history に記録 ──
+  var avgSec = (avgMs / 1000).toFixed(3);
+  writeXpHistory(ss, userId, 'gain', earnedXp,
+    '刹那ノ見切（ランク: ' + rank + ' / 平均: ' + avgSec + 's）',
+    newXp, newLevel);
+
+  gasLog('INFO', 'saveMinigameResult',
+    'user=' + userId + ' rank=' + rank + ' avg=' + avgMs + 'ms xp=+' + earnedXp +
+    ' total=' + newXp + ' level=' + newLevel);
+
+  // ── 7. 保存後の状態を返す ──
+  var newTodayPlayed = todayRows.length + 1;
+  return createResponse({
+    saved:        true,
+    earnedXp:     earnedXp,
+    totalXp:      newXp,
+    level:        newLevel,
+    todayPlayed:  newTodayPlayed,
+    remaining:    Math.max(0, MINIGAME_DAILY_LIMIT - newTodayPlayed),
+    locked:       newTodayPlayed >= MINIGAME_DAILY_LIMIT,
+    averageTime:  avgMs,
+    rank:         rank,
+  });
 }

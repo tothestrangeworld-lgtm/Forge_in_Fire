@@ -419,3 +419,53 @@ export async function fetchAchievements(targetUserId?: string): Promise<Achievem
       : { action: 'getAchievements' },
   );
 }
+
+// =====================================================================
+// 反射神経ミニゲーム『刹那ノ見切』★ Phase16
+// =====================================================================
+
+export interface MinigameStatus {
+  todayPlayed: number;
+  dailyLimit:  number;
+  remaining:   number;
+  locked:      boolean;
+  bestTimeMs:  number | null;
+}
+
+export interface MinigameSaveResult {
+  saved:       true;
+  earnedXp:    number;
+  totalXp:     number;
+  level:       number;
+  todayPlayed: number;
+  remaining:   number;
+  locked:      boolean;
+  averageTime: number;
+  rank:        string;
+}
+
+export type MinigameRank = 'S' | 'A' | 'B' | 'C' | 'F';
+
+/**
+ * ミニゲームの本日プレイ状況と自己ベストタイムを取得する。
+ */
+export async function fetchMinigameStatus(): Promise<MinigameStatus> {
+  logger.info('api', 'ミニゲームステータス取得');
+  return gasGet<MinigameStatus>({ action: 'getMinigameStatus' });
+}
+
+/**
+ * ミニゲームの試合結果を保存し、XPを付与する。
+ * @param payload averageTime: 平均反応速度(ms), rank: 'S'|'A'|'B'|'C'|'F'
+ */
+export async function saveMinigameResult(payload: {
+  averageTime: number;
+  rank:        MinigameRank;
+}): Promise<MinigameSaveResult> {
+  logger.info('api', `ミニゲーム結果送信: rank=${payload.rank} avg=${payload.averageTime}ms`);
+  return gasPost<MinigameSaveResult>({
+    action:      'saveMinigameResult',
+    averageTime: payload.averageTime,
+    rank:        payload.rank,
+  });
+}

@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Swords, Users, LogOut } from 'lucide-react';
+// 変更後
+import { Home, Swords, Users, LogOut, Target } from 'lucide-react';
 import { useEffect, useState } from 'react';
 // ★ Phase13.7: auth.ts の公式APIを使用
 import { getAuthUser, logoutAndRedirect } from '@/lib/auth';
@@ -27,12 +28,16 @@ export default function Navigation() {
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
 
+// 変更後
   /* ── nav items ────────────────────────────────────────────────── */
+  // ★ Phase16: 反射神経養成ミニゲーム『刹那ノ見切』へのリンクを追加
   const navItems = [
-    { href: '/',       label: 'ホーム',   icon: Home   },
-    { href: '/record', label: '稽古記録', icon: Swords },
-    { href: '/rivals', label: '門下生',   icon: Users  },
+    { href: '/',         label: 'ホーム',   icon: Home   },
+    { href: '/record',   label: '稽古記録', icon: Swords },
+    { href: '/rivals',   label: '門下生',   icon: Users  },
+    { href: '/minigame', label: '見切',     icon: Target },
   ] as const;
+
 
   return (
     <nav className="bottom-nav" role="navigation" aria-label="メインナビゲーション">
