@@ -149,12 +149,16 @@ export default function MiniGamePage() {
   // ===================================================================
   // ★ Phase16: 初回マウント時に GAS からステータス取得
   // ===================================================================
+  // 変更後
+  const isInitializedRef = useRef(false);
+
   useEffect(() => {
-    let mounted = true;
+    if (isInitializedRef.current) return;
+    isInitializedRef.current = true;
+
     (async () => {
       try {
         const status = await fetchMinigameStatus();
-        if (!mounted) return;
         setMatchCount(status.todayPlayed);
         matchCountRef.current = status.todayPlayed;
         setBestTimeMs(status.bestTimeMs);
@@ -164,13 +168,11 @@ export default function MiniGamePage() {
           setPhase('idle');
         }
       } catch (err) {
-        if (!mounted) return;
         const msg = err instanceof Error ? err.message : String(err);
         setErrorMessage(msg);
         setPhase('error');
       }
     })();
-    return () => { mounted = false; };
   }, []);
 
   // ===================================================================
@@ -274,43 +276,46 @@ export default function MiniGamePage() {
   // ===================================================================
   // ★ Phase16: matchEnd フェーズ突入時に GAS へスコア送信
   // ===================================================================
-  useEffect(() => {
-    if (phase !== 'matchEnd') return;
-    if (results.length !== ROUNDS_PER_MATCH) return;
-    if (lastSaveResult !== null) return; // 二重送信防止
+// ★ 修正: 二重送信防止フラグを useRef で管理し、クリーンアップで state 更新を阻害しない
+const isSubmittingRef = useRef(false);
 
-    let mounted = true;
-    setPhase('submitting');
+useEffect(() => {
+  if (phase !== 'matchEnd') return;
+  if (results.length !== ROUNDS_PER_MATCH) return;
+  if (lastSaveResult !== null) return;
+  if (isSubmittingRef.current) return; // ★ Ref で二重実行を完全防止
 
-    (async () => {
-      try {
-        const avgMs = averageReaction !== null ? Math.round(averageReaction) : 0;
-        const rank  = calcRank(successCount, averageReaction);
-        const res   = await saveMinigameResult({
-          averageTime: avgMs,
-          rank,
-        });
-        if (!mounted) return;
-        setLastSaveResult(res);
-        setMatchCount(res.todayPlayed);
-        matchCountRef.current = res.todayPlayed;
-        // ベストタイム更新（成功本数があり、ベスト未満の場合）
-        if (avgMs > 0 && (bestTimeMs === null || avgMs < bestTimeMs)) {
-          setBestTimeMs(avgMs);
-        }
-        setPhase('matchEnd');
-      } catch (err) {
-        if (!mounted) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        setErrorMessage(msg);
-        // 送信失敗してもリザルト画面は表示する（ローカル結果のみ）
-        setPhase('matchEnd');
+  isSubmittingRef.current = true;
+  setPhase('submitting');
+
+  (async () => {
+    try {
+      const avgMs = averageReaction !== null ? Math.round(averageReaction) : 0;
+      const rank  = calcRank(successCount, averageReaction);
+      const res   = await saveMinigameResult({
+        averageTime: avgMs,
+        rank,
+      });
+      // ★ mounted チェックを廃止。常に state を更新する
+      setLastSaveResult(res);
+      setMatchCount(res.todayPlayed);
+      matchCountRef.current = res.todayPlayed;
+      if (avgMs > 0 && (bestTimeMs === null || avgMs < bestTimeMs)) {
+        setBestTimeMs(avgMs);
       }
-    })();
+      setPhase('matchEnd');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(msg);
+      setPhase('matchEnd');
+    } finally {
+      isSubmittingRef.current = false;
+    }
+  })();
 
-    return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  // ★ クリーンアップ削除（mounted フラグ廃止）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [phase]);
 
   return (
     <div className="mikiri-root">
