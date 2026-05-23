@@ -3,6 +3,8 @@ import { M_PLUS_Rounded_1c } from 'next/font/google';
 import './globals.css';
 import Navigation from '@/components/Navigation';
 import AuthGuard  from '@/components/AuthGuard';
+// ★ Phase 17.1: SWRのlocalStorage永続化プロバイダ
+import SWRProvider from '@/components/SWRProvider';
 
 const mplus = M_PLUS_Rounded_1c({
   subsets:  ['latin'],
@@ -66,12 +68,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="pc-deco-sub">剣道稽古記録</div>
         </div>
 
-        <AuthGuard>
-          <div className="app-shell">
-            <main className="app-main">{children}</main>
-            <Navigation />
-          </div>
-        </AuthGuard>
+        {/* ★ Phase 17.1: SWRのlocalStorage永続化キャッシュを適用 */}
+        <SWRProvider>
+          <AuthGuard>
+            <div className="app-shell">
+              <main className="app-main">{children}</main>
+              <Navigation />
+            </div>
+          </AuthGuard>
+        </SWRProvider>
 
         <div className="pc-side pc-side-right" aria-hidden="true" />
       </body>
