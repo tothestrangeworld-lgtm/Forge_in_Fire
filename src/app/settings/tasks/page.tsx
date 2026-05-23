@@ -5,47 +5,49 @@ import { useRouter } from 'next/navigation';
 import { Loader2, Save, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import type { TaskDiff, UserTask } from '@/types';
-import { fetchDashboard, updateTasks } from '@/lib/api';
+// ★ Phase17: fetchDashboard → useDashboardSWR に置換（キャッシュ共有）
+import { useDashboardSWR, updateTasks } from '@/lib/api';
 
-// =====================================================================
-// 課題設定画面
-// ★ Phase4: スマートテキスト変更検知を実装
-//   - テキスト変更なし → 既存 ID を維持（id を送信）
-//   - テキスト変更あり → 新規 UUID を発行（id を送らない）
-//   - 一度変更しても保存前に元テキストに戻した場合は「変更なし」扱い
-// =====================================================================
-
-const INPUT_COUNT = 5 as const;
+const INPUT_COUNT = 5 as const;   // ★ ここを復元！
 
 export default function TaskSettingsPage() {
   const router = useRouter();
 
-  /** 初期ロード時のアクティブタスク（比較基準）*/
-  const [originalTasks, setOriginalTasks] = useState<UserTask[]>([]);
+  // ★ Phase17: SWR を使ってダッシュボードキャッシュと共有
+  // ホーム画面で取得済みなら、ここでは再フェッチが発生しない（爆速化）
+  const { data: swrData, error: swrError, isLoading: loading } = useDashboardSWR();
 
-  /** 各テキストボックスの現在値（0〜4 のインデックスで originalTasks と対応）*/
+  /** 各テキストボックスの現在値 */
   const [values, setValues] = useState<string[]>(Array.from({ length: INPUT_COUNT }, () => ''));
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState<string | null>(null);
 
+  // ★ Phase17: SWR データから originalTasks を派生（useMemo化）
+  const originalTasks: UserTask[] = useMemo(() => {
+    const tasks = swrData?.dashboard?.tasks ?? [];
+    return tasks
+      .filter((t: UserTask) => t.status === 'active')
+      .slice(0, INPUT_COUNT);
+  }, [swrData?.dashboard?.tasks]);
+
+  // ★ Phase17: 初回ロード時のみ values を初期化（useEffect で originalTasks から seed）
+  // SWR の再フェッチが走っても、ユーザーの編集中の入力を上書きしないようにする
+  const [seeded, setSeeded] = useState(false);
   useEffect(() => {
-    fetchDashboard()
-      .then(d => {
-        const active = (d.tasks ?? [])
-          .filter((t: UserTask) => t.status === 'active')
-          .slice(0, INPUT_COUNT);
-        setOriginalTasks(active);
-        const seeded = Array.from({ length: INPUT_COUNT }, (_, i) => active[i]?.task_text ?? '');
-        setValues(seeded);
-      })
-      .catch((e: unknown) => {
-        if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
-        setError(e instanceof Error ? e.message : '読み込みに失敗しました');
-      })
-      .finally(() => setLoading(false));
-  }, []);
+    if (!seeded && originalTasks.length >= 0 && !loading) {
+      const init = Array.from({ length: INPUT_COUNT }, (_, i) => originalTasks[i]?.task_text ?? '');
+      setValues(init);
+      setSeeded(true);
+    }
+  }, [originalTasks, loading, seeded]);
+
+  // ★ Phase17: SWRエラーをローカルerror stateと統合
+  useEffect(() => {
+    if (swrError instanceof Error && swrError.message !== 'AUTH_REQUIRED') {
+      setError(swrError.message);
+    }
+  }, [swrError]);
 
   const nonEmptyCount = useMemo(
     () => values.map(v => v.trim()).filter(Boolean).length,

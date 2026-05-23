@@ -15,7 +15,8 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSWRConfig } from 'swr';
+// ★ Phase17: useSWRConfig は不要になったため削除
+//   saveLog 内で mutateMyDashboard() が自動実行される
 import {
   CheckCircle,
   Loader2,
@@ -380,7 +381,7 @@ function SingleToast({ item }: { item: ToastItem }) {
 // =====================================================================
 export default function RecordPage() {
   const router = useRouter();
-  const { mutate: globalMutate } = useSWRConfig();
+  // ★ Phase17: globalMutate は削除（api.ts 側で自動実行）
 
   const { data: swrData, isLoading, error: fetchError, mutate: mutateDashboard } = useDashboardSWR();
   const dashboard = swrData?.dashboard ?? null;
@@ -497,7 +498,7 @@ const validReceived = receivedTechSelections
         setMasteryToastTexts(newlyMastered);
       }
 
-      void globalMutate(['dashboard']);
+      // ★ Phase17: void globalMutate(['dashboard']) は削除（重複再フェッチ防止）
 
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;

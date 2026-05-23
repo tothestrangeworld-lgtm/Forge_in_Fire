@@ -5,7 +5,7 @@
 // ★ Phase6 Step2: アチーブメントUI
 // =====================================================================
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Flame,
@@ -27,7 +27,8 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import { fetchAchievements } from '@/lib/api';
+// ★ Phase17: fetchAchievements → useAchievementsSWR に置換（ホーム画面とキャッシュ共有）
+import { useAchievementsSWR } from '@/lib/api';
 import type { Achievement } from '@/types';
 
 // =====================================================================
@@ -431,18 +432,19 @@ function BadgeCard({ achievement, index, onClick }: BadgeCardProps) {
 // =====================================================================
 export default function AchievementsPage() {
   const router = useRouter();
-  const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState<string | null>(null);
-  const [selected, setSelected]         = useState<Achievement | null>(null);
-  const [filter, setFilter]             = useState<'all' | 'unlocked' | 'locked'>('all');
 
-  useEffect(() => {
-    fetchAchievements()
-      .then(setAchievements)
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+  // ★ Phase17: SWR でアチーブメントデータを取得
+  // ホーム画面の useAchievementsSWR() と同じキャッシュを共有するため、
+  // 画面遷移時に再フェッチが発生しない（爆速化）
+  const { data: achievements = [], error: swrError, isLoading: loading } = useAchievementsSWR();
+
+  const [selected, setSelected] = useState<Achievement | null>(null);
+  const [filter, setFilter]     = useState<'all' | 'unlocked' | 'locked'>('all');
+
+  // ★ Phase17: SWRエラーから error メッセージを派生
+  const error = swrError instanceof Error && swrError.message !== 'AUTH_REQUIRED'
+    ? swrError.message
+    : null;
 
   const unlockedCount = achievements.filter(a => a.isUnlocked).length;
   const total         = achievements.length;

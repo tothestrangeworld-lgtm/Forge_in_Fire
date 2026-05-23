@@ -2,25 +2,28 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, ChevronRight, Swords, Shield, Star } from 'lucide-react';
+import { Users, ChevronRight } from 'lucide-react';
 import { useRivalsSWR } from '@/lib/api';
-import type { Rival } from '@/types'; // 型をインポート
 
 type SortKey = 'ID' | 'LEVEL' | 'MASTERY:面' | 'MASTERY:小手' | 'MASTERY:胴' | 'MASTERY:突き';
 
+// ★ Phase17: masteryStats のキー型を明示
+//    sortKey.split(':')[1] の戻り値を BodyPart として安全にアサーションする
+type BodyPart = '面' | '小手' | '胴' | '突き';
+
 export default function RivalsPage() {
   const router = useRouter();
-  const { data: rivals = [], error: swrError, isLoading: loading } = useRivalsSWR() as { data: Rival[] | undefined, error: any, isLoading: boolean };
+  const { data: rivals = [], error: swrError, isLoading: loading } = useRivalsSWR();
   const [sortKey, setSortKey] = useState<SortKey>('ID');
 
   const sortedRivals = useMemo(() => {
     return [...rivals].sort((a, b) => {
       if (sortKey === 'ID') return a.user_id.localeCompare(b.user_id);
       if (sortKey === 'LEVEL') return (b.level ?? 0) - (a.level ?? 0);
-      const part = sortKey.split(':')[1];
-      // masteryStats が undefined の場合に備え、オプショナルチェーンで安全にアクセスする
-      const pA = (a.masteryStats as Record<string, number> | undefined)?.[part] ?? 0;
-      const pB = (b.masteryStats as Record<string, number> | undefined)?.[part] ?? 0;
+      // ★ Phase17: BodyPart 型でアサーション（sortKey が 'MASTERY:面' 等の固定値だと保証されている）
+      const part = sortKey.split(':')[1] as BodyPart;
+      const pA = a.masteryStats?.[part] ?? 0;
+      const pB = b.masteryStats?.[part] ?? 0;
       return pB - pA;
     });
   }, [rivals, sortKey]);
@@ -57,7 +60,8 @@ export default function RivalsPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {sortedRivals.map((u) => {
             const isMasterySort = sortKey.startsWith('MASTERY:');
-            const part = sortKey.split(':')[1];
+            // ★ Phase17: ここも BodyPart 型でアサーション
+            const part = sortKey.split(':')[1] as BodyPart;
             const val = isMasterySort ? (u.masteryStats?.[part] ?? 0) : null;
 
             return (

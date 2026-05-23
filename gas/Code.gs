@@ -120,6 +120,131 @@ var SHEET_ERRORLOGS      = 'error_logs';
 var SHEET_MINIGAME_SCORES = 'minigame_scores'; // id, user_id, created_at, average_time, rank, earned_xp
 
 // =====================================================================
+// ★ Phase17: CacheService ラッパー（爆速化）
+// =====================================================================
+// GASのCacheService（インメモリキャッシュ）を活用して、
+// 重いシート走査処理の結果を一時保存する。
+//
+// 設計方針:
+//   - キャッシュキーは下記の CACHE_KEYS 関数で一元管理
+//   - TTL: マスタ系=6時間 / ユーザー系=30分
+//   - 100KB制限を超える場合は put をスキップ（ログのみ）
+//   - Write 処理の末尾で必ず関連キーをパージする
+// =====================================================================
+
+var CACHE_TTL_MASTER = 21600; // 6時間（マスタ系）
+var CACHE_TTL_USER   = 1800;  // 30分（ユーザー系）
+var CACHE_MAX_BYTES  = 100000; // CacheService の1値あたりの上限（100KB）
+
+// キャッシュキー生成関数（一元管理）
+var CACHE_KEYS = {
+  dashboard:        function(userId) { return 'dashboard_' + userId; },
+  techniques:       function(userId) { return 'techniques_' + userId; },
+  achievements:     function(userId) { return 'achievements_' + userId; },
+  minigameStatus:   function(userId) { return 'minigame_status_' + userId; },
+  todayEvaluations: function(evaluatorId, targetId) {
+    return 'today_eval_' + evaluatorId + '_' + targetId;
+  },
+  users:            'users_all',
+  epithetMaster:    'master_epithet',
+  techniqueMaster:  'master_technique',
+  titleMaster:      'master_title',
+  matchupMaster:    'master_matchup',
+  achievementMaster:'master_achievement',
+};
+
+/**
+ * キャッシュから値を取得（JSON自動デシリアライズ）
+ * @returns 値 or null（キャッシュミス時）
+ */
+function cacheGet(key) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get(key);
+    if (cached === null) return null;
+    return JSON.parse(cached);
+  } catch (e) {
+    gasLog('WARN', 'cacheGet', 'キャッシュ取得失敗 key=' + key, { error: e.message });
+    return null;
+  }
+}
+
+/**
+ * キャッシュに値を保存（JSON自動シリアライズ・100KB超は無視）
+ */
+function cachePut(key, value, ttlSec) {
+  try {
+    var json = JSON.stringify(value);
+    if (json.length > CACHE_MAX_BYTES) {
+      gasLog('WARN', 'cachePut',
+        'キャッシュサイズ超過のためスキップ key=' + key + ' size=' + json.length + 'B');
+      return false;
+    }
+    var cache = CacheService.getScriptCache();
+    cache.put(key, json, ttlSec || CACHE_TTL_USER);
+    return true;
+  } catch (e) {
+    gasLog('WARN', 'cachePut', 'キャッシュ保存失敗 key=' + key, { error: e.message });
+    return false;
+  }
+}
+
+/**
+ * 単一キーのキャッシュを削除
+ */
+function cacheRemove(key) {
+  try {
+    CacheService.getScriptCache().remove(key);
+  } catch (e) {
+    gasLog('WARN', 'cacheRemove', 'キャッシュ削除失敗 key=' + key, { error: e.message });
+  }
+}
+
+/**
+ * 複数キーのキャッシュを一括削除
+ */
+function cacheRemoveAll(keys) {
+  try {
+    if (!keys || keys.length === 0) return;
+    CacheService.getScriptCache().removeAll(keys);
+  } catch (e) {
+    gasLog('WARN', 'cacheRemoveAll', 'キャッシュ一括削除失敗', { error: e.message, keys: keys });
+  }
+}
+
+/**
+ * ユーザー個人に関わるキャッシュを全削除（Write処理の末尾で呼ぶ）
+ * dashboard / techniques / achievements / minigameStatus を一括パージ
+ */
+function purgeUserCache(userId) {
+  if (!userId) return;
+  cacheRemoveAll([
+    CACHE_KEYS.dashboard(userId),
+    CACHE_KEYS.techniques(userId),
+    CACHE_KEYS.achievements(userId),
+    CACHE_KEYS.minigameStatus(userId),
+  ]);
+  gasLog('INFO', 'purgeUserCache', 'ユーザーキャッシュをパージ user=' + userId);
+}
+
+/**
+ * 全ユーザー共有マスタ系のキャッシュを削除
+ * （マスタシート編集時に手動実行用。通常は不要）
+ */
+function purgeMasterCache() {
+  cacheRemoveAll([
+    CACHE_KEYS.epithetMaster,
+    CACHE_KEYS.techniqueMaster,
+    CACHE_KEYS.titleMaster,
+    CACHE_KEYS.matchupMaster,
+    CACHE_KEYS.achievementMaster,
+    CACHE_KEYS.users,
+  ]);
+  gasLog('INFO', 'purgeMasterCache', '全マスタキャッシュをパージ');
+}
+
+
+// =====================================================================
 // A. ユーティリティ
 // =====================================================================
 
@@ -320,21 +445,28 @@ function getUserMasterSheet(ss) {
 }
 
 function getUsers() {
-  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  // ★ Phase17: キャッシュヒット判定
+  var cacheKey = CACHE_KEYS.users;
+  var cached   = cacheGet(cacheKey);
+  if (cached !== null) {
+    gasLog('INFO', 'getUsers', 'CACHE HIT');
+    return createResponse(cached);
+  }
+
+  var ss      = SpreadsheetApp.openById(SPREADSHEET_ID);
   var umSheet = getUserMasterSheet(ss);
   var stSheet = ss.getSheetByName(SHEET_STATUS);
   var utSheet = ss.getSheetByName(SHEET_USER_TECHNIQUES);
-  var tm      = getTechniqueMasterData(ss);
-  
+  var tm      = getTechniqueMasterDataCached(ss); // ★ Phase17: マスタキャッシュ活用
+
   var umRows = umSheet.getDataRange().getValues();
   var stRows = stSheet ? stSheet.getDataRange().getValues() : [];
   var utRows = utSheet ? utSheet.getDataRange().getValues() : [];
-  
-  // マップ作成
+
   var statusMap = {};
   for(var i=1; i<stRows.length; i++) statusMap[String(stRows[i][0])] = { xp: stRows[i][1], lvl: stRows[i][2] };
-  
-  var masteryMap = {}; // userId -> { "面": 0, "小手": 0, ... }
+
+  var masteryMap = {};
   for(var j=1; j<utRows.length; j++) {
     var uid = String(utRows[j][0]);
     var tid = String(utRows[j][1]);
@@ -351,12 +483,17 @@ function getUsers() {
     .map(function(r){
       var uid = String(r[0]);
       var stat = statusMap[uid] || { xp: 0, lvl: 1 };
-      return { 
-        user_id: uid, name: String(r[1]), role: String(r[3]), 
+      return {
+        user_id: uid, name: String(r[1]), role: String(r[3]),
         level: stat.lvl,
         masteryStats: masteryMap[uid] || {"面":0,"小手":0,"胴":0,"突き":0}
       };
     });
+
+  // ★ Phase17: キャッシュに保存（30分）
+  cachePut(cacheKey, users, CACHE_TTL_USER);
+  gasLog('INFO', 'getUsers', 'CACHE MISS → ' + users.length + '人 集約完了');
+
   return createResponse(users);
 }
 
@@ -456,6 +593,9 @@ function registerUser(body) {
   // ── 5. 末尾に追加 ──
   sheet.appendRow([newId, name, password, 'user']);
   gasLog('INFO', 'registerUser', '新規アカウント作成: ' + newId + ' (' + name + ')');
+
+  // ★ 修正: ユーザーが追加されたので、門下生一覧のキャッシュをパージ
+  cacheRemove(CACHE_KEYS.users);
 
   // ── 6. レスポンス（loginUser と同じ形式） ──
   return createResponse({
@@ -737,12 +877,17 @@ function saveLog(body) {
   // ─────────────────────────────────────────────
   var newAchievements = checkAndUnlockAchievements(ss, userId, date, logSheet);
 
+  // ★ Phase17: ユーザー個人のキャッシュをパージ（XPもtechniquesも変動するため）
+  purgeUserCache(userId);
+  // 門下生一覧の masteryStats にも影響するためパージ
+  cacheRemove(CACHE_KEYS.users);
+
   return createResponse({
     xp_earned:        totalEarnedXp,
     xp_from_practice: practiceXpFinal,
     xp_from_received: receivedXp,
-    xp_from_given:    givenXp,         // ★ Phase13.2
-    given_saved:      givenSavedCount, // ★ Phase13.2
+    xp_from_given:    givenXp,
+    given_saved:      givenSavedCount,
     received_saved:   receivedSavedCount,
     total_xp:         newXp,
     level:            newLevel,
@@ -816,8 +961,14 @@ function updateProfile(body) {
   gasLog('INFO', 'updateProfile', 'profile updated user=' + userId, {
     real_rank: current[5], motto: current[6], favorite_technique: current[7],
   });
+
+  // ★ Phase17: プロフィール変更によりダッシュボード等が変わるためパージ
+  purgeUserCache(userId);
+  cacheRemove(CACHE_KEYS.users); // 一覧の表示にも影響
+
   return createResponse({ updated: true });
 }
+
 
 // =====================================================================
 // G. user_status
@@ -860,12 +1011,15 @@ function resetStatus(body) {
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
 
   deleteRowsByUserId(sheet, userId);
-  // ★ Phase9.5: 8列で挿入（title 列なし）
   sheet.appendRow([userId, 0, 1, '', today, '', '', '']);
 
-  // ★ Phase9.5: title 引数なし
   writeXpHistory(ss, userId, 'reset', 0, 'レベルリセット', 0, 1);
   gasLog('INFO', 'resetStatus', 'reset user=' + userId);
+
+  // ★ Phase17: 完全リセットなので関連キャッシュを全パージ
+  purgeUserCache(userId);
+  cacheRemove(CACHE_KEYS.users);
+
   return createResponse({ total_xp: 0, level: 1 });
 }
 
@@ -967,6 +1121,10 @@ function updateTasks(body) {
 
   var activeCount = Object.keys(tasksWithId).length + newTasks.length;
   gasLog('INFO', 'updateTasks', 'tasks updated user=' + userId, { active_count: activeCount });
+
+  // ★ Phase17: tasksが変わるとダッシュボードも変わるためパージ
+  purgeUserCache(userId);
+
   return createResponse({ active_count: activeCount });
 }
 
@@ -987,6 +1145,10 @@ function archiveTask(body) {
       sheet.getRange(i + 1, 4).setValue('archived');
       sheet.getRange(i + 1, 6).setValue(ts);
       gasLog('INFO', 'archiveTask', 'task archived user=' + userId, { id: taskId });
+
+      // ★ Phase17: tasks変動のためダッシュボードキャッシュをパージ
+      purgeUserCache(userId);
+
       return createResponse({ id: String(taskId) });
     }
   }
@@ -1027,8 +1189,16 @@ function getTechniques(params) {
   var userId = params.user_id;
   if (!userId) return createError('user_id は必須です', 400);
 
+  // ★ Phase17: キャッシュヒット判定
+  var cacheKey = CACHE_KEYS.techniques(userId);
+  var cached   = cacheGet(cacheKey);
+  if (cached !== null) {
+    gasLog('INFO', 'getTechniques', 'CACHE HIT user=' + userId);
+    return createResponse(cached);
+  }
+
   var ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var master = getTechniqueMasterData(ss);
+  var master = getTechniqueMasterDataCached(ss); // ★ Phase17: マスタキャッシュ経由
   if (master.length === 0) {
     gasLog('WARN', 'getTechniques', 'technique_master シートが存在しないか空です');
     return createResponse([]);
@@ -1066,7 +1236,9 @@ function getTechniques(params) {
     };
   });
 
-  gasLog('INFO', 'getTechniques', techs.length + '件 user:' + userId);
+  // ★ Phase17: キャッシュ保存（30分）
+  cachePut(cacheKey, techs, CACHE_TTL_USER);
+  gasLog('INFO', 'getTechniques', 'CACHE MISS → ' + techs.length + '件 user:' + userId);
   return createResponse(techs);
 }
 
@@ -1320,9 +1492,19 @@ function evaluatePeer(body) {
   // Step 5. レスポンス
   // ★ Phase13.6: evaluator_xp を新規追加
   // ─────────────────────────────────────────────
+  // ★ Phase17: 評価された側・評価した側の両方のキャッシュをパージ
+  // （双方のXPが変動するため）
+  if (evaluatedTasks.length > 0) {
+    purgeUserCache(targetId);    // 評価された側
+    purgeUserCache(evaluatorId); // 評価した側（見取り稽古ボーナス）
+    cacheRemove(CACHE_KEYS.users); // 一覧のレベル表示も変わる
+    // 「今日の評価済み課題」キャッシュもパージ（あれば）
+    cacheRemove(CACHE_KEYS.todayEvaluations(evaluatorId, targetId));
+  }
+
   return createResponse({
-    xp_granted:      xpGranted,        // 評価された側に付与されたXP
-    evaluator_xp:    evaluatorXp,      // ★ Phase13.6: 評価した側に付与されたXP（見取り稽古ボーナス）
+    xp_granted:      xpGranted,
+    evaluator_xp:    evaluatorXp,
     evaluator_level: evalLevel,
     multiplier:      mult,
     evaluated_tasks: evaluatedTasks,
@@ -1341,6 +1523,14 @@ function getTodayEvaluations(params) {
 
   if (!evaluatorId) return createError('user_id は必須です', 400);
   if (!targetId)    return createError('target_id は必須です', 400);
+
+  // ★ 修正: キャッシュヒット判定を追加
+  var cacheKey = CACHE_KEYS.todayEvaluations(evaluatorId, targetId);
+  var cached   = cacheGet(cacheKey);
+  if (cached !== null) {
+    gasLog('INFO', 'getTodayEvaluations', 'CACHE HIT');
+    return createResponse(cached);
+  }
 
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
@@ -1364,9 +1554,15 @@ function getTodayEvaluations(params) {
     }
   }
 
+  var result = { evaluated_task_ids: evaluatedTaskIds };
+
   gasLog('INFO', 'getTodayEvaluations',
-    'evaluator=' + evaluatorId + ' target=' + targetId + ' evaluated=' + evaluatedTaskIds.length);
-  return createResponse({ evaluated_task_ids: evaluatedTaskIds });
+    'CACHE MISS evaluator=' + evaluatorId + ' target=' + targetId + ' evaluated=' + evaluatedTaskIds.length);
+    
+  // ★ 修正: キャッシュに保存（30分）
+  cachePut(cacheKey, result, CACHE_TTL_USER);
+
+  return createResponse(result);
 }
 
 // =====================================================================
@@ -1393,13 +1589,20 @@ function getDashboard(params) {
   var userId = params.user_id;
   if (!userId) return createError('user_id は必須です', 400);
 
+  // ★ Phase17: キャッシュヒット判定
+  var cacheKey = CACHE_KEYS.dashboard(userId);
+  var cached   = cacheGet(cacheKey);
+  if (cached !== null) {
+    gasLog('INFO', 'getDashboard', 'CACHE HIT user=' + userId);
+    return createResponse(cached);
+  }
+
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 
   // ── 1. XP減衰を先に適用 ──
   var decayResult = applyDecay(ss, userId);
 
   // ── 2. user_status ──
-  // ★ Phase9.5: title を除いたオブジェクト。インデックス修正済み。
   var status = { total_xp: 0, level: 1, last_practice_date: '', real_rank: '', motto: '', favorite_technique: '' };
   var statSheet = ss.getSheetByName(SHEET_STATUS);
   if (statSheet) {
@@ -1409,7 +1612,6 @@ function getDashboard(params) {
       status = {
         total_xp:           parseInt(sr[1]) || 0,
         level:              parseInt(sr[2]) || 1,
-        // ★ Phase9.5: [3]=last_practice_date, [4]=last_decay_date(内部用のみ), [5]=real_rank, [6]=motto, [7]=favorite_technique
         last_practice_date: String(sr[3] || ''),
         real_rank:          String(sr[5] || ''),
         motto:              String(sr[6] || ''),
@@ -1441,14 +1643,13 @@ function getDashboard(params) {
   // ── 5. nextLevelXp ──
   var nextLevelXp = calcNextLevelXp(status.total_xp);
 
-  // ── 6. title_master ──
-  var titleMaster = getTitleMasterData(ss);
+  // ── 6. title_master（マスタキャッシュ活用） ──
+  var titleMaster = getTitleMasterDataCached(ss);
 
-  // ── 7. epithet_master（Phase9.1 bugfix: rarity/description 列マッピング修正済み）──
-  var epithetMaster = getEpithetMasterData(ss);
+  // ── 7. epithet_master（マスタキャッシュ活用） ──
+  var epithetMaster = getEpithetMasterDataCached(ss);
 
   // ── 8. xp_history（直近90件）──
-  // ★ Phase9.5: title 列(旧[7])を除いた 7列構成。[6]=level まで。
   var xpHistory = [];
   var xpHistSheet = ss.getSheetByName(SHEET_XP_HIST);
   if (xpHistSheet) {
@@ -1461,16 +1662,14 @@ function getDashboard(params) {
         reason:         String(r[4] || ''),
         total_xp_after: Number(r[5]) || 0,
         level:          Number(r[6]) || 1,
-        // ★ Phase9.5: title を返さない
       };
     }).filter(function(e){ return e.date; });
   }
 
-  // ── 9. technique_master（全件） ──
-  var techniqueMaster = getTechniqueMasterData(ss);
+  // ── 9. technique_master（マスタキャッシュ活用） ──
+  var techniqueMaster = getTechniqueMasterDataCached(ss);
 
-  // ── 10. peerLogs（他者から受けた評価ログ）★ Phase8 Step3-1 ──
-  // peer_evaluations 列: evaluator_id(0), target_id(1), task_id(2), date(3), score(4), xp_granted(5)
+  // ── 10. peerLogs ──
   var peerLogs = [];
   var peSheet  = ss.getSheetByName(SHEET_PEER_EVALS);
   if (peSheet) {
@@ -1483,24 +1682,20 @@ function getDashboard(params) {
       var dateStr  = pe[3] ? String(pe[3]).slice(0, 10) : '';
       var score    = parseInt(pe[4]) || 0;
       if (!dateStr || !itemName || score < 1) continue;
-      peerLogs.push({
-        date:      dateStr,
-        item_name: itemName,
-        score:     score,
-      });
+      peerLogs.push({ date: dateStr, item_name: itemName, score: score });
     }
   }
 
-  // ── 11. matchupMaster（剣風相性マスタ全件）★ Phase10 ──
-  var matchupMaster = getMatchupMasterData(ss);
+  // ── 11. matchupMaster（マスタキャッシュ活用） ──
+  var matchupMaster = getMatchupMasterDataCached(ss);
 
-  // ── 12. peersStyle（自分以外の剣友のスタイル一覧）★ Phase10 / Phase-ex4 ──
+  // ── 12. peersStyle ──
   var peersStyle = getPeersStyleData(ss, userId);
 
-  // ── 13. receivedStats（被打分析の集計）★ Phase13 ──
+  // ── 13. receivedStats ──
   var receivedStats = getReceivedStatsData(ss, userId, techniqueMaster);
 
-  return createResponse({
+  var result = {
     status:          status,
     tasks:           tasks,
     logs:            logs,
@@ -1511,10 +1706,16 @@ function getDashboard(params) {
     xpHistory:       xpHistory,
     techniqueMaster: techniqueMaster,
     peerLogs:        peerLogs,
-    matchupMaster:   matchupMaster,   // ★ Phase10
-    peersStyle:      peersStyle,      // ★ Phase10 / Phase-ex4
-    receivedStats:   receivedStats,   // ★ Phase13
-  });
+    matchupMaster:   matchupMaster,
+    peersStyle:      peersStyle,
+    receivedStats:   receivedStats,
+  };
+
+  // ★ Phase17: キャッシュに保存（30分）
+  cachePut(cacheKey, result, CACHE_TTL_USER);
+  gasLog('INFO', 'getDashboard', 'CACHE MISS → 集約完了 user=' + userId);
+
+  return createResponse(result);
 }
 
 // =====================================================================
@@ -1589,9 +1790,58 @@ function getEpithetMasterData(ss) {
     });
 }
 
-function getEpithetMaster() {
-  return createResponse(getEpithetMasterData(SpreadsheetApp.openById(SPREADSHEET_ID)));
+// =====================================================================
+// ★ Phase17: マスタデータのキャッシュ付きラッパー
+// 既存の getXxxMasterData() はそのまま保持し、キャッシュレイヤーをラップする。
+// マスタはほぼ不変なので TTL=6時間で長期キャッシュする。
+// マスタシートを手動編集した後は purgeMasterCache() を実行してパージすること。
+// =====================================================================
+
+function getTechniqueMasterDataCached(ss) {
+  var cached = cacheGet(CACHE_KEYS.techniqueMaster);
+  if (cached !== null) return cached;
+  var data = getTechniqueMasterData(ss);
+  cachePut(CACHE_KEYS.techniqueMaster, data, CACHE_TTL_MASTER);
+  return data;
 }
+
+function getEpithetMasterDataCached(ss) {
+  var cached = cacheGet(CACHE_KEYS.epithetMaster);
+  if (cached !== null) return cached;
+  var data = getEpithetMasterData(ss);
+  cachePut(CACHE_KEYS.epithetMaster, data, CACHE_TTL_MASTER);
+  return data;
+}
+
+function getTitleMasterDataCached(ss) {
+  var cached = cacheGet(CACHE_KEYS.titleMaster);
+  if (cached !== null) return cached;
+  var data = getTitleMasterData(ss);
+  cachePut(CACHE_KEYS.titleMaster, data, CACHE_TTL_MASTER);
+  return data;
+}
+
+function getMatchupMasterDataCached(ss) {
+  var cached = cacheGet(CACHE_KEYS.matchupMaster);
+  if (cached !== null) return cached;
+  var data = getMatchupMasterData(ss);
+  cachePut(CACHE_KEYS.matchupMaster, data, CACHE_TTL_MASTER);
+  return data;
+}
+
+function getAchievementMasterDataCached(ss) {
+  var cached = cacheGet(CACHE_KEYS.achievementMaster);
+  if (cached !== null) return cached;
+  var data = getAchievementMasterData(ss);
+  cachePut(CACHE_KEYS.achievementMaster, data, CACHE_TTL_MASTER);
+  return data;
+}
+
+function getEpithetMaster() {
+  // ★ Phase17: キャッシュ経由で取得
+  return createResponse(getEpithetMasterDataCached(SpreadsheetApp.openById(SPREADSHEET_ID)));
+}
+
 
 // =====================================================================
 // L2. 剣風相性マスタ（共通）★ Phase10
@@ -2042,8 +2292,16 @@ function getAchievements(params) {
   var userId = params.user_id;
   if (!userId) return createError('user_id は必須です', 400);
 
+  // ★ Phase17: キャッシュヒット判定
+  var cacheKey = CACHE_KEYS.achievements(userId);
+  var cached   = cacheGet(cacheKey);
+  if (cached !== null) {
+    gasLog('INFO', 'getAchievements', 'CACHE HIT user=' + userId);
+    return createResponse(cached);
+  }
+
   var ss      = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var master  = getAchievementMasterData(ss);
+  var master  = getAchievementMasterDataCached(ss); // ★ Phase17: マスタキャッシュ経由
   var uaSheet = getUserAchievementsSheet(ss);
   var uaRows  = filterRowsByUserId(uaSheet, userId);
 
@@ -2065,7 +2323,9 @@ function getAchievements(params) {
     };
   });
 
-  gasLog('INFO', 'getAchievements', result.length + '件 user:' + userId);
+  // ★ Phase17: キャッシュ保存（30分）
+  cachePut(cacheKey, result, CACHE_TTL_USER);
+  gasLog('INFO', 'getAchievements', 'CACHE MISS → ' + result.length + '件 user:' + userId);
   return createResponse(result);
 }
 
@@ -2771,6 +3031,14 @@ function getMinigameStatus(params) {
   var userId = params.user_id;
   if (!userId) return createError('user_id は必須です', 400);
 
+  // ★ Phase17: キャッシュヒット判定
+  var cacheKey = CACHE_KEYS.minigameStatus(userId);
+  var cached   = cacheGet(cacheKey);
+  if (cached !== null) {
+    gasLog('INFO', 'getMinigameStatus', 'CACHE HIT user=' + userId);
+    return createResponse(cached);
+  }
+
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = getMinigameScoresSheet(ss);
 
@@ -2781,17 +3049,21 @@ function getMinigameStatus(params) {
   var todayPlayed = todayRows.length;
   var remaining   = Math.max(0, MINIGAME_DAILY_LIMIT - todayPlayed);
 
-  gasLog('INFO', 'getMinigameStatus',
-    'user=' + userId + ' played=' + todayPlayed + '/' + MINIGAME_DAILY_LIMIT +
-    ' best=' + (bestTime !== null ? bestTime + 'ms' : 'none'));
-
-  return createResponse({
+  var result = {
     todayPlayed: todayPlayed,
     dailyLimit:  MINIGAME_DAILY_LIMIT,
     remaining:   remaining,
     locked:      todayPlayed >= MINIGAME_DAILY_LIMIT,
     bestTimeMs:  bestTime,
-  });
+  };
+
+  // ★ Phase17: キャッシュ保存（30分）
+  cachePut(cacheKey, result, CACHE_TTL_USER);
+  gasLog('INFO', 'getMinigameStatus',
+    'CACHE MISS user=' + userId + ' played=' + todayPlayed + '/' + MINIGAME_DAILY_LIMIT +
+    ' best=' + (bestTime !== null ? bestTime + 'ms' : 'none'));
+
+  return createResponse(result);
 }
 
 /**
@@ -2921,6 +3193,11 @@ function saveMinigameResult(body) {
 
   // ── 7. 保存後の状態を返す ──
   var newTodayPlayed = todayRows.length + 1;
+
+  // ★ Phase17: ミニゲームステータス＋XP変動のためダッシュボード系もパージ
+  purgeUserCache(userId);
+  cacheRemove(CACHE_KEYS.users); // 一覧のレベルにも影響
+
   return createResponse({
     saved:        true,
     earnedXp:     earnedXp,

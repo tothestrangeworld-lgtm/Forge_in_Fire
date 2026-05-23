@@ -1,14 +1,12 @@
 // src/app/page.tsx
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { RotateCcw, TrendingDown, Settings } from 'lucide-react';
 import Link from 'next/link';
-import type { EpithetMasterEntry, UserTask, Achievement } from '@/types';
-import {
-  calcLevelFromXp, calcNextLevel, levelColor, resolveTechniqueName,
-} from '@/types';
-import { useDashboardSWR, resetStatus, fetchAchievements } from '@/lib/api';
+import type { EpithetMasterEntry, UserTask } from '@/types';
+import { calcLevelFromXp } from '@/types';
+import { useDashboardSWR, resetStatus, useAchievementsSWR } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import type { EpithetResult } from '@/lib/epithet';
 import { calcMasteryStatus } from '@/lib/mastery';
@@ -24,12 +22,13 @@ const PlaystyleCharts = dynamic(() => import('@/components/charts/PlaystyleChart
 export default function DashboardPage() {
   const [resetting, setReset]     = useState(false);
   const [showReset, setShowReset] = useState(false);
-  const [achiev, setAchiev]       = useState<{ unlocked: number; total: number } | null>(null);
   const user = getAuthUser();
 
   const { data: swrData, error: swrError, isLoading, mutate } = useDashboardSWR();
+  // ★ Phase17: アチーブメントもSWRでキャッシュ管理
+  const { data: achievementsList } = useAchievementsSWR();
 
-  // レスポンス構造に合わせて dashboardData を取得
+  // ★ Phase17: SWR レスポンス構造から dashboardData / techniques / error を取り出す
   const dashboardData = swrData?.dashboard ?? null;
   const techniques    = swrData?.techniques ?? [];
 
@@ -37,13 +36,14 @@ export default function DashboardPage() {
     ? swrError.message
     : null;
 
-  useEffect(() => {
-    fetchAchievements()
-      .then((list: Achievement[]) =>
-        setAchiev({ unlocked: list.filter(a => a.isUnlocked).length, total: list.length })
-      )
-      .catch(() => setAchiev({ unlocked: 0, total: 0 }));
-  }, []);
+  // ★ Phase17: useEffect から useMemo に変更（再レンダリング時のチラつき防止）
+  const achiev = useMemo(() => {
+    if (!achievementsList) return null;
+    return {
+      unlocked: achievementsList.filter(a => a.isUnlocked).length,
+      total:    achievementsList.length,
+    };
+  }, [achievementsList]);
 
   // 日付・タスク単位での集約（Reactフック順序維持のため早期リターンなし）
   const dailyLogs = useMemo(() => {
@@ -53,7 +53,7 @@ export default function DashboardPage() {
     dashboardData.logs.forEach(log => {
       if (!log.date) return;
       if (!map[log.date]) map[log.date] = {};
-      
+
       const tasks = map[log.date];
       const current = tasks[log.item_name] || { score: 0, count: 0 };
       tasks[log.item_name] = {

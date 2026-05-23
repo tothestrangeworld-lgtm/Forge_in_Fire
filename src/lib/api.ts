@@ -8,13 +8,15 @@
 // ★ Phase8: updateTechniqueRating を quantity / quality の2引数に変更。
 // ★ Phase13.2: updateTechniqueRating を完全削除。与打は saveLog の givenTechs に統合。
 // ★ SWR:  useDashboardSWR / useTechniquesSWR / useRivalsSWR / useRivalDashboardSWR を追加。
-//         useDashboardSWR は { dashboard, techniques } を返すよう修正。
 // ★ Phase14: registerUser を追加（新規アカウント作成）。
-//         gasPost の NO_AUTH_POST_ACTIONS に 'register' を追加。
-//
+// ★ Phase17: SWR最適化（爆速化）
+//   - revalidateIfStale / revalidateOnReconnect を false に固定
+//   - dedupingInterval をカテゴリ別に最適化（マスタ60分・ユーザー5分・一覧10分）
+//   - keepPreviousData=true で画面遷移時のチラつき防止
+//   - mutate ヘルパー（mutateAfterWrite 系）を新設し、Write 後の連動更新を統一
 // =====================================================================
 
-import useSWR from 'swr';
+import useSWR, { mutate, type SWRConfiguration } from 'swr';
 import type {
   Achievement,
   DashboardData,
@@ -37,7 +39,6 @@ const PROXY = '/api/gas';
 const NO_USER_ID_ACTIONS = ['getEpithetMaster', 'getUsers', 'ping'] as const;
 
 // ★ Phase14: POST でも user_id が不要なアクション一覧
-// （login と register はログイン前に呼ばれるため user_id を持っていない）
 const NO_AUTH_POST_ACTIONS = ['login', 'register'] as const;
 
 // ===== レスポンスパーサー =====
@@ -86,7 +87,6 @@ async function gasGet<T>(params: Record<string, string>): Promise<T> {
 async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
   const action    = (body.action as string) ?? 'unknown';
   const userId    = getCurrentUserId();
-  // ★ Phase14: register も user_id 不要なアクションとして扱う
   const needsUserId = !(NO_AUTH_POST_ACTIONS as readonly string[]).includes(action);
 
   if (needsUserId && !userId) {
@@ -108,6 +108,91 @@ async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 // =====================================================================
+// ★ Phase17: SWR 共通設定（カテゴリ別）
+// =====================================================================
+//
+// 設計方針:
+//   - revalidateOnFocus / revalidateIfStale / revalidateOnReconnect を全て false にする
+//     → GAS通信は重く、ユーザー側のキャッシュをできるだけ温かく保つ
+//   - dedupingInterval をカテゴリ別に分ける
+//     - マスタ系: 60分（ほぼ不変）
+//     - ユーザー個人: 5分（自分の操作後は mutate で能動的に更新）
+//     - 門下生一覧: 10分（他者の更新は即時性不要）
+//   - keepPreviousData=true でページ間遷移時のチラつき防止
+//   - shouldRetryOnError は AUTH_REQUIRED 以外なら最大2回
+// =====================================================================
+
+const baseSWRConfig: SWRConfiguration = {
+  revalidateOnFocus:     false,
+  revalidateOnReconnect: false,
+  revalidateIfStale:     false,        // ★ Phase17: 古いデータでも再検証しない
+  keepPreviousData:      true,         // ★ Phase17: 遷移時のチラつき防止
+  errorRetryCount:       2,
+  shouldRetryOnError:    (err: Error) => err.message !== 'AUTH_REQUIRED',
+};
+
+// マスタ系（ほぼ不変）: 60分
+const masterSWRConfig: SWRConfiguration = {
+  ...baseSWRConfig,
+  dedupingInterval: 60 * 60 * 1000,
+};
+
+// ユーザー個人系（ダッシュボード/技/実績）: 5分
+const userSWRConfig: SWRConfiguration = {
+  ...baseSWRConfig,
+  dedupingInterval: 5 * 60 * 1000,
+};
+
+// 門下生一覧系: 10分
+const rivalsSWRConfig: SWRConfiguration = {
+  ...baseSWRConfig,
+  dedupingInterval: 10 * 60 * 1000,
+};
+
+// =====================================================================
+// ★ Phase17: mutate ヘルパー（Write 後の連動更新）
+// =====================================================================
+//
+// 各 Write 操作後にフロント側のキャッシュも即座に無効化することで、
+// 「画面に古いデータが残る」問題を防ぐ。
+// GAS 側のキャッシュもパージ済みなので、再フェッチ時は最新データが取れる。
+// =====================================================================
+
+/**
+ * 自分のダッシュボード関連キャッシュを無効化
+ * (saveLog / updateProfile / resetStatus / updateTasks / archiveTask /
+ *  saveMinigameResult の後に呼ぶ)
+ */
+export async function mutateMyDashboard(): Promise<void> {
+  await Promise.all([
+    mutate(['dashboard']),
+    mutate(['techniques']),
+    mutate('achievements'),
+    mutate('minigameStatus'),
+  ]);
+}
+
+/**
+ * 門下生一覧および対象ユーザーのキャッシュを無効化
+ * (evaluatePeer の後に呼ぶ)
+ */
+export async function mutateAfterPeerEval(targetId: string): Promise<void> {
+  await Promise.all([
+    mutate('rivals'),
+    mutate(['rivalDashboard', targetId]),
+    mutate(['dashboard']),     // 自分のXPも変動
+    mutate(['techniques']),    // 自分の見取り稽古ボーナスもUI反映
+  ]);
+}
+
+/**
+ * 全 SWR キャッシュをクリア（ログイン/ログアウト時に使用）
+ */
+export async function mutateAll(): Promise<void> {
+  await mutate(() => true, undefined, { revalidate: false });
+}
+
+// =====================================================================
 // 認証
 // =====================================================================
 
@@ -122,37 +207,41 @@ export async function loginUser(payload: LoginPayload): Promise<LoginResponse> {
 export interface RegisterPayload  { name: string; password: string; }
 export interface RegisterResponse { user_id: string; name: string; role: string; }
 
-/**
- * 新規アカウントを作成する。
- * GAS 側で UserMaster の名前重複チェックとID自動採番を行う。
- * 成功時は loginUser と同形式の { user_id, name, role } を返す。
- *
- * エラーケース:
- *   - 名前が空または20文字超 → 400
- *   - パスワードが4文字未満または16文字超 → 400
- *   - 名前が既に登録されている    → 409
- *   - 全枠（U9999）が埋まった     → 500
- *
- * @param params { name, password }
- */
 export async function registerUser(params: RegisterPayload): Promise<RegisterResponse> {
   logger.info('api', `新規登録送信: name=${params.name}`);
-  return gasPost<RegisterResponse>({ action: 'register', ...params });
+  const result = await gasPost<RegisterResponse>({ action: 'register', ...params });
+  // ★ Phase17: 門下生一覧に新規ユーザーが追加されるためフロントキャッシュもパージ
+  await mutate('rivals');
+  return result;
 }
 
-export async function fetchUsers(): Promise<{ user_id: string; name: string; role: string }[]> {
-  return gasGet<{ user_id: string; name: string; role: string }[]>({ action: 'getUsers' });
+// =====================================================================
+// ★ Phase17: GASレスポンスに合わせた門下生型
+// =====================================================================
+// Code.gs の getUsers() は user_status の masteryMap を集計して
+// 全ユーザーに level / masteryStats を必ず付与して返却する。
+// フォールバック値:
+//   level:        1
+//   masteryStats: { "面": 0, "小手": 0, "胴": 0, "突き": 0 }
+//
+// optional 指定は防御的プログラミングのため。実行時は必ず値が存在する。
+// =====================================================================
+export interface RivalUser {
+  user_id:       string;
+  name:          string;
+  role:          string;
+  level?:        number;
+  masteryStats?: { '面': number; '小手': number; '胴': number; '突き': number };
+}
+
+export async function fetchUsers(): Promise<RivalUser[]> {
+  return gasGet<RivalUser[]>({ action: 'getUsers' });
 }
 
 // =====================================================================
 // ダッシュボード
 // =====================================================================
 
-/**
- * ダッシュボードを取得する。
- * レスポンスには techniqueMaster（technique_master 全件）が含まれる。
- * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
- */
 export async function fetchDashboard(targetUserId?: string): Promise<DashboardData> {
   return gasGet<DashboardData>(
     targetUserId
@@ -160,13 +249,6 @@ export async function fetchDashboard(targetUserId?: string): Promise<DashboardDa
       : { action: 'getDashboard' },
   );
 }
-
-// SWR フックの共通オプション
-const SWR_OPTS = {
-  revalidateOnFocus:     false,
-  revalidateOnReconnect: false,
-  shouldRetryOnError:    (err: Error) => err.message !== 'AUTH_REQUIRED',
-} as const;
 
 // ---- useDashboardSWR の戻り値型 ----
 export interface DashboardSWRData {
@@ -178,9 +260,8 @@ export interface DashboardSWRData {
  * ホーム画面用 SWR フック。
  * ダッシュボードと技一覧を並列取得し { dashboard, techniques } で返す。
  * - キャッシュキー: ['dashboard'] または ['dashboard', targetUserId]
+ * - dedupingInterval: 5分（ユーザー系）
  * - AUTH_REQUIRED エラー時は再試行しない。
- *
- * @param targetUserId 省略時は自分自身
  */
 export function useDashboardSWR(targetUserId?: string) {
   const key = targetUserId ? ['dashboard', targetUserId] : ['dashboard'];
@@ -194,7 +275,7 @@ export function useDashboardSWR(targetUserId?: string) {
       ]);
       return { dashboard, techniques };
     },
-    SWR_OPTS,
+    userSWRConfig,
   );
 }
 
@@ -204,12 +285,15 @@ export function useDashboardSWR(targetUserId?: string) {
 
 /**
  * 稽古ログを保存する。
- * ★ Phase4: items[].task_id（UUID）を使用。
- * ★ Phase6: レスポンスに newAchievements（今回新規解除された実績配列）が含まれる。
+ * ★ Phase17: 保存後に自分のダッシュボード関連キャッシュを自動更新。
  */
 export async function saveLog(payload: Omit<SaveLogPayload, 'action'>): Promise<SaveLogResponse> {
   logger.info('api', `稽古記録送信: ${payload.date} (${payload.items.length}項目)`);
-  return gasPost<SaveLogResponse>({ action: 'saveLog', ...payload });
+  const result = await gasPost<SaveLogResponse>({ action: 'saveLog', ...payload });
+  // ★ Phase17: 自分のキャッシュをパージ（門下生一覧のレベルも変動）
+  await mutateMyDashboard();
+  await mutate('rivals');
+  return result;
 }
 
 // =====================================================================
@@ -217,7 +301,11 @@ export async function saveLog(payload: Omit<SaveLogPayload, 'action'>): Promise<
 // =====================================================================
 
 export async function resetStatus(): Promise<{ total_xp: number; level: number; title: string }> {
-  return gasPost<{ total_xp: number; level: number; title: string }>({ action: 'resetStatus' });
+  const result = await gasPost<{ total_xp: number; level: number; title: string }>({ action: 'resetStatus' });
+  // ★ Phase17: リセット後にキャッシュを無効化
+  await mutateMyDashboard();
+  await mutate('rivals');
+  return result;
 }
 
 export async function updateProfile(data: {
@@ -225,17 +313,17 @@ export async function updateProfile(data: {
   motto?:              string;
   favorite_technique?: string;
 }): Promise<{ updated: boolean }> {
-  return gasPost<{ updated: boolean }>({ action: 'updateProfile', ...data });
+  const result = await gasPost<{ updated: boolean }>({ action: 'updateProfile', ...data });
+  // ★ Phase17: プロフィール変更後にキャッシュを無効化
+  await mutateMyDashboard();
+  await mutate('rivals');
+  return result;
 }
 
 // =====================================================================
 // TechniqueMastery
 // =====================================================================
 
-/**
- * 技の習熟度一覧を取得する（technique_master × user_techniques の JOIN済み）。
- * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
- */
 export async function fetchTechniques(targetUserId?: string): Promise<Technique[]> {
   return gasGet<Technique[]>(
     targetUserId
@@ -246,10 +334,7 @@ export async function fetchTechniques(targetUserId?: string): Promise<Technique[
 
 /**
  * 技の習熟度一覧を SWR でキャッシュ付きフェッチする。
- * - キャッシュキー: ['techniques'] または ['techniques', targetUserId]
- * - AUTH_REQUIRED エラー時は再試行しない。
- *
- * @param targetUserId 省略時は自分自身
+ * ★ Phase17: dedupingInterval=5分
  */
 export function useTechniquesSWR(targetUserId?: string) {
   const key = targetUserId ? ['techniques', targetUserId] : ['techniques'];
@@ -257,15 +342,9 @@ export function useTechniquesSWR(targetUserId?: string) {
   return useSWR<Technique[], Error>(
     key,
     () => fetchTechniques(targetUserId),
-    SWR_OPTS,
+    userSWRConfig,
   );
 }
-
-// =====================================================================
-// ★ Phase13.2: updateTechniqueRating は完全廃止。
-// 与打の記録は saveLog の givenTechs[] ペイロードに統合された。
-// 旧API互換性は無いため、本関数を呼び出す箇所が残っていればコンパイルエラーが出る。
-// =====================================================================
 
 // =====================================================================
 // user_tasks
@@ -273,14 +352,14 @@ export function useTechniquesSWR(targetUserId?: string) {
 
 /**
  * 評価項目を一括保存する。
- * ★ Phase4 スマート差分対応:
- *   - id あり → 既存タスクを再アクティブ化（テキスト変更なし）
- *   - id なし → 新規タスクとして UUID 発行
- *   - 送られなかった既存アクティブタスク → 自動アーカイブ
+ * ★ Phase17: 保存後にキャッシュを無効化。
  */
 export async function updateTasks(tasks: TaskDiff[]): Promise<{ active_count: number }> {
   logger.info('api', '評価項目をまとめて更新', { detail: { count: tasks.length } });
-  return gasPost<{ active_count: number }>({ action: 'updateTasks', tasks } as Record<string, unknown>);
+  const result = await gasPost<{ active_count: number }>({ action: 'updateTasks', tasks } as Record<string, unknown>);
+  // ★ Phase17: tasks変動でダッシュボードも変わる
+  await mutateMyDashboard();
+  return result;
 }
 
 // =====================================================================
@@ -289,14 +368,13 @@ export async function updateTasks(tasks: TaskDiff[]): Promise<{ active_count: nu
 
 /**
  * 門下生一覧画面用 SWR フック。
- * fetchUsers() をキャッシュ付きで取得する。
- * - キャッシュキー: 'rivals'
+ * ★ Phase17: dedupingInterval=10分（他者の更新は即時性不要）
  */
 export function useRivalsSWR() {
-  return useSWR<{ user_id: string; name: string; role: string }[], Error>(
+  return useSWR<RivalUser[], Error>(
     'rivals',
     () => fetchUsers(),
-    SWR_OPTS,
+    rivalsSWRConfig,
   );
 }
 
@@ -310,12 +388,7 @@ export interface RivalDashboardSWRData {
 
 /**
  * 門下生詳細画面用 SWR フック。
- * 対象ユーザーのダッシュボード・技一覧・ユーザー名・本日評価済み課題IDを並列取得し
- * { dashboard, techniques, targetName, initialEvaluatedTaskIds } で返す。
- * - キャッシュキー: ['rivalDashboard', targetId]
- * - targetId が null/空の場合はフェッチしない（SWRキーを null に設定）。
- *
- * @param targetId 対象ユーザーID
+ * ★ Phase17: dedupingInterval=10分
  */
 export function useRivalDashboardSWR(targetId: string | null) {
   return useSWR<RivalDashboardSWRData, Error>(
@@ -335,41 +408,35 @@ export function useRivalDashboardSWR(targetId: string | null) {
         initialEvaluatedTaskIds: todayEval.evaluated_task_ids,
       };
     },
-    SWR_OPTS,
+    rivalsSWRConfig,
   );
 }
 
 // =====================================================================
-// 他者評価 ★ Phase7: 個別課題単位の評価対応
+// 他者評価 ★ Phase7
 // =====================================================================
 
 /**
  * 他者評価を送信する。
- * ★ Phase7: 課題単位の評価に変更。items には評価したい課題のみを含める。
- *   - 本日すでに評価済みの task_id は GAS 側でスキップされ skipped_tasks に含まれる。
- *   - xp は新規評価分のスコア合計 × 2 × 評価者レベル倍率で算出。
- *
- * @param targetId 評価対象のユーザーID
- * @param items    評価する課題の配列（{ taskId, score }[]）
+ * ★ Phase17: 評価後に自分・対象者・一覧のキャッシュを連動更新。
  */
 export async function evaluatePeer(
   targetId: string,
   items: PeerEvalItem[],
 ): Promise<EvaluatePeerResponse> {
   logger.info('api', `他者評価送信: target=${targetId} items=${items.length}件`);
-  return gasPost<EvaluatePeerResponse>({
+  const result = await gasPost<EvaluatePeerResponse>({
     action:    'evaluatePeer',
     target_id: targetId,
     items,
   } as Record<string, unknown>);
+  // ★ Phase17: 双方のキャッシュを無効化
+  await mutateAfterPeerEval(targetId);
+  return result;
 }
 
 /**
  * 今日、自分が指定ユーザーを評価済みの task_id 一覧を取得する。
- * ライバル画面のロード時に呼び出し、評価済み課題の UI を disabled にするために使用する。
- *
- * @param targetId 評価対象のユーザーID
- * @returns { evaluated_task_ids: string[] }
  */
 export async function fetchTodayEvaluations(
   targetId: string,
@@ -390,10 +457,17 @@ export async function fetchEpithetMaster(): Promise<EpithetMasterEntry[]> {
 }
 
 /**
- * technique_master の全件を取得する（全ユーザー共通静的マスタ）。
- * 通常は fetchDashboard の戻り値に含まれる techniqueMaster を使うこと。
- * 単独で必要な場合（プロフィール設定画面など）にのみ使用する。
+ * ★ Phase17: 二つ名マスタの SWR フック（60分キャッシュ）
+ * マスタ系はほぼ不変なので長期キャッシュ。
  */
+export function useEpithetMasterSWR() {
+  return useSWR<EpithetMasterEntry[], Error>(
+    'epithetMaster',
+    () => fetchEpithetMaster(),
+    masterSWRConfig,
+  );
+}
+
 export async function fetchTechniqueMaster(): Promise<TechniqueMasterEntry[]> {
   logger.info('api', 'techniqueMaster 取得');
   const dashboard = await fetchDashboard();
@@ -404,19 +478,25 @@ export async function fetchTechniqueMaster(): Promise<TechniqueMasterEntry[]> {
 // アチーブメント（実績バッジ）★ Phase6
 // =====================================================================
 
-/**
- * ユーザーの全実績データを取得する。
- * achievement_master（全件）と user_achievements を JOIN し、
- * isUnlocked / unlockedAt を含む Achievement[] を返す。
- *
- * @param targetUserId 省略時は自分自身、指定時は対象ユーザーのデータを取得（閲覧専用）
- */
 export async function fetchAchievements(targetUserId?: string): Promise<Achievement[]> {
   logger.info('api', 'アチーブメント取得');
   return gasGet<Achievement[]>(
     targetUserId
       ? { action: 'getAchievements', user_id: targetUserId }
       : { action: 'getAchievements' },
+  );
+}
+
+/**
+ * ★ Phase17: アチーブメントの SWR フック（5分キャッシュ）
+ * achievements ページで使用。
+ */
+export function useAchievementsSWR(targetUserId?: string) {
+  const key = targetUserId ? ['achievements', targetUserId] : 'achievements';
+  return useSWR<Achievement[], Error>(
+    key,
+    () => fetchAchievements(targetUserId),
+    userSWRConfig,
   );
 }
 
@@ -446,26 +526,38 @@ export interface MinigameSaveResult {
 
 export type MinigameRank = 'S' | 'A' | 'B' | 'C' | 'F';
 
-/**
- * ミニゲームの本日プレイ状況と自己ベストタイムを取得する。
- */
 export async function fetchMinigameStatus(): Promise<MinigameStatus> {
   logger.info('api', 'ミニゲームステータス取得');
   return gasGet<MinigameStatus>({ action: 'getMinigameStatus' });
 }
 
 /**
+ * ★ Phase17: ミニゲームステータスの SWR フック（5分キャッシュ）
+ */
+export function useMinigameStatusSWR() {
+  return useSWR<MinigameStatus, Error>(
+    'minigameStatus',
+    () => fetchMinigameStatus(),
+    userSWRConfig,
+  );
+}
+
+/**
  * ミニゲームの試合結果を保存し、XPを付与する。
- * @param payload averageTime: 平均反応速度(ms), rank: 'S'|'A'|'B'|'C'|'F'
+ * ★ Phase17: 保存後にキャッシュを無効化。
  */
 export async function saveMinigameResult(payload: {
   averageTime: number;
   rank:        MinigameRank;
 }): Promise<MinigameSaveResult> {
   logger.info('api', `ミニゲーム結果送信: rank=${payload.rank} avg=${payload.averageTime}ms`);
-  return gasPost<MinigameSaveResult>({
+  const result = await gasPost<MinigameSaveResult>({
     action:      'saveMinigameResult',
     averageTime: payload.averageTime,
     rank:        payload.rank,
   });
+  // ★ Phase17: ステータス＋ダッシュボード（XP変動）を一括無効化
+  await mutateMyDashboard();
+  await mutate('rivals');
+  return result;
 }
