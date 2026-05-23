@@ -2,13 +2,12 @@
 
 /**
  * =====================================================================
- * 刹那ノ見切 (Setsuna no Mikiri) - Phase 16.1 サイバー和風UI版
+ * 刹那ノ見切 (Setsuna no Mikiri) - Phase 16.1 追記2版
  * =====================================================================
  * 改善点（追加分）:
- *  1. タイポグラフィ刷新: 英語コンソール表記をメインに、漢字を背景透かし化
- *  2. ボタンを横幅広・極小角・左端ネオンスライドのサイバー仕様へ
- *  3. モーダルをガラス・極細ボーダー・深い背景でコンソールウィンドウ化
- *  4. カットイン技名プールはラベルのみ英語化、技名（日本語）は維持
+ *  1. okori フェーズに剣士の「じわっ」予備動作アニメ（.anim-okori）追加
+ *  2. Loader2 を Tailwind の animate-spin で確実に回転
+ *  3. 色彩をインディゴ(#1e1b4b)×和風ゴールド(#d4af37)に全面統合
  * =====================================================================
  */
 
@@ -85,7 +84,7 @@ const ROUNDS_PER_MATCH = 3;
 const MAX_MATCHES_PER_DAY = 3;
 
 // =====================================================================
-// ★ カットイン用：タイミング別の技名プール（フル英語化）
+// ★ カットイン用：タイミング別の英語プール
 // =====================================================================
 const CUTIN_S = [
   'PERFECT STRIKE!',
@@ -134,7 +133,6 @@ const formatTime = (ms: number | null): string => {
   return `${(ms / 1000).toFixed(3)}s`;
 };
 
-/** 0埋め2桁 */
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 function calcOverallRank(roundResults: RoundResult[]): MinigameRank {
@@ -462,7 +460,6 @@ export default function MiniGamePage() {
       </header>
 
       <main className="mikiri-stage">
-        {/* ===== 演出レイヤ ===== */}
         {flashType === 'success' && <div className="flash-success" aria-hidden="true" />}
         {flashType === 'fail'    && <div className="flash-fail"    aria-hidden="true" />}
         {flashType === 'okori'   && <div className="flash-okori"   aria-hidden="true" />}
@@ -478,9 +475,12 @@ export default function MiniGamePage() {
 
         {viewState === 'playing' && (
           <div
-            className={`kenshi-wrap ${currentPattern && phase === 'strike' ? currentPattern.animClass : ''} ${
-              phase === 'strike' || phase === 'okori' ? 'is-active' : ''
-            }`}
+            className={[
+              'kenshi-wrap',
+              currentPattern && phase === 'strike' ? currentPattern.animClass : '',
+              phase === 'okori'  ? 'anim-okori is-active' : '',
+              phase === 'strike' ? 'is-active' : '',
+            ].filter(Boolean).join(' ')}
           >
             <KenshiSVG
               glowPart={glowState.part}
@@ -500,7 +500,8 @@ export default function MiniGamePage() {
                 <span>SYS_INIT</span>
               </div>
               <div className="loading-row">
-                <Loader2 size={20} className="loading-spin" />
+                {/* ★ Tailwindのanimate-spinで確実に回転 */}
+                <Loader2 size={20} className="animate-spin" />
                 <span className="loading-text">FETCHING_STATUS<span className="dots">...</span></span>
               </div>
             </div>
@@ -528,7 +529,6 @@ export default function MiniGamePage() {
         {viewState === 'menu' && phase !== 'loading' && phase !== 'error' && (
           <div className="overlay">
             <div className="console-box console-box--menu">
-              {/* 漢字の透かし背景 */}
               <div className="kanji-watermark" aria-hidden="true">見切</div>
 
               <div className="console-prompt">
@@ -663,7 +663,7 @@ export default function MiniGamePage() {
                 <span>UPLOADING</span>
               </div>
               <div className="loading-row">
-                <Loader2 size={20} className="loading-spin" />
+                <Loader2 size={20} className="animate-spin" />
                 <span className="loading-text">SAVING_RESULT<span className="dots">...</span></span>
               </div>
             </div>
@@ -710,7 +710,7 @@ export default function MiniGamePage() {
                 {results.map((r, i) => (
                   <div key={i} className={`summary-round ${r.success ? 'ok' : 'ng'}`}>
                     <span>#{i + 1}</span>
-                    <span className="round-name">{r.success ? r.cutinText.replace('！', '') : r.failLabel}</span>
+                    <span className="round-name">{r.success ? r.cutinText.replace('!', '').replace('...', '') : r.failLabel}</span>
                     <span className={`summary-rank rank-${r.rank}-tag`}>{r.rank}</span>
                     <span>{formatTime(r.reactionMs)}</span>
                   </div>
@@ -773,11 +773,22 @@ export default function MiniGamePage() {
         )}
       </main>
 
-      {/* ============================================ styled-jsx ============================================ */}
+      {/* ===================================================================
+          ★ styled-jsx: 配色をインディゴ×和風ゴールドに統合
+          基調色:
+            #0f0c29 (深い夜空)
+            #1e1b4b (インディゴ・アプリ基調)
+            #2d2862 (やや明るいインディゴ)
+            #d4af37 (和風ゴールド・アクセント)
+            #fbbf24 (明るい金・ハイライト)
+            #e8e4ff (淡い藤色・テキスト)
+            #b8b3e8 (落ち着いた藤色・サブテキスト)
+      =================================================================== */}
       <style jsx>{`
         .mikiri-root {
           position: fixed; inset: 0;
-          background: #030610; color: #e0f2ff;
+          background: #0f0c29;
+          color: #e8e4ff;
           overflow: hidden;
           font-family: 'JetBrains Mono', 'Courier New', 'Noto Sans JP', monospace;
           display: flex; flex-direction: column;
@@ -802,17 +813,17 @@ export default function MiniGamePage() {
         .mikiri-grid {
           position: absolute; inset: 0;
           background-image:
-            linear-gradient(rgba(0, 200, 255, 0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 200, 255, 0.06) 1px, transparent 1px);
+            linear-gradient(rgba(212, 175, 55, 0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(212, 175, 55, 0.04) 1px, transparent 1px);
           background-size: 40px 40px;
           mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
         }
         .mikiri-scan {
           position: absolute; inset: 0;
-          background: linear-gradient(180deg, transparent 0%, rgba(0, 200, 255, 0.04) 50%, transparent 100%);
+          background: linear-gradient(180deg, transparent 0%, rgba(212, 175, 55, 0.03) 50%, transparent 100%);
           background-size: 100% 8px;
           animation: scanMove 6s linear infinite;
-          opacity: 0.5;
+          opacity: 0.6;
         }
         @keyframes scanMove {
           from { background-position: 0 0; }
@@ -824,50 +835,50 @@ export default function MiniGamePage() {
           position: relative; z-index: 2;
           display: flex; align-items: center; justify-content: space-between;
           padding: 12px 16px 10px;
-          border-bottom: 1px solid rgba(0, 200, 255, 0.18);
+          border-bottom: 1px solid rgba(212, 175, 55, 0.22);
           backdrop-filter: blur(6px);
-          background: rgba(3, 6, 16, 0.4);
+          background: rgba(15, 12, 41, 0.55);
         }
         .mikiri-back {
-          color: #7ed9ff; padding: 6px;
-          background: transparent; border: 1px solid rgba(126, 217, 255, 0.2);
+          color: #d4af37; padding: 6px;
+          background: transparent; border: 1px solid rgba(212, 175, 55, 0.25);
           cursor: pointer; transition: all 0.2s;
           display: inline-flex; align-items: center;
           border-radius: 0;
         }
         .mikiri-back:hover {
-          background: rgba(0, 200, 255, 0.12);
-          border-color: #7ed9ff;
-          box-shadow: 0 0 12px rgba(0, 200, 255, 0.4);
+          background: rgba(212, 175, 55, 0.1);
+          border-color: #d4af37;
+          box-shadow: 0 0 12px rgba(212, 175, 55, 0.4);
         }
         .mikiri-title { text-align: center; line-height: 1; margin: 0; }
         .mikiri-title-main {
           display: block;
           font-size: 13px; font-weight: 300;
           letter-spacing: 0.32em;
-          color: #e0f2ff;
-          text-shadow: 0 0 12px rgba(0, 200, 255, 0.6);
+          color: #e8e4ff;
+          text-shadow: 0 0 12px rgba(212, 175, 55, 0.5);
           font-family: 'JetBrains Mono', 'Courier New', monospace;
         }
         .mikiri-title-sub {
           display: block; font-size: 9px;
           letter-spacing: 0.4em;
-          color: #5fa3c7; margin-top: 5px;
-          opacity: 0.7;
+          color: #b8b3e8; margin-top: 5px;
+          opacity: 0.75;
         }
         .mikiri-counter {
           font-family: 'JetBrains Mono', 'Courier New', monospace;
           font-size: 13px;
-          color: #7ed9ff;
-          background: rgba(0, 200, 255, 0.06);
-          border: 1px solid rgba(0, 200, 255, 0.25);
+          color: #d4af37;
+          background: rgba(212, 175, 55, 0.06);
+          border: 1px solid rgba(212, 175, 55, 0.3);
           border-radius: 0;
           padding: 4px 12px;
           letter-spacing: 0.1em;
         }
-        .counter-num { color: #fff; font-weight: 600; }
-        .counter-sep { color: #3a8fb8; margin: 0 3px; }
-        .counter-max { color: #5fa3c7; }
+        .counter-num { color: #fbbf24; font-weight: 600; }
+        .counter-sep { color: #6b6498; margin: 0 3px; }
+        .counter-max { color: #b8b3e8; }
 
         .mikiri-stage {
           position: relative; z-index: 1; flex: 1;
@@ -879,10 +890,47 @@ export default function MiniGamePage() {
           width: min(80vw, 360px);
           aspect-ratio: 3 / 5;
           transform-origin: center center;
-          filter: drop-shadow(0 0 10px rgba(0, 200, 255, 0.4));
+          filter: drop-shadow(0 0 10px rgba(212, 175, 55, 0.35));
         }
 
-        /* ===== 8パターンアニメ ===== */
+        /* =====================================================================
+           ★ Phase16.1 追記2: okori 予備動作アニメ
+           剣士全体が「じわぁっ…」と微細に動き始める
+           - 重心がわずかに沈む（translateY +3px）
+           - 全体がほんの少し前進感を出す（scale 1.015）
+           - 0.7秒かけて加速感をつけて到達
+        ===================================================================== */
+        :global(.kenshi-wrap.anim-okori) {
+          animation: kenshiOkori 0.7s cubic-bezier(0.55, 0, 0.6, 0.7) forwards;
+        }
+        @keyframes kenshiOkori {
+          0% {
+            transform: translateY(0) scale(1);
+            filter: drop-shadow(0 0 10px rgba(212, 175, 55, 0.35));
+          }
+          40% {
+            transform: translateY(1.5px) scale(1.005);
+            filter: drop-shadow(0 0 14px rgba(255, 140, 100, 0.4));
+          }
+          100% {
+            transform: translateY(3px) scale(1.015);
+            filter: drop-shadow(0 0 18px rgba(255, 100, 80, 0.55));
+          }
+        }
+        /* okori中、剣先がわずかに前に出る（剣士全体に sword 子要素） */
+        :global(.kenshi-wrap.anim-okori .sword) {
+          animation: swordOkori 0.7s cubic-bezier(0.55, 0, 0.6, 0.7) forwards;
+        }
+        @keyframes swordOkori {
+          0% {
+            transform: translateY(0) scale(1);
+          }
+          100% {
+            transform: translateY(-2px) scale(1.02);
+          }
+        }
+
+        /* ===== 8パターンアニメ（strike時のみ発火） ===== */
         :global(.anim-A .sword) { transform-origin: 50% 100%; animation: swordMenSlow 0.8s cubic-bezier(0.55, 0, 1, 0.45) forwards; }
         :global(.anim-A) { animation: bodyMenAdvanceSlow 0.8s cubic-bezier(0.6, 0, 1, 0.5) forwards; }
         @keyframes swordMenSlow { 0% { transform: translateY(0) scale(1); } 50% { transform: translateY(-22px) scale(1.05); } 100% { transform: translateY(18px) scale(1.35); } }
@@ -920,7 +968,7 @@ export default function MiniGamePage() {
           position: absolute; inset: 0;
           display: flex; align-items: center; justify-content: center;
           flex-direction: column; gap: 10px; z-index: 5;
-          background: radial-gradient(ellipse at center, rgba(3,6,16,0.55) 0%, rgba(3,6,16,0.85) 100%);
+          background: radial-gradient(ellipse at center, rgba(15, 12, 41, 0.55) 0%, rgba(15, 12, 41, 0.85) 100%);
           backdrop-filter: blur(3px);
           padding: 16px;
         }
@@ -928,16 +976,16 @@ export default function MiniGamePage() {
           background: transparent; backdrop-filter: none; pointer-events: none;
         }
         .overlay--okori {
-          background: radial-gradient(ellipse at center, rgba(80, 0, 0, 0.15) 0%, transparent 70%);
+          background: radial-gradient(ellipse at center, rgba(120, 30, 30, 0.18) 0%, transparent 70%);
         }
         .overlay-msg {
-          font-size: 16px; letter-spacing: 0.3em; color: #7ed9ff; margin: 0;
-          text-shadow: 0 0 8px rgba(0, 200, 255, 0.5);
+          font-size: 16px; letter-spacing: 0.3em; color: #d4af37; margin: 0;
+          text-shadow: 0 0 8px rgba(212, 175, 55, 0.5);
           font-family: 'JetBrains Mono', monospace;
         }
         .overlay-round {
           font-family: 'JetBrains Mono', monospace;
-          font-size: 11px; color: #5fa3c7; margin: 0;
+          font-size: 11px; color: #b8b3e8; margin: 0;
           letter-spacing: 0.2em;
         }
         .overlay-okori-msg {
@@ -952,31 +1000,32 @@ export default function MiniGamePage() {
         }
 
         /* =====================================================================
-           ★ サイバーコンソールボックス（ガラスモーダル）
+           ★ サイバーコンソールボックス（インディゴガラス）
         ====================================================================== */
         .console-box {
           position: relative;
           background:
-            linear-gradient(135deg, rgba(8, 16, 28, 0.78) 0%, rgba(3, 8, 18, 0.85) 100%);
-          border: 1px solid rgba(126, 217, 255, 0.22);
+            linear-gradient(135deg, rgba(30, 27, 75, 0.78) 0%, rgba(15, 12, 41, 0.88) 100%);
+          border: 1px solid rgba(212, 175, 55, 0.28);
           padding: 24px 26px;
           width: min(92vw, 420px);
           backdrop-filter: blur(14px) saturate(140%);
           -webkit-backdrop-filter: blur(14px) saturate(140%);
           box-shadow:
-            0 0 40px rgba(0, 180, 255, 0.15),
-            inset 0 0 60px rgba(0, 100, 200, 0.04),
-            inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            0 0 40px rgba(212, 175, 55, 0.12),
+            0 0 80px rgba(30, 27, 75, 0.4),
+            inset 0 0 60px rgba(45, 40, 98, 0.2),
+            inset 0 1px 0 rgba(232, 228, 255, 0.06);
           overflow: hidden;
         }
-        /* 角の装飾（4隅のL字） */
+        /* 角の装飾（4隅のL字・金色） */
         .console-box::before,
         .console-box::after {
           content: '';
           position: absolute;
-          width: 12px; height: 12px;
-          border: 1px solid #00dcff;
-          opacity: 0.7;
+          width: 14px; height: 14px;
+          border: 1px solid #d4af37;
+          opacity: 0.85;
         }
         .console-box::before {
           top: -1px; left: -1px;
@@ -991,13 +1040,13 @@ export default function MiniGamePage() {
           min-width: 300px;
         }
         .console-box--error {
-          border-color: rgba(255, 80, 80, 0.35);
+          border-color: rgba(220, 110, 110, 0.45);
           box-shadow:
-            0 0 40px rgba(255, 60, 60, 0.18),
-            inset 0 0 60px rgba(120, 30, 30, 0.06);
+            0 0 40px rgba(220, 80, 80, 0.18),
+            inset 0 0 60px rgba(120, 30, 30, 0.08);
         }
         .console-box--error::before, .console-box--error::after {
-          border-color: #ff5050;
+          border-color: #e89090;
         }
 
         /* 漢字の透かし背景 */
@@ -1007,7 +1056,7 @@ export default function MiniGamePage() {
           bottom: -30px;
           font-size: 140px;
           font-weight: 900;
-          color: rgba(126, 217, 255, 0.045);
+          color: rgba(212, 175, 55, 0.06);
           letter-spacing: -0.05em;
           line-height: 0.85;
           font-family: 'Noto Sans JP', serif;
@@ -1021,28 +1070,28 @@ export default function MiniGamePage() {
           display: inline-flex; align-items: center; gap: 6px;
           font-family: 'JetBrains Mono', monospace;
           font-size: 10px;
-          color: #00dcff;
+          color: #d4af37;
           letter-spacing: 0.2em;
           padding: 3px 8px;
-          background: rgba(0, 220, 255, 0.06);
-          border-left: 2px solid #00dcff;
+          background: rgba(212, 175, 55, 0.08);
+          border-left: 2px solid #d4af37;
           margin-bottom: 14px;
           text-transform: uppercase;
         }
         .console-prompt--error {
-          color: #ff5050;
-          background: rgba(255, 80, 80, 0.06);
-          border-left-color: #ff5050;
+          color: #e89090;
+          background: rgba(220, 110, 110, 0.08);
+          border-left-color: #e89090;
         }
         .prompt-blink {
-          color: #00dcff;
+          color: #d4af37;
           animation: cursorBlink 1s step-end infinite;
         }
         @keyframes cursorBlink {
           50% { opacity: 0; }
         }
 
-        /* ===== メニュー / レコード共通: タイポグラフィ ===== */
+        /* ===== タイポグラフィ ===== */
         .menu-header {
           margin: 4px 0 18px;
           position: relative; z-index: 1;
@@ -1054,16 +1103,16 @@ export default function MiniGamePage() {
           font-size: clamp(28px, 7vw, 38px);
           font-weight: 200;
           letter-spacing: 0.08em;
-          color: #e0f2ff;
+          color: #e8e4ff;
           line-height: 1;
           font-family: 'JetBrains Mono', 'Courier New', monospace;
-          text-shadow: 0 0 16px rgba(0, 200, 255, 0.25);
+          text-shadow: 0 0 16px rgba(212, 175, 55, 0.2);
         }
         .menu-title-en--accent {
-          color: #00dcff;
+          color: #fbbf24;
           text-shadow:
-            0 0 16px rgba(0, 220, 255, 0.5),
-            0 0 32px rgba(0, 180, 255, 0.25);
+            0 0 16px rgba(251, 191, 36, 0.5),
+            0 0 32px rgba(212, 175, 55, 0.3);
           margin-top: 2px;
           font-weight: 400;
         }
@@ -1071,8 +1120,8 @@ export default function MiniGamePage() {
           margin: 8px 0 0;
           font-size: 11px;
           letter-spacing: 0.6em;
-          color: #5fa3c7;
-          opacity: 0.7;
+          color: #b8b3e8;
+          opacity: 0.75;
           font-family: 'Noto Sans JP', sans-serif;
         }
 
@@ -1080,8 +1129,8 @@ export default function MiniGamePage() {
           height: 1px;
           background: linear-gradient(90deg,
             transparent,
-            rgba(0, 220, 255, 0.4) 20%,
-            rgba(0, 220, 255, 0.4) 80%,
+            rgba(212, 175, 55, 0.45) 20%,
+            rgba(212, 175, 55, 0.45) 80%,
             transparent);
           margin: 14px 0 16px;
           position: relative; z-index: 1;
@@ -1090,17 +1139,17 @@ export default function MiniGamePage() {
         .menu-stat-line {
           margin-top: 16px;
           padding: 8px 10px;
-          background: rgba(0, 30, 60, 0.4);
-          border-left: 2px solid #5fa3c7;
+          background: rgba(45, 40, 98, 0.5);
+          border-left: 2px solid #b8b3e8;
           display: flex; align-items: center; gap: 8px;
           font-family: 'JetBrains Mono', monospace;
           font-size: 11px;
           letter-spacing: 0.15em;
           position: relative; z-index: 1;
         }
-        .stat-key { color: #5fa3c7; }
-        .stat-sep { color: #3a8fb8; }
-        .stat-val { color: #00dcff; font-weight: 600; }
+        .stat-key { color: #b8b3e8; }
+        .stat-sep { color: #6b6498; }
+        .stat-val { color: #fbbf24; font-weight: 600; }
 
         .menu-locked {
           display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -1109,20 +1158,20 @@ export default function MiniGamePage() {
           font-size: 11px;
           letter-spacing: 0.15em;
           padding: 12px;
-          background: rgba(255, 176, 74, 0.06);
+          background: rgba(255, 176, 74, 0.07);
           border: 1px solid rgba(255, 176, 74, 0.3);
           border-left: 3px solid #ffb04a;
           margin: 4px 0;
           position: relative; z-index: 1;
         }
 
-        /* ===== データ行（レコード/リザルト） ===== */
+        /* ===== データ行 ===== */
         .data-row {
           display: flex; justify-content: space-between; align-items: center;
           padding: 8px 10px;
           margin: 4px 0;
-          background: rgba(0, 30, 60, 0.3);
-          border-left: 2px solid rgba(126, 217, 255, 0.4);
+          background: rgba(45, 40, 98, 0.4);
+          border-left: 2px solid rgba(212, 175, 55, 0.45);
           font-family: 'JetBrains Mono', monospace;
           font-size: 12px;
           letter-spacing: 0.1em;
@@ -1130,26 +1179,26 @@ export default function MiniGamePage() {
           transition: all 0.2s;
         }
         .data-row:hover {
-          background: rgba(0, 50, 100, 0.4);
-          border-left-color: #00dcff;
+          background: rgba(60, 53, 130, 0.5);
+          border-left-color: #d4af37;
         }
         .data-key {
-          color: #7ed9ff;
+          color: #d4af37;
         }
         .data-val {
           display: inline-flex; align-items: center; gap: 6px;
           color: #fff; font-weight: 600;
         }
         .data-row--xp {
-          background: rgba(255, 216, 102, 0.08);
-          border-left-color: #ffd866;
+          background: rgba(251, 191, 36, 0.08);
+          border-left-color: #fbbf24;
           margin-top: 10px;
         }
-        .data-row--xp .data-key { color: #ffd866; }
+        .data-row--xp .data-key { color: #fbbf24; }
         .xp-val {
-          color: #ffd866 !important;
+          color: #fbbf24 !important;
           font-size: 18px !important;
-          text-shadow: 0 0 10px rgba(255, 216, 102, 0.6);
+          text-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
         }
 
         .locked-bar {
@@ -1158,22 +1207,22 @@ export default function MiniGamePage() {
           color: #ffb04a;
           font-family: 'JetBrains Mono', monospace;
           font-size: 10px; letter-spacing: 0.2em;
-          background: rgba(255, 176, 74, 0.06);
+          background: rgba(255, 176, 74, 0.07);
           border: 1px solid rgba(255, 176, 74, 0.3);
           border-left: 3px solid #ffb04a;
         }
 
         /* =====================================================================
-           ★ サイバーボタン（横長フラット、左端ネオンスライド）
+           ★ サイバーボタン（インディゴ×ゴールド版）
         ====================================================================== */
         .cyber-btn {
           position: relative;
           display: flex; align-items: center; justify-content: center; gap: 8px;
           width: 100%;
           padding: 14px 18px;
-          background: rgba(0, 30, 60, 0.5);
-          color: #7ed9ff;
-          border: 1px solid rgba(126, 217, 255, 0.3);
+          background: rgba(45, 40, 98, 0.55);
+          color: #d4af37;
+          border: 1px solid rgba(212, 175, 55, 0.35);
           border-radius: 0;
           font-family: 'JetBrains Mono', 'Courier New', monospace;
           font-size: 13px;
@@ -1187,44 +1236,42 @@ export default function MiniGamePage() {
           z-index: 1;
         }
 
-        /* 左端ネオンバー（ホバー時に出現） */
         .cyber-btn::before {
           content: '';
           position: absolute;
           left: 0; top: 0; bottom: 0;
           width: 0;
-          background: linear-gradient(180deg, #00dcff, #0080ff);
+          background: linear-gradient(180deg, #fbbf24, #d4af37);
           transition: width 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);
           z-index: -1;
-          box-shadow: 0 0 20px rgba(0, 220, 255, 0.6);
+          box-shadow: 0 0 20px rgba(212, 175, 55, 0.6);
         }
 
-        /* 右端のスキャンライン */
         .cyber-btn::after {
           content: '';
           position: absolute;
           right: 0; top: 0; bottom: 0;
           width: 1px;
-          background: rgba(126, 217, 255, 0.4);
+          background: rgba(212, 175, 55, 0.4);
           transition: all 0.25s;
         }
 
         .cyber-btn:hover {
           color: #fff;
-          border-color: #00dcff;
-          background: rgba(0, 60, 120, 0.5);
+          border-color: #fbbf24;
+          background: rgba(60, 53, 130, 0.55);
           padding-left: 28px;
           box-shadow:
-            0 0 20px rgba(0, 220, 255, 0.3),
-            inset 0 0 20px rgba(0, 220, 255, 0.05);
+            0 0 20px rgba(212, 175, 55, 0.3),
+            inset 0 0 20px rgba(212, 175, 55, 0.06);
         }
         .cyber-btn:hover::before {
           width: 6px;
         }
         .cyber-btn:hover::after {
           width: 3px;
-          background: #00dcff;
-          box-shadow: 0 0 12px #00dcff;
+          background: #fbbf24;
+          box-shadow: 0 0 12px #fbbf24;
         }
         .cyber-btn:active {
           transform: translateX(2px);
@@ -1243,44 +1290,58 @@ export default function MiniGamePage() {
         .cyber-btn:disabled::before { width: 0; }
 
         .cyber-btn--primary {
-          background: rgba(0, 60, 120, 0.55);
-          color: #00dcff;
-          border-color: rgba(0, 220, 255, 0.4);
+          background: linear-gradient(135deg, rgba(45, 40, 98, 0.7), rgba(60, 53, 130, 0.65));
+          color: #fbbf24;
+          border-color: rgba(251, 191, 36, 0.5);
+          box-shadow: 0 0 16px rgba(212, 175, 55, 0.15);
         }
         .cyber-btn--primary::before {
-          background: linear-gradient(180deg, #00dcff, #00b4ff);
+          background: linear-gradient(180deg, #fbbf24, #d4af37);
         }
         .cyber-btn--primary:hover {
           color: #fff;
-          background: rgba(0, 100, 180, 0.6);
+          background: linear-gradient(135deg, rgba(60, 53, 130, 0.75), rgba(75, 65, 160, 0.7));
+          border-color: #fbbf24;
         }
 
         .cyber-btn--secondary {
-          background: rgba(0, 30, 60, 0.4);
+          background: rgba(30, 27, 75, 0.5);
+          color: #b8b3e8;
+          border-color: rgba(184, 179, 232, 0.35);
+        }
+        .cyber-btn--secondary::before {
+          background: linear-gradient(180deg, #b8b3e8, #8a82c8);
+        }
+        .cyber-btn--secondary:hover {
+          color: #fff;
+          border-color: #b8b3e8;
         }
 
         .cyber-btn--danger {
-          color: #ff8080;
-          border-color: rgba(255, 80, 80, 0.4);
+          color: #e89090;
+          border-color: rgba(220, 110, 110, 0.45);
         }
         .cyber-btn--danger::before {
-          background: linear-gradient(180deg, #ff5050, #ff0040);
+          background: linear-gradient(180deg, #ff7070, #d04040);
         }
         .cyber-btn--danger:hover {
           color: #fff;
-          border-color: #ff5050;
-          background: rgba(120, 20, 20, 0.4);
+          border-color: #e89090;
+          background: rgba(120, 35, 35, 0.45);
         }
 
         .cyber-btn-bracket {
-          color: rgba(126, 217, 255, 0.5);
+          color: rgba(212, 175, 55, 0.5);
           font-weight: 300;
         }
         .cyber-btn--primary .cyber-btn-bracket {
-          color: rgba(0, 220, 255, 0.6);
+          color: rgba(251, 191, 36, 0.65);
+        }
+        .cyber-btn--secondary .cyber-btn-bracket {
+          color: rgba(184, 179, 232, 0.5);
         }
         .cyber-btn--danger .cyber-btn-bracket {
-          color: rgba(255, 80, 80, 0.6);
+          color: rgba(232, 144, 144, 0.65);
         }
         .cyber-btn-label {
           flex-shrink: 0;
@@ -1293,15 +1354,13 @@ export default function MiniGamePage() {
         /* ===== ローディング ===== */
         .loading-row {
           display: flex; align-items: center; gap: 12px;
-          color: #7ed9ff;
+          color: #d4af37;
           font-family: 'JetBrains Mono', monospace;
           font-size: 12px;
           letter-spacing: 0.2em;
           padding: 8px 0;
         }
-        .loading-spin { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .loading-text { color: #00dcff; }
+        .loading-text { color: #fbbf24; }
         .dots {
           display: inline-block;
           animation: dotsBlink 1.4s steps(4, end) infinite;
@@ -1315,7 +1374,7 @@ export default function MiniGamePage() {
         }
 
         .console-msg {
-          color: #b0d8ee;
+          color: #b8b3e8;
           font-family: 'JetBrains Mono', monospace;
           font-size: 11px;
           letter-spacing: 0.1em;
@@ -1332,35 +1391,35 @@ export default function MiniGamePage() {
         .cutin-text {
           font-size: clamp(40px, 11vw, 80px);
           font-weight: 900;
-          font-family: 'Noto Sans JP', sans-serif;
+          font-family: 'JetBrains Mono', 'Noto Sans JP', sans-serif;
           letter-spacing: 0.05em;
           padding: 0 12px;
           animation: cutinAppear 1.5s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
           transform-origin: center center;
         }
         .cutin-S .cutin-text {
-          color: #ffd866;
+          color: #fbbf24;
           text-shadow:
-            0 0 24px #ffd866, 0 0 48px #ff8040,
-            4px 4px 0 #1a1a1a, -2px -2px 0 #1a1a1a, 2px -2px 0 #1a1a1a, -2px 2px 0 #1a1a1a;
+            0 0 24px #fbbf24, 0 0 48px #d4af37,
+            4px 4px 0 #1e1b4b, -2px -2px 0 #1e1b4b, 2px -2px 0 #1e1b4b, -2px 2px 0 #1e1b4b;
         }
         .cutin-A .cutin-text {
-          color: #00dcff;
+          color: #d4af37;
           text-shadow:
-            0 0 24px #00dcff, 0 0 48px #0080ff,
-            4px 4px 0 #1a1a1a, -2px -2px 0 #1a1a1a, 2px -2px 0 #1a1a1a, -2px 2px 0 #1a1a1a;
+            0 0 24px #d4af37, 0 0 48px #a37e1f,
+            4px 4px 0 #1e1b4b, -2px -2px 0 #1e1b4b, 2px -2px 0 #1e1b4b, -2px 2px 0 #1e1b4b;
         }
         .cutin-B .cutin-text, .cutin-C .cutin-text {
-          color: #7ed9ff;
+          color: #e8e4ff;
           text-shadow:
-            0 0 16px #7ed9ff,
-            3px 3px 0 #1a1a1a, -2px -2px 0 #1a1a1a, 2px -2px 0 #1a1a1a, -2px 2px 0 #1a1a1a;
+            0 0 16px #b8b3e8,
+            3px 3px 0 #1e1b4b, -2px -2px 0 #1e1b4b, 2px -2px 0 #1e1b4b, -2px 2px 0 #1e1b4b;
         }
         .cutin-F .cutin-text {
-          color: #ff5050;
+          color: #ff7070;
           text-shadow:
-            0 0 16px #ff0040,
-            3px 3px 0 #1a1a1a, -2px -2px 0 #1a1a1a, 2px -2px 0 #1a1a1a, -2px 2px 0 #1a1a1a;
+            0 0 16px #d04040,
+            3px 3px 0 #1e1b4b, -2px -2px 0 #1e1b4b, 2px -2px 0 #1e1b4b, -2px 2px 0 #1e1b4b;
         }
         @keyframes cutinAppear {
           0%   { transform: scale(0.2) rotate(-8deg); opacity: 0; letter-spacing: 0.5em; }
@@ -1370,16 +1429,16 @@ export default function MiniGamePage() {
           100% { transform: scale(1.1) rotate(-2deg); opacity: 0; }
         }
 
-        /* ===== 斬撃エフェクト ===== */
+        /* ===== 斬撃エフェクト（金色に変更） ===== */
         .slash-fx {
           position: absolute; inset: -20%;
           z-index: 8; pointer-events: none;
           background: linear-gradient(115deg,
             transparent 30%,
             rgba(255, 255, 255, 0) 38%,
-            rgba(255, 255, 255, 0.95) 49%,
-            rgba(126, 217, 255, 0.9) 50%,
-            rgba(255, 255, 255, 0.95) 51%,
+            rgba(255, 248, 220, 0.95) 49%,
+            rgba(251, 191, 36, 0.9) 50%,
+            rgba(255, 248, 220, 0.95) 51%,
             rgba(255, 255, 255, 0) 62%,
             transparent 70%);
           background-size: 300% 300%;
@@ -1395,14 +1454,14 @@ export default function MiniGamePage() {
         /* ===== フラッシュ ===== */
         .flash-success {
           position: absolute; inset: 0;
-          background: radial-gradient(circle, rgba(0, 220, 255, 0.6) 0%, transparent 70%);
-          animation: flashBlue 0.4s ease-out;
+          background: radial-gradient(circle, rgba(251, 191, 36, 0.5) 0%, transparent 70%);
+          animation: flashGold 0.4s ease-out;
           pointer-events: none; z-index: 4;
         }
-        @keyframes flashBlue { 0% { opacity: 1; } 100% { opacity: 0; } }
+        @keyframes flashGold { 0% { opacity: 1; } 100% { opacity: 0; } }
         .flash-fail {
           position: absolute; inset: 0;
-          background: rgba(255, 0, 40, 0.35);
+          background: rgba(220, 60, 60, 0.32);
           animation: flashRed 0.5s ease-out;
           pointer-events: none; z-index: 4;
         }
@@ -1411,7 +1470,7 @@ export default function MiniGamePage() {
         }
         .flash-okori {
           position: absolute; inset: 0;
-          background: radial-gradient(circle at center, rgba(255, 80, 80, 0.18) 0%, transparent 60%);
+          background: radial-gradient(circle at center, rgba(255, 100, 80, 0.18) 0%, transparent 60%);
           animation: flashOkori 0.18s ease-out;
           pointer-events: none; z-index: 4;
         }
@@ -1428,7 +1487,7 @@ export default function MiniGamePage() {
           font-family: 'JetBrains Mono', monospace;
           font-weight: 300;
           text-align: center;
-          text-shadow: 0 0 16px rgba(0, 200, 255, 0.5);
+          text-shadow: 0 0 16px rgba(212, 175, 55, 0.5);
           position: relative; z-index: 1;
         }
 
@@ -1448,38 +1507,62 @@ export default function MiniGamePage() {
         .rank-label {
           font-family: 'JetBrains Mono', monospace;
           font-size: 10px; letter-spacing: 0.4em;
-          color: #7ed9ff; opacity: 0.7;
+          color: #d4af37; opacity: 0.8;
         }
         .rank-value {
           font-size: 56px; font-weight: 900;
           font-family: 'JetBrains Mono', 'Courier New', monospace;
           line-height: 1;
         }
-        .rank-S { background: linear-gradient(135deg, rgba(255, 216, 102, 0.15), rgba(255, 100, 50, 0.12)); border-color: #ffd866; }
-        .rank-S .rank-value { color: #ffd866; text-shadow: 0 0 24px #ffd866, 0 0 48px #ff8040; }
-        .rank-A { background: linear-gradient(135deg, rgba(0, 220, 255, 0.15), rgba(100, 100, 255, 0.12)); border-color: #00dcff; }
-        .rank-A .rank-value { color: #00dcff; text-shadow: 0 0 20px #00dcff; }
-        .rank-B { background: rgba(126, 217, 255, 0.08); border-color: #7ed9ff; }
-        .rank-B .rank-value { color: #7ed9ff; text-shadow: 0 0 16px #7ed9ff; }
-        .rank-C { background: rgba(160, 232, 255, 0.04); border-color: #5fa3c7; }
-        .rank-C .rank-value { color: #5fa3c7; }
-        .rank-F { background: rgba(255, 100, 100, 0.06); border-color: #ff8080; }
-        .rank-F .rank-value { color: #ff8080; }
+        .rank-S {
+          background: linear-gradient(135deg, rgba(251, 191, 36, 0.18), rgba(212, 175, 55, 0.12));
+          border-color: #fbbf24;
+        }
+        .rank-S .rank-value {
+          color: #fbbf24;
+          text-shadow: 0 0 24px #fbbf24, 0 0 48px #d4af37;
+        }
+        .rank-A {
+          background: linear-gradient(135deg, rgba(212, 175, 55, 0.15), rgba(184, 179, 232, 0.12));
+          border-color: #d4af37;
+        }
+        .rank-A .rank-value {
+          color: #d4af37;
+          text-shadow: 0 0 20px #d4af37;
+        }
+        .rank-B {
+          background: rgba(184, 179, 232, 0.08);
+          border-color: #b8b3e8;
+        }
+        .rank-B .rank-value {
+          color: #e8e4ff;
+          text-shadow: 0 0 16px #b8b3e8;
+        }
+        .rank-C {
+          background: rgba(184, 179, 232, 0.04);
+          border-color: #6b6498;
+        }
+        .rank-C .rank-value { color: #b8b3e8; }
+        .rank-F {
+          background: rgba(220, 80, 80, 0.06);
+          border-color: #e89090;
+        }
+        .rank-F .rank-value { color: #ff7070; }
 
         .summary-error {
-          font-size: 10px; color: #ff8080;
+          font-size: 10px; color: #e89090;
           margin: 8px 0 0;
           padding: 6px 8px;
-          background: rgba(255, 100, 100, 0.08);
-          border-left: 2px solid #ff8080;
+          background: rgba(220, 80, 80, 0.08);
+          border-left: 2px solid #e89090;
           font-family: 'JetBrains Mono', monospace;
           letter-spacing: 0.05em;
         }
 
         .summary-rounds {
           margin: 14px 0;
-          border-top: 1px solid rgba(0, 200, 255, 0.18);
-          border-bottom: 1px solid rgba(0, 200, 255, 0.18);
+          border-top: 1px solid rgba(212, 175, 55, 0.22);
+          border-bottom: 1px solid rgba(212, 175, 55, 0.22);
           padding: 8px 0;
           position: relative; z-index: 1;
         }
@@ -1493,13 +1576,13 @@ export default function MiniGamePage() {
           align-items: center;
           letter-spacing: 0.05em;
         }
-        .summary-round.ok { color: #7ed9ff; }
-        .summary-round.ng { color: #ff8080; }
+        .summary-round.ok { color: #d4af37; }
+        .summary-round.ng { color: #e89090; }
         .summary-round span:last-child { text-align: right; }
         .round-name {
-          font-family: 'Noto Sans JP', sans-serif;
+          font-family: 'JetBrains Mono', monospace;
           letter-spacing: 0.05em;
-          font-size: 12px;
+          font-size: 11px;
         }
         .summary-rank {
           font-size: 10px !important; padding: 2px 4px !important;
@@ -1507,18 +1590,19 @@ export default function MiniGamePage() {
           font-family: 'JetBrains Mono', monospace;
         }
 
-        .rank-S-tag { background: #ffd866; color: #1a1a1a; box-shadow: 0 0 8px #ffd866; }
-        .rank-A-tag { background: #00dcff; color: #1a1a1a; }
-        .rank-B-tag { background: #7ed9ff; color: #1a1a1a; }
-        .rank-C-tag { background: #5fa3c7; color: #fff; }
-        .rank-F-tag { background: #ff8080; color: #fff; }
+        .rank-S-tag { background: #fbbf24; color: #1e1b4b; box-shadow: 0 0 8px #fbbf24; }
+        .rank-A-tag { background: #d4af37; color: #1e1b4b; }
+        .rank-B-tag { background: #b8b3e8; color: #1e1b4b; }
+        .rank-C-tag { background: #6b6498; color: #fff; }
+        .rank-F-tag { background: #e89090; color: #1e1b4b; }
       `}</style>
     </div>
   );
 }
 
 // =====================================================================
-// 仮想剣士 SVG（無変更）
+// 仮想剣士 SVG
+// ★ Phase16.1 追記2: 配色をインディゴ×和風ゴールドに統合
 // =====================================================================
 interface KenshiSVGProps {
   glowPart:  HitPart | null;
@@ -1534,15 +1618,33 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
     if (active) onTap(part);
   };
 
+  /**
+   * ★ Phase16.1 追記2: 通常時は和風ゴールド系、危険時は朱色系
+   *  - null:    通常 = 落ち着いたゴールド
+   *  - okori:   薄朱（じわじわ赤化）
+   *  - strike:  完全な朱赤
+   */
   const getColors = (part: HitPart) => {
     const isTarget = glowPart === part;
     if (!isTarget || intensity === null) {
-      return { stroke: '#00c8ff', fill: 'rgba(0, 80, 120, 0.10)', filter: 'url(#neonGlow)' };
+      return {
+        stroke: '#d4af37',
+        fill: 'rgba(60, 50, 100, 0.18)',
+        filter: 'url(#goldGlow)',
+      };
     }
     if (intensity === 'okori') {
-      return { stroke: '#ff8866', fill: 'rgba(180, 60, 40, 0.18)', filter: 'url(#redGlow)' };
+      return {
+        stroke: '#ff8866',
+        fill: 'rgba(180, 60, 40, 0.18)',
+        filter: 'url(#redGlow)',
+      };
     }
-    return { stroke: '#ff2a3a', fill: 'rgba(180, 20, 30, 0.32)', filter: 'url(#redGlow)' };
+    return {
+      stroke: '#ff3030',
+      fill: 'rgba(200, 30, 30, 0.32)',
+      filter: 'url(#redGlow)',
+    };
   };
 
   const colorTransition = intensity === 'strike'
@@ -1562,7 +1664,7 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
   return (
     <svg viewBox="0 0 300 500" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style={{ overflow: 'visible' }}>
       <defs>
-        <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+        <filter id="goldGlow" x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="2" result="blur" />
           <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
@@ -1586,7 +1688,7 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
       </defs>
 
       <g pointerEvents="none">
-        <g stroke="#1e5a7a" strokeWidth="0.4" fill="none" opacity="0.55">
+        <g stroke="#6b6498" strokeWidth="0.4" fill="none" opacity="0.55">
           <line x1="150" y1="20" x2="150" y2="490" strokeDasharray="2 4" />
           <line x1="20" y1="100" x2="280" y2="100" strokeDasharray="1 3" />
           <line x1="20" y1="280" x2="280" y2="280" strokeDasharray="1 3" />
@@ -1594,13 +1696,13 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
           <line x1="20" y1="460" x2="150" y2="86" strokeDasharray="1 6" opacity="0.35" />
           <line x1="280" y1="460" x2="150" y2="86" strokeDasharray="1 6" opacity="0.35" />
         </g>
-        <g color="#3a8fb8" opacity="0.7">
+        <g color="#d4af37" opacity="0.65">
           <use href="#bracket-tl" x="20" y="30" width="22" height="22" />
           <use href="#bracket-tr" x="258" y="30" width="22" height="22" />
           <use href="#bracket-bl" x="20" y="448" width="22" height="22" />
           <use href="#bracket-br" x="258" y="448" width="22" height="22" />
         </g>
-        <g fill="#3a8fb8" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="7" opacity="0.6">
+        <g fill="#a37e1f" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="7" opacity="0.7">
           <text x="26" y="44">TGT-LOCK</text>
           <text x="232" y="44">v.16.1</text>
           <text x="26" y="464">HIT-ZONE</text>
@@ -1608,6 +1710,7 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
         </g>
       </g>
 
+      {/* 面 */}
       <g className="hit-men" onClick={handleClick('men')} onTouchStart={handleClick('men')}>
         <polygon
           points="150,72 188,90 192,140 175,180 125,180 108,140 112,90"
@@ -1624,10 +1727,11 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
             <line x1="120" y1="142" x2="180" y2="142" opacity="0.85" />
             <line x1="128" y1="158" x2="172" y2="158" opacity="0.6" />
           </g>
-          <text x="196" y="92" fill="#3a8fb8" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="6" opacity="0.85">[MEN]</text>
+          <text x="196" y="92" fill="#a37e1f" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="6" opacity="0.85">[MEN]</text>
         </g>
       </g>
 
+      {/* 小手 */}
       <g className="hit-kote" onClick={handleClick('kote')} onTouchStart={handleClick('kote')}>
         <polygon
           points="55,330 130,310 142,365 130,395 70,400 38,378 32,355"
@@ -1643,10 +1747,11 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
             <line x1="58" y1="370" x2="130" y2="365" />
             <polygon points="75,348 115,335 120,360 80,372" />
           </g>
-          <text x="44" y="420" fill="#3a8fb8" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="7" opacity="0.85">[KOTE]</text>
+          <text x="44" y="420" fill="#a37e1f" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="7" opacity="0.85">[KOTE]</text>
         </g>
       </g>
 
+      {/* 胴 */}
       <g className="hit-do" onClick={handleClick('do')} onTouchStart={handleClick('do')}>
         <polygon
           points="100,255 200,255 215,290 208,335 150,348 92,335 85,290"
@@ -1664,31 +1769,32 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
             <line x1="175" y1="260" x2="175" y2="345" strokeDasharray="2 2" />
             <path d="M 130 268 L 150 295 L 170 268" strokeWidth="0.7" />
           </g>
-          <text x="218" y="335" fill="#3a8fb8" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="6" opacity="0.85">[DO]</text>
+          <text x="218" y="335" fill="#a37e1f" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="6" opacity="0.85">[DO]</text>
         </g>
       </g>
 
-      <g className="sword" filter="url(#neonGlow)" pointerEvents="none">
-        <polygon points="143,92 157,92 152.5,322 147.5,322" stroke="#a0e8ff" strokeWidth="1.3" fill="rgba(160, 232, 255, 0.30)" strokeLinejoin="miter" />
-        <line x1="150" y1="92" x2="150" y2="322" stroke="#e0f2ff" strokeWidth="0.5" opacity="0.85" />
-        <polygon points="146,92 149,92 151,322 150,322" fill="rgba(224, 242, 255, 0.4)" opacity="0.7" />
-        <polygon points="145,318 155,318 158,322 155,326 145,326 142,322" stroke="#00c8ff" strokeWidth="1.1" fill="rgba(0,200,255,0.30)" />
-        <polygon points="148,326 152,326 151,388 149,388" stroke="#7ed9ff" strokeWidth="1" fill="rgba(126, 217, 255, 0.28)" />
-        <g stroke="#a0e8ff" strokeWidth="0.4" opacity="0.55">
+      {/* 竹刀（金色グロウ） */}
+      <g className="sword" filter="url(#goldGlow)" pointerEvents="none">
+        <polygon points="143,92 157,92 152.5,322 147.5,322" stroke="#fbbf24" strokeWidth="1.3" fill="rgba(251, 191, 36, 0.20)" strokeLinejoin="miter" />
+        <line x1="150" y1="92" x2="150" y2="322" stroke="#fff8dc" strokeWidth="0.5" opacity="0.85" />
+        <polygon points="146,92 149,92 151,322 150,322" fill="rgba(255, 248, 220, 0.4)" opacity="0.7" />
+        <polygon points="145,318 155,318 158,322 155,326 145,326 142,322" stroke="#d4af37" strokeWidth="1.1" fill="rgba(212, 175, 55, 0.30)" />
+        <polygon points="148,326 152,326 151,388 149,388" stroke="#d4af37" strokeWidth="1" fill="rgba(212, 175, 55, 0.22)" />
+        <g stroke="#fbbf24" strokeWidth="0.4" opacity="0.55">
           <line x1="148.5" y1="345" x2="151.5" y2="345" />
           <line x1="148.7" y1="360" x2="151.3" y2="360" />
           <line x1="148.9" y1="375" x2="151.1" y2="375" />
         </g>
-        <polygon points="149,388 151,388 150.5,394 149.5,394" stroke="#7ed9ff" strokeWidth="0.8" fill="rgba(0,200,255,0.30)" />
-        <polygon points="150,72 162,94 138,94" fill="#e0f2ff" stroke="#7ed9ff" strokeWidth="0.9" filter="url(#tipGlow)" />
+        <polygon points="149,388 151,388 150.5,394 149.5,394" stroke="#d4af37" strokeWidth="0.8" fill="rgba(212, 175, 55, 0.30)" />
+        <polygon points="150,72 162,94 138,94" fill="#fff8dc" stroke="#fbbf24" strokeWidth="0.9" filter="url(#tipGlow)" />
         <circle cx="150" cy="86" r="5" fill="#ffffff" opacity="0.95" filter="url(#tipGlow)" />
         <circle cx="150" cy="86" r="2.5" fill="#ffffff" />
-        <circle cx="150" cy="86" r="11" stroke="#7ed9ff" strokeWidth="0.5" fill="none" strokeDasharray="2 2" opacity="0.65" />
-        <circle cx="150" cy="86" r="17" stroke="#3a8fb8" strokeWidth="0.4" fill="none" opacity="0.5" />
-        <circle cx="150" cy="86" r="24" stroke="#3a8fb8" strokeWidth="0.3" fill="none" opacity="0.35" strokeDasharray="3 4" />
+        <circle cx="150" cy="86" r="11" stroke="#fbbf24" strokeWidth="0.5" fill="none" strokeDasharray="2 2" opacity="0.65" />
+        <circle cx="150" cy="86" r="17" stroke="#a37e1f" strokeWidth="0.4" fill="none" opacity="0.5" />
+        <circle cx="150" cy="86" r="24" stroke="#a37e1f" strokeWidth="0.3" fill="none" opacity="0.35" strokeDasharray="3 4" />
       </g>
 
-      <g pointerEvents="none" stroke="#3a8fb8" strokeWidth="0.5" fill="none" opacity="0.5" filter="url(#thinGlow)">
+      <g pointerEvents="none" stroke="#6b6498" strokeWidth="0.5" fill="none" opacity="0.5" filter="url(#thinGlow)">
         <circle cx="150" cy="250" r="3" />
         <line x1="140" y1="250" x2="146" y2="250" />
         <line x1="154" y1="250" x2="160" y2="250" />
