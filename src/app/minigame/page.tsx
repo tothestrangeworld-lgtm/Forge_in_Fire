@@ -553,7 +553,7 @@ export default function MiniGamePage() {
           <div className="overlay">
             <div className="loading-box">
               <Loader2 size={32} className="loading-spin" />
-              <p>状態を取得中…</p>
+              <p>LOADING…</p>
             </div>
           </div>
         )}
@@ -562,10 +562,10 @@ export default function MiniGamePage() {
           <div className="overlay">
             <div className="locked-box">
               <AlertTriangle size={32} />
-              <h2>通信エラー</h2>
+              <h2>ERROR</h2>
               <p>{errorMessage || 'サーバーとの通信に失敗しました。'}</p>
               <button className="btn-primary" style={{ marginTop: 16 }} onClick={() => window.location.reload()} type="button">
-                再読み込み
+                RELOAD
               </button>
             </div>
           </div>
@@ -577,13 +577,13 @@ export default function MiniGamePage() {
         {viewState === 'menu' && phase !== 'loading' && phase !== 'error' && (
           <div className="overlay">
             <div className="menu-box">
-              <h2 className="menu-title">道場の入口</h2>
-              <p className="menu-desc">構えよ。刹那の見切を磨け。</p>
+              <h2 className="menu-title">刹那ノ見切</h2>
+              <p className="menu-desc">ENTER</p>
 
               {phase === 'locked' ? (
                 <div className="menu-locked">
                   <AlertTriangle size={20} />
-                  <span>本日の仮想稽古は終了</span>
+                  <span>TODAY'S GAME OVER</span>
                 </div>
               ) : (
                 <button
@@ -592,7 +592,7 @@ export default function MiniGamePage() {
                   type="button"
                   disabled={matchCount >= MAX_MATCHES_PER_DAY}
                 >
-                  <Swords size={18} /> 試合開始
+                  <Swords size={18} /> START
                 </button>
               )}
 
@@ -601,11 +601,11 @@ export default function MiniGamePage() {
                 onClick={() => setViewState('records')}
                 type="button"
               >
-                <BookOpen size={18} /> 過去の記録
+                <BookOpen size={18} /> RECORD
               </button>
 
               <p className="menu-info">
-                本日 {matchCount} / {MAX_MATCHES_PER_DAY} 試合
+                 {matchCount} / {MAX_MATCHES_PER_DAY} 
               </p>
             </div>
           </div>
@@ -617,38 +617,38 @@ export default function MiniGamePage() {
         {viewState === 'records' && (
           <div className="overlay">
             <div className="records-box">
-              <h2 className="records-title">修練の記録</h2>
+              <h2 className="records-title">RECORD</h2>
 
               <div className="records-stat">
-                <span className="records-label">自己ベスト</span>
+                <span className="records-label">BEST SCORE</span>
                 <span className="records-value">
                   <Trophy size={16} /> {bestTimeMs !== null ? formatTime(bestTimeMs) : '未記録'}
                 </span>
               </div>
 
-              <div className="records-stat">
-                <span className="records-label">本日のプレイ</span>
+{/*               <div className="records-stat">
+                <span className="records-label">本日のプ</span>
                 <span className="records-value">
-                  {matchCount} / {MAX_MATCHES_PER_DAY} 試合
+                  {matchCount} / {MAX_MATCHES_PER_DAY} 
                 </span>
               </div>
-
+ */}
               <div className="records-stat">
-                <span className="records-label">残り試合</span>
+                <span className="records-label">REST</span>
                 <span className="records-value">
-                  {Math.max(0, MAX_MATCHES_PER_DAY - matchCount)} 試合
+                  {Math.max(0, MAX_MATCHES_PER_DAY - matchCount)} 
                 </span>
               </div>
 
               {statusInfo?.locked && (
                 <p className="records-locked">
-                  <AlertTriangle size={14} /> 本日の上限に到達しました
+                  <AlertTriangle size={14} /> TODAY’S GAME OVER
                 </p>
               )}
 
               <div className="records-divider" />
 
-              <div className="records-tips">
+{/*               <div className="records-tips">
                 <h3 className="records-tips-title">『ランク』の理合</h3>
                 <p><strong className="rank-tag rank-S-tag">S</strong> 起こりを察知して反応 — 出端を捉えた一本</p>
                 <p><strong className="rank-tag rank-A-tag">A</strong> 打突瞬時に反応（&lt;0.2s）— 鋭き応じ</p>
@@ -656,9 +656,9 @@ export default function MiniGamePage() {
                 <p><strong className="rank-tag rank-C-tag">C</strong> 辛うじて反応</p>
                 <p><strong className="rank-tag rank-F-tag">F</strong> 見逃し / お手付き</p>
               </div>
-
+ */}
               <button className="btn-secondary btn-menu" onClick={handleBackToMenu} type="button">
-                <ArrowLeft size={16} /> 戻る
+                <ArrowLeft size={16} /> RETURN
               </button>
             </div>
           </div>
@@ -669,14 +669,14 @@ export default function MiniGamePage() {
         {/* ============================================================ */}
         {viewState === 'playing' && phase === 'waiting' && (
           <div className="overlay overlay--passive">
-            <p className="overlay-msg">…構え…</p>
+            <p className="overlay-msg">…READY…</p>
             <p className="overlay-round">{roundIdx + 1} / {ROUNDS_PER_MATCH} 本目</p>
           </div>
         )}
 
         {viewState === 'playing' && phase === 'okori' && (
           <div className="overlay overlay--passive overlay--okori">
-            <p className="overlay-okori-msg">気配──</p>
+            <p className="overlay-okori-msg">─!─</p>
           </div>
         )}
 
@@ -689,7 +689,7 @@ export default function MiniGamePage() {
           <div className="overlay">
             <div className="loading-box">
               <Loader2 size={32} className="loading-spin" />
-              <p>結果を記録中…</p>
+              <p>RECORDING…</p>
             </div>
           </div>
         )}
@@ -698,23 +698,23 @@ export default function MiniGamePage() {
         {phase === 'matchEnd' && viewState === 'playing' && (
           <div className="overlay">
             <div className="result-summary">
-              <h2>試合終了</h2>
+              <h2>GAME OVER</h2>
 
               <div className={`rank-display rank-${overallRank}`}>
                 <span className="rank-label">RANK</span>
                 <span className="rank-value">{overallRank}</span>
               </div>
 
-              <p className="summary-line">成功: <strong>{successCount}</strong> / {ROUNDS_PER_MATCH}</p>
-              <p className="summary-line">平均反応速度: <strong>{formatTime(averageReaction)}</strong></p>
+              <p className="summary-line">SUCCESS: <strong>{successCount}</strong> / {ROUNDS_PER_MATCH}</p>
+              <p className="summary-line">AVERAGE SPEED: <strong>{formatTime(averageReaction)}</strong></p>
 
               {lastSaveResult && (
                 <p className="summary-line summary-xp">
-                  獲得XP: <strong className="xp-value">+{lastSaveResult.earnedXp}</strong>
+                  XP: <strong className="xp-value">+{lastSaveResult.earnedXp}</strong>
                 </p>
               )}
               {!lastSaveResult && errorMessage && (
-                <p className="summary-error">※ スコアの保存に失敗（{errorMessage}）</p>
+                <p className="summary-error">※ FAILED TO SAVE SCORE（{errorMessage}）</p>
               )}
 
               <div className="summary-rounds">
@@ -731,19 +731,19 @@ export default function MiniGamePage() {
               {matchCount < MAX_MATCHES_PER_DAY ? (
                 <>
                   <button className="btn-primary" onClick={startMatch} type="button">
-                    <Swords size={16} /> 次の試合へ ({matchCount}/{MAX_MATCHES_PER_DAY})
+                    <Swords size={16} /> NEXT ({matchCount}/{MAX_MATCHES_PER_DAY})
                   </button>
                   <button className="btn-secondary" onClick={handleBackToMenu} type="button" style={{ marginTop: 8 }}>
-                    メニューへ戻る
+                    RETURN TO MENU
                   </button>
                 </>
               ) : (
                 <>
                   <p className="locked-msg">
-                    <AlertTriangle size={16} /> 本日の試合上限に到達
+                    <AlertTriangle size={16} /> TODAY'S GAME OVER
                   </p>
                   <button className="btn-secondary" onClick={handleBackToMenu} type="button" style={{ marginTop: 8 }}>
-                    メニューへ戻る
+                    RETURN TO MENU
                   </button>
                 </>
               )}
@@ -756,15 +756,15 @@ export default function MiniGamePage() {
           <div className="overlay">
             <div className="locked-box">
               <AlertTriangle size={32} />
-              <h2>本日の仮想稽古終了</h2>
-              <p>1日3試合まで</p>
+              <h2>TODAY'S GAME OVER</h2>
+              <p>MAX 3 MATCHES</p>
               {bestTimeMs !== null && (
                 <p className="locked-best">
-                  <Trophy size={14} /> 自己ベスト: {formatTime(bestTimeMs)}
+                  <Trophy size={14} /> BEST: {formatTime(bestTimeMs)}
                 </p>
               )}
               <button className="btn-secondary" onClick={handleBackToMenu} type="button" style={{ marginTop: 14 }}>
-                メニューへ戻る
+                RETURN TO MENU
               </button>
             </div>
           </div>
