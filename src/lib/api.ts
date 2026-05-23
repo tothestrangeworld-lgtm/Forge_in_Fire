@@ -125,7 +125,7 @@ async function gasPost<T>(body: Record<string, unknown>): Promise<T> {
 const baseSWRConfig: SWRConfiguration = {
   revalidateOnFocus:     false,
   revalidateOnReconnect: false,
-  revalidateIfStale:     false,        // ★ Phase17: 古いデータでも再検証しない
+  revalidateIfStale:     true,        
   keepPreviousData:      true,         // ★ Phase17: 遷移時のチラつき防止
   errorRetryCount:       2,
   shouldRetryOnError:    (err: Error) => err.message !== 'AUTH_REQUIRED',
