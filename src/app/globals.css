@@ -614,3 +614,44 @@ textarea,
 select {
   font-size: max(16px, 1em);
 }
+
+/* ============================================================ */
+/* ★ Phase 16.1: ミニゲーム共通アニメーション                    */
+/* （現在は page.tsx 内の styled-jsx で完結。再利用時のみ有効化）  */
+/* ============================================================ */
+
+/* 斬撃エフェクト（汎用） */
+@keyframes mikiri-slash-sweep {
+  0%   { background-position: 120% -20%; opacity: 0; }
+  10%  { opacity: 1; }
+  100% { background-position: -20% 120%; opacity: 0; }
+}
+
+/* 画面シェイク（汎用） */
+@keyframes mikiri-root-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-4px, 2px); }
+  20% { transform: translate(4px, -3px); }
+  30% { transform: translate(-3px, 3px); }
+  40% { transform: translate(3px, -2px); }
+  50% { transform: translate(-2px, 2px); }
+  60% { transform: translate(2px, -1px); }
+  70% { transform: translate(-1px, 1px); }
+  80% { transform: translate(1px, 0); }
+  90% { transform: translate(-1px, 0); }
+}
+
+/* カットイン（汎用） */
+@keyframes mikiri-cutin-appear {
+  0%   { transform: scale(0.2) rotate(-8deg); opacity: 0; letter-spacing: 0.5em; }
+  15%  { transform: scale(1.4) rotate(-4deg); opacity: 1; letter-spacing: 0.05em; }
+  30%  { transform: scale(1.0) rotate(-2deg); }
+  70%  { transform: scale(1.0) rotate(-2deg); opacity: 1; }
+  100% { transform: scale(1.1) rotate(-2deg); opacity: 0; }
+}
+
+/* 起こり脈動（汎用） */
+@keyframes mikiri-okori-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.05); }
+}
