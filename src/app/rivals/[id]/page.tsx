@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Swords, Star, TrendingUp, Trophy, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Swords, Star, CheckCircle } from 'lucide-react';
 import { useRivalDashboardSWR, evaluatePeer } from '@/lib/api';
 import { calcEpithet } from '@/lib/epithet';
 import type { EpithetResult } from '@/lib/epithet';
@@ -128,6 +128,9 @@ export default function RivalDashboardPage({
 
   const { status, logs, xpHistory, epithetMaster } = dashboard;
   const tm          = dashboard.titleMaster;
+  const techMaster  = dashboard.techniqueMaster ?? [];
+  const matchupMaster = dashboard.matchupMaster ?? [];
+  const peersStyle    = dashboard.peersStyle    ?? [];
   const activeTasks: UserTask[] = (dashboard.tasks ?? []).filter(t => t.status === 'active');
   const myUserId    = getCurrentUserId();
   const isSelf      = myUserId === targetId;
@@ -201,7 +204,7 @@ export default function RivalDashboardPage({
 
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px 16px 0' }}>
 
-        {/* ── ★ 共通ステータスカード ────────────────────────────── */}
+        {/* ── 1. ステータスカード ──────────────────────────── */}
         {epithet ? (
           <div style={{ marginBottom: 14 }}>
             <UserStatusCard
@@ -251,7 +254,7 @@ export default function RivalDashboardPage({
           </div>
         )}
 
-        {/* ── 1. 現在の課題 + 他者評価 ──────────────────────────── */}
+        {/* ── 2. 現在の課題 + 他者評価 ──────────────────────────── */}
         <div className="wa-card" style={{
           background: 'linear-gradient(135deg, rgba(13,11,42,0.92), rgba(30,27,75,0.82))',
           border: '1px solid rgba(139,92,246,0.25)',
@@ -437,45 +440,13 @@ export default function RivalDashboardPage({
           )}
         </div>
 
-        {/* ── 2. スキルグリッド ────────────────────────────────── */}
-        {mounted && techniques.length > 0 && (
-          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Swords style={{ width: 15, height: 15, color: '#a78bfa' }} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>技の習熟度</span>
-              </div>
-              <span style={{ fontSize: 9, color: '#6d28d9', fontWeight: 700, background: 'rgba(109,40,217,0.12)', border: '1px solid rgba(109,40,217,0.25)', borderRadius: 5, padding: '2px 6px' }}>
-                VIEW ONLY
-              </span>
-            </div>
-            <div style={{ pointerEvents: 'none', userSelect: 'none', height: 380, marginTop: 12 }}>
-              <SkillGrid techniques={techniques} signatureTechId={status.favorite_technique ?? undefined} />
-            </div>
-          </div>
-        )}
-
-        {/* ── 3. XP推移チャート ──────────────────────────────── */}
-        {mounted && xpHistory && xpHistory.length > 0 && (
-          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <TrendingUp style={{ width: 15, height: 15, color: '#a78bfa' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>XP推移</span>
-            </div>
-            <XPTimelineChart xpHistory={xpHistory} compact titleMaster={tm} />
-          </div>
-        )}
-
-        {/* ── 4. 課題別 評価スコア分布（★ Phase-ex3: TaskScoreDistCard へ統一） ───── */}
+        {/* ── 3. 課題別 評価スコア分布（直近50日） ───────────────── */}
         {mounted && (
-          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <Star style={{ width: 15, height: 15, color: '#a78bfa' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>課題別 評価スコア分布（直近50回）</span>
-            </div>
+          <div className="hud-card" style={{ marginBottom: '1rem' }}>
+            <span className="section-title">課題別 評価スコア分布（直近50日）</span>
 
             {hasScoreData ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
                 {scoreDistData.map(({
                   taskText,
                   selfDist, selfTotalPts, selfTotalCount,
@@ -518,14 +489,41 @@ export default function RivalDashboardPage({
           </div>
         )}
 
-        {/* ── 5. プレイスタイル分析 ───────────────────────────── */}
-        {mounted && techniques.length > 0 && epithetMaster && (
-          <div className="wa-card" style={{ borderRadius: 16, padding: '14px 12px', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <Trophy style={{ width: 15, height: 15, color: '#a78bfa' }} />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.05em' }}>プレイスタイル分析</span>
+        {/* ── 4. XP獲得推移 ───────────────────────────────── */}
+        {mounted && xpHistory && xpHistory.length > 0 && (
+          <div className="hud-card" style={{ marginBottom: '1rem' }}>
+            <span className="section-title">XP獲得推移</span>
+            <div style={{ height: 160, marginTop: 12 }}>
+              <XPTimelineChart xpHistory={xpHistory} compact titleMaster={tm} />
             </div>
-            <PlaystyleCharts techniques={techniques} />
+          </div>
+        )}
+
+        {/* ── 5. Skill Grid ────────────────────────────────── */}
+        {mounted && techniques.length > 0 && (
+          <div className="hud-card" style={{ marginBottom: '1rem' }}>
+            <span className="section-title">Skill Grid</span>
+            <div style={{ pointerEvents: 'none', userSelect: 'none', height: 450, marginTop: 12 }}>
+              <SkillGrid
+                techniques={techniques}
+                signatureTechId={status.favorite_technique ?? undefined}
+                receivedStats={dashboard.receivedStats}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── 6. PLAY STYLE ───────────────────────────────── */}
+        {mounted && techniques.length > 0 && (
+          <div className="hud-card" style={{ marginBottom: '1rem' }}>
+            <span className="section-title">PLAY STYLE</span>
+            <PlaystyleCharts
+              techniques={techniques}
+              matchupMaster={matchupMaster}
+              peersStyle={peersStyle}
+              techniqueMaster={techMaster}
+              receivedStats={dashboard.receivedStats}
+            />
           </div>
         )}
 

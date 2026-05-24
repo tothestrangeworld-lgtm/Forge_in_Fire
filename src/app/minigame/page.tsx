@@ -87,37 +87,36 @@ const MAX_MATCHES_PER_DAY = 3;
 // ★ カットイン用：タイミング別の英語プール
 // =====================================================================
 const CUTIN_S = [
-  'PERFECT STRIKE!',
-  'FIRST INTENT!',
-  'PRE-EMPTIVE CUT!',
-  'MIND READ!',
+  'IPPON!',
+  '喪神無想',
+  '天誅!',
   'ZERO FRAME!',
-  'INSTINCT BREAK!',
+  '会心の一撃!',
 ];
 const CUTIN_A = [
   'COUNTER HIT!',
   'PARRY & SLASH!',
-  'RIPOSTE!',
-  'DEFLECT CUT!',
-  'SHARP RESPONSE!',
+  '一本!',
+  'そこだ!',
+  'くらえ!',
   'CLEAN PARRY!',
 ];
 const CUTIN_BC = [
   'NARROW BLOCK!',
-  'CLOSE CALL...',
+  '危機一髪！',
   'BARELY DODGED...',
   'JUST IN TIME...',
-  'MARGINAL HIT...',
+  'ギリギリ...',
 ];
 const CUTIN_FAIL = [
-  'FROZEN STANCE...',
+  '失敗...',
   'MISREAD!',
-  'OVERWHELMED...',
+  '無惨...',
 ];
 const CUTIN_TOO_EARLY = [
-  'PREMATURE!',
+  'お手付き!',
   'TOO HASTY!',
-  'BROKEN GUARD!',
+  '慌てるべからず!',
 ];
 
 const pickRandom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
