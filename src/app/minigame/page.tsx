@@ -288,7 +288,16 @@ export default function MiniGamePage() {
     scheduleNextRound();
   }, [scheduleNextRound]);
 
+// ===================================================================
+// ★ Phase16.1: タップハンドラ（拡張版）
+// ★ Phase16.1 追記3: 反応時間計測ロジック修正
+//   - 保存する reactionMs は okoriStartRef からの通算時間に統一
+//   - strike 中のランク判定（A/B/C）のみ strikeStartRef からの遅延を使用
+//   これにより「okoriを見送ってstrikeで反応した方が短く記録される」
+//   逆転現象を解消し、剣道の理合「相手が動き始めた瞬間」=0ms に統一する。
+// ===================================================================
   const handleTap = (part: HitPart) => {
+    // 待機中（溜め）にタップ → お手付き
     if (phase === 'waiting' && currentPattern === null) {
       if (timerRef.current) clearTimeout(timerRef.current);
       const dummyPattern = pickRandomPattern();
@@ -311,6 +320,7 @@ export default function MiniGamePage() {
 
     const isCorrectPart = part === currentPattern.correctPart;
 
+    // 部位ミス
     if (!isCorrectPart) {
       finishRound({
         patternId:   currentPattern.id,
@@ -325,12 +335,19 @@ export default function MiniGamePage() {
       return;
     }
 
+    // ── 正しい部位タップ ──
+    // ★ Phase16.1 追記3: 記録用タイムは「常にokoriからの通算時間」に統一
+    const totalReactionMs = okoriStartRef.current
+      ? performance.now() - okoriStartRef.current
+      : 0;
+
     if (phase === 'okori') {
-      const reactionMs = okoriStartRef.current ? performance.now() - okoriStartRef.current : 0;
+      // Sランク: 出端を捉えた大成功
+      // okori中は totalReactionMs == okoriからの経過時間 そのまま
       finishRound({
         patternId:   currentPattern.id,
         success:     true,
-        reactionMs:  Math.round(reactionMs),
+        reactionMs:  Math.round(totalReactionMs),
         successName: currentPattern.successName,
         failLabel:   '',
         timing:      'okori',
@@ -340,13 +357,19 @@ export default function MiniGamePage() {
       return;
     }
 
-    const reactionMs = strikeStartRef.current ? performance.now() - strikeStartRef.current : 0;
+    // strike フェーズ
+    // ★ Phase16.1 追記3: ランク判定は「strikeからの遅延時間」で行うが、
+    //   保存する reactionMs は okoriからの通算時間 totalReactionMs を使う
+    const delayFromStrike = strikeStartRef.current
+      ? performance.now() - strikeStartRef.current
+      : 0;
+
     let rank: 'A' | 'B' | 'C';
     let cutinPool: string[];
-    if (reactionMs < 200) {
+    if (delayFromStrike < 200) {
       rank = 'A';
       cutinPool = CUTIN_A;
-    } else if (reactionMs < 400) {
+    } else if (delayFromStrike < 400) {
       rank = 'B';
       cutinPool = CUTIN_BC;
     } else {
@@ -357,7 +380,7 @@ export default function MiniGamePage() {
     finishRound({
       patternId:   currentPattern.id,
       success:     true,
-      reactionMs:  Math.round(reactionMs),
+      reactionMs:  Math.round(totalReactionMs), // ★ okoriからの通算時間で記録
       successName: currentPattern.successName,
       failLabel:   '',
       timing:      'strike',
