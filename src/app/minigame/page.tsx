@@ -2,12 +2,14 @@
 
 /**
  * =====================================================================
- * 刹那ノ見切 (Setsuna no Mikiri) - Phase 16.1 追記2版
+ * 刹那ノ見切 (Setsuna no Mikiri) - Phase 16.1 追記4版
  * =====================================================================
- * 改善点（追加分）:
- *  1. okori フェーズに剣士の「じわっ」予備動作アニメ（.anim-okori）追加
- *  2. Loader2 を Tailwind の animate-spin で確実に回転
- *  3. 色彩をインディゴ(#1e1b4b)×和風ゴールド(#d4af37)に全面統合
+ * 改善点:
+ *  - Phase16.1: viewState による画面分割（menu/playing/records）
+ *  - Phase16.1: ステートマシン拡張（waiting → okori → strike → result）
+ *  - Phase16.1 追記2: okori 予備動作アニメ・配色をインディゴ×和風ゴールドに
+ *  - Phase16.1 追記3: reactionMs を okoriStartRef からの通算時間に統一
+ *  - Phase16.1 追記4: pre_okori フェーズ追加（READY消去後 0.4〜1.4s の無の間）
  * =====================================================================
  */
 
@@ -30,10 +32,18 @@ type PatternId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H';
 
 type ViewState = 'menu' | 'playing' | 'records';
 
+/**
+ * ★ Phase16.1 追記4: pre_okori フェーズを追加
+ *   - waiting:   READY表示中（1.5〜3.0s）
+ *   - pre_okori: READY消去後の「無の間」（0.4〜1.4s）← 新規
+ *   - okori:     起こり（0.4〜1.0s）★ ここで計測スタート
+ *   - strike:    打突（pattern.strikeDuration）
+ */
 type GamePhase =
   | 'loading'
   | 'idle'
   | 'waiting'
+  | 'pre_okori'    // ★ Phase16.1 追記4: 静寂タイム
   | 'okori'
   | 'strike'
   | 'result'
@@ -84,7 +94,7 @@ const ROUNDS_PER_MATCH = 3;
 const MAX_MATCHES_PER_DAY = 3;
 
 // =====================================================================
-// ★ カットイン用：タイミング別の英語プール
+// ★ カットイン用：タイミング別のテキストプール
 // =====================================================================
 const CUTIN_S = [
   'IPPON!',
@@ -248,27 +258,45 @@ export default function MiniGamePage() {
     });
   }, [finishRound]);
 
+  // ===================================================================
+  // ★ Phase16.1 追記4: pre_okori フェーズを挿入した4段階タイマー
+  //   waiting (READY表示, 1.5〜3.0s)
+  //   → pre_okori (無の間, 0.4〜1.4s)  ← READY消去後、画面静寂
+  //   → okori    (起こり, 0.4〜1.0s)   ← ここで計測スタート
+  //   → strike   (打突, pattern.strikeDuration)
+  // ===================================================================
   const scheduleNextRound = useCallback(() => {
-    const waitMs = randomBetween(1500, 3000);
+    const waitMs = randomBetween(1000, 2000);
     if (timerRef.current) clearTimeout(timerRef.current);
 
+    // [1] waiting フェーズ（READY表示）
     timerRef.current = setTimeout(() => {
-      const pattern = pickRandomPattern();
-      setCurrentPattern(pattern);
-      okoriStartRef.current = performance.now();
-      setPhase('okori');
-      setFlashType('okori');
-      setTimeout(() => setFlashType('none'), 120);
+      // ★ READYを消してから無の間に入る
+      setPhase('pre_okori');
 
-      const okoriMs = randomBetween(400, 1000);
+      // [2] pre_okori フェーズ（無の間 0.4〜1.4s）
+      const preOkoriMs = randomBetween(1500, 3000);
       timerRef.current = setTimeout(() => {
-        strikeStartRef.current = performance.now();
-        setPhase('strike');
+        const pattern = pickRandomPattern();
+        setCurrentPattern(pattern);
+        okoriStartRef.current = performance.now();  // ★ ここで計測スタート
+        setPhase('okori');
+        // 起こりに入った瞬間の微細な視覚キュー
+        setFlashType('okori');
+        setTimeout(() => setFlashType('none'), 120);
 
+        // [3] okori フェーズ（0.4〜1.0秒のランダム）
+        const okoriMs = randomBetween(400, 1000);
         timerRef.current = setTimeout(() => {
-          handleTimeout(pattern);
-        }, pattern.strikeDuration);
-      }, okoriMs);
+          strikeStartRef.current = performance.now();
+          setPhase('strike');
+
+          // [4] strike フェーズ（パターンごとの猶予）
+          timerRef.current = setTimeout(() => {
+            handleTimeout(pattern);
+          }, pattern.strikeDuration);
+        }, okoriMs);
+      }, preOkoriMs);
     }, waitMs);
   }, [handleTimeout]);
 
@@ -287,17 +315,14 @@ export default function MiniGamePage() {
     scheduleNextRound();
   }, [scheduleNextRound]);
 
-// ===================================================================
-// ★ Phase16.1: タップハンドラ（拡張版）
-// ★ Phase16.1 追記3: 反応時間計測ロジック修正
-//   - 保存する reactionMs は okoriStartRef からの通算時間に統一
-//   - strike 中のランク判定（A/B/C）のみ strikeStartRef からの遅延を使用
-//   これにより「okoriを見送ってstrikeで反応した方が短く記録される」
-//   逆転現象を解消し、剣道の理合「相手が動き始めた瞬間」=0ms に統一する。
-// ===================================================================
+  // ===================================================================
+  // ★ Phase16.1: タップハンドラ（拡張版）
+  // ★ Phase16.1 追記3: 反応時間計測ロジック修正
+  // ★ Phase16.1 追記4: pre_okori 中のタップも「お手付き」扱い
+  // ===================================================================
   const handleTap = (part: HitPart) => {
-    // 待機中（溜め）にタップ → お手付き
-    if (phase === 'waiting' && currentPattern === null) {
+    // ★ Phase16.1 追記4: waiting / pre_okori 中のタップ → お手付き
+    if (phase === 'waiting' || phase === 'pre_okori') {
       if (timerRef.current) clearTimeout(timerRef.current);
       const dummyPattern = pickRandomPattern();
       finishRound({
@@ -342,7 +367,6 @@ export default function MiniGamePage() {
 
     if (phase === 'okori') {
       // Sランク: 出端を捉えた大成功
-      // okori中は totalReactionMs == okoriからの経過時間 そのまま
       finishRound({
         patternId:   currentPattern.id,
         success:     true,
@@ -522,7 +546,6 @@ export default function MiniGamePage() {
                 <span>SYS_INIT</span>
               </div>
               <div className="loading-row">
-                {/* ★ Tailwindのanimate-spinで確実に回転 */}
                 <Loader2 size={20} className="animate-spin" />
                 <span className="loading-text">FETCHING_STATUS<span className="dots">...</span></span>
               </div>
@@ -670,6 +693,9 @@ export default function MiniGamePage() {
             <p className="overlay-round">ROUND {pad2(roundIdx + 1)} / {pad2(ROUNDS_PER_MATCH)}</p>
           </div>
         )}
+
+        {/* ★ Phase16.1 追記4: pre_okori（無の間）は意図的に何も表示しない */}
+        {/* 画面静寂を演出するため、剣士のシルエットのみ静かに佇む */}
 
         {viewState === 'playing' && phase === 'okori' && (
           <div className="overlay overlay--passive overlay--okori">
@@ -917,10 +943,6 @@ export default function MiniGamePage() {
 
         /* =====================================================================
            ★ Phase16.1 追記2: okori 予備動作アニメ
-           剣士全体が「じわぁっ…」と微細に動き始める
-           - 重心がわずかに沈む（translateY +3px）
-           - 全体がほんの少し前進感を出す（scale 1.015）
-           - 0.7秒かけて加速感をつけて到達
         ===================================================================== */
         :global(.kenshi-wrap.anim-okori) {
           animation: kenshiOkori 0.7s cubic-bezier(0.55, 0, 0.6, 0.7) forwards;
@@ -939,7 +961,6 @@ export default function MiniGamePage() {
             filter: drop-shadow(0 0 18px rgba(255, 100, 80, 0.55));
           }
         }
-        /* okori中、剣先がわずかに前に出る（剣士全体に sword 子要素） */
         :global(.kenshi-wrap.anim-okori .sword) {
           animation: swordOkori 0.7s cubic-bezier(0.55, 0, 0.6, 0.7) forwards;
         }
@@ -1040,7 +1061,6 @@ export default function MiniGamePage() {
             inset 0 1px 0 rgba(232, 228, 255, 0.06);
           overflow: hidden;
         }
-        /* 角の装飾（4隅のL字・金色） */
         .console-box::before,
         .console-box::after {
           content: '';
@@ -1071,7 +1091,6 @@ export default function MiniGamePage() {
           border-color: #e89090;
         }
 
-        /* 漢字の透かし背景 */
         .kanji-watermark {
           position: absolute;
           right: -10px;
@@ -1087,7 +1106,6 @@ export default function MiniGamePage() {
           writing-mode: vertical-rl;
         }
 
-        /* コンソールプロンプト */
         .console-prompt {
           display: inline-flex; align-items: center; gap: 6px;
           font-family: 'JetBrains Mono', monospace;
@@ -1451,7 +1469,7 @@ export default function MiniGamePage() {
           100% { transform: scale(1.1) rotate(-2deg); opacity: 0; }
         }
 
-        /* ===== 斬撃エフェクト（金色に変更） ===== */
+        /* ===== 斬撃エフェクト（金色） ===== */
         .slash-fx {
           position: absolute; inset: -20%;
           z-index: 8; pointer-events: none;
@@ -1623,8 +1641,7 @@ export default function MiniGamePage() {
 }
 
 // =====================================================================
-// 仮想剣士 SVG
-// ★ Phase16.1 追記2: 配色をインディゴ×和風ゴールドに統合
+// 仮想剣士 SVG（無変更）
 // =====================================================================
 interface KenshiSVGProps {
   glowPart:  HitPart | null;
@@ -1640,12 +1657,6 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
     if (active) onTap(part);
   };
 
-  /**
-   * ★ Phase16.1 追記2: 通常時は和風ゴールド系、危険時は朱色系
-   *  - null:    通常 = 落ち着いたゴールド
-   *  - okori:   薄朱（じわじわ赤化）
-   *  - strike:  完全な朱赤
-   */
   const getColors = (part: HitPart) => {
     const isTarget = glowPart === part;
     if (!isTarget || intensity === null) {
