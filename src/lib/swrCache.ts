@@ -36,8 +36,8 @@ import { getCurrentUserId } from '@/lib/auth';
 /** localStorage に保存する際のキー */
 export const SWR_CACHE_STORAGE_KEY = 'hyakuren-swr-cache';
 
-/** キャッシュのTTL（2日間） */
-const TTL_MS = 48 * 60 * 60 * 1000;
+/** キャッシュのTTL（7日間） */
+const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** localStorage 容量上限（4MB） */
 const MAX_BYTES = 4 * 1024 * 1024;
