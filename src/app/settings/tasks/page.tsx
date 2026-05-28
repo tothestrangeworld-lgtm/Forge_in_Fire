@@ -15,7 +15,8 @@ export default function TaskSettingsPage() {
 
   // ★ Phase17: SWR を使ってダッシュボードキャッシュと共有
   // ホーム画面で取得済みなら、ここでは再フェッチが発生しない（爆速化）
-  const { data: swrData, error: swrError, isLoading: loading } = useDashboardSWR();
+  //  const { data: swrData, error: swrError, isLoading: loading } = useDashboardSWR();
+  const { data: swrData, error: swrError, isLoading: loading, mutate: mutateDashboard } = useDashboardSWR();
 
   /** 各テキストボックスの現在値 */
   const [values, setValues] = useState<string[]>(Array.from({ length: INPUT_COUNT }, () => ''));
@@ -83,6 +84,8 @@ export default function TaskSettingsPage() {
       }
 
       await updateTasks(taskDiffs);
+      await mutateDashboard(); // ★【追加】ダッシュボードのキャッシュを強制的に最新データで上書きする！
+      
       router.push('/');
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
