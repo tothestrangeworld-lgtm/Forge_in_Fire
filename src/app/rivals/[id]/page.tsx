@@ -30,7 +30,7 @@ export default function RivalDashboardPage({
   const { id: targetId } = use(params);
   const router = useRouter();
 
-  const { data: swrData, error: swrError, isLoading: loading } = useRivalDashboardSWR(targetId);
+  const { data: swrData, error: swrError, isLoading: loading, mutate: mutateRivalDashboard } = useRivalDashboardSWR(targetId);
 
   const dashboard  = swrData?.dashboard  ?? null;
   const techniques = swrData?.techniques ?? [];
@@ -92,6 +92,8 @@ export default function RivalDashboardPage({
         count:       res.evaluated_tasks.length,
         evaluatorXp: res.evaluator_xp ?? 0,   // ★ Phase13.6
       });
+
+      await mutateRivalDashboard(); // ★【ここに追加！】対象の剣士のキャッシュを強制更新！
       
     } catch (err: unknown) {
       setEvalError(err instanceof Error ? (err.message || '評価の送信に失敗しました。') : '評価の送信に失敗しました。');
