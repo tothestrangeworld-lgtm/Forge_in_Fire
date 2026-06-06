@@ -105,8 +105,14 @@ export default function DashboardPage() {
         peerTotalPts += s; peerTotalCount++;
       }
     });
-    return { taskText: t.task_text, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount };
+    return {
+      taskText: t.task_text,
+      taskDetails: t.details,
+      selfDist, selfTotalPts, selfTotalCount,
+      peerDist, peerTotalPts, peerTotalCount,
+    };
   });
+
 
   const hasScoreData = scoreDistData.some(d => d.selfTotalCount > 0 || d.peerTotalCount > 0);
   const isDecaying   = (decay?.days_absent ?? 0) > 3;
@@ -161,7 +167,7 @@ export default function DashboardPage() {
 
         {hasScoreData ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-            {scoreDistData.map(({ taskText, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount }) => {
+            {scoreDistData.map(({ taskText, taskDetails, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount }) => {
               let insight = '';
               if (peerTotalCount > 0 && selfTotalCount > 0) {
                 const s = selfTotalPts / selfTotalCount;
@@ -171,12 +177,13 @@ export default function DashboardPage() {
                 else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
               }
               const mastery = calcMasteryStatus(logs ?? [], taskText);
-              return <TaskScoreDistCard key={taskText} taskText={taskText} selfDist={selfDist} selfTotalPts={selfTotalPts} selfTotalCount={selfTotalCount} peerDist={peerDist} peerTotalPts={peerTotalPts} peerTotalCount={peerTotalCount} mastery={mastery} insight={insight} />;
+              return <TaskScoreDistCard key={taskText} taskText={taskText} taskDetails={taskDetails} selfDist={selfDist} selfTotalPts={selfTotalPts} selfTotalCount={selfTotalCount} peerDist={peerDist} peerTotalPts={peerTotalPts} peerTotalCount={peerTotalCount} mastery={mastery} insight={insight} />;
             })}
           </div>
         ) : (
           <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'rgba(99,102,241,0.4)', padding: '1.5rem 0', margin: 0 }}>評価項目を設定して稽古を記録すると、ここにスコア分布が表示されます</p>
         )}
+
       </div>
 
       {xpHistory && xpHistory.length > 0 && (

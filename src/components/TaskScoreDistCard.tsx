@@ -19,12 +19,34 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { MasteryStatus } from '@/types';
+import {
+  Info,
+  FileText,
+  X,
+  Star,
+  Clock,
+  MapPin,
+  AlertTriangle,
+  Footprints,
+} from 'lucide-react';
+import type { MasteryStatus, TaskDetails, TaskWhyType } from '@/types';
+import { TASK_WHY_LABELS } from '@/types';
 import {
   MASTERY_REQUIRED_COUNT,
   isNearDiscern,
   shouldShowCombo,
 } from '@/lib/mastery';
+
+// 和風ゴールド（アクセントカラー）
+const GOLD = '#fbbf24';
+
+// 評価基準（EVAL）行メタ
+const EVAL_ROW_META: Record<number, { label: string; color: string }> = {
+  5: { label: '★5', color: '#22d3ee' },
+  3: { label: '★3', color: '#fbbf24' },
+  1: { label: '★1', color: '#f87171' },
+};
+
 
 // ---------------------------------------------------------------------
 // 100%積み上げバー用カラーマップ（インディゴ階調）
@@ -75,7 +97,14 @@ export interface TaskScoreDistCardProps {
   peerTotalCount?: number;
   mastery?:        MasteryStatus | null;
   insight?:        string;
+  /**
+   * ★ 5W1H+EVAL: 構造化詳細データ。
+   * 存在する場合のみヘッダーに詳細確認アイコンを表示し、
+   * タップで課題詳細モーダルを開く。
+   */
+  taskDetails?:    TaskDetails;
 }
+
 
 // =====================================================================
 // メインコンポーネント
@@ -91,6 +120,7 @@ export function TaskScoreDistCard({
   peerTotalCount  = 0,
   mastery,
   insight,
+  taskDetails,
 }: TaskScoreDistCardProps) {
 
   const showMastery = mastery != null && mastery.evalCount > 0;
@@ -103,9 +133,36 @@ export function TaskScoreDistCard({
     ? (peerTotalPts / peerTotalCount).toFixed(2)
     : '—';
 
+  // ── ★ 課題詳細モーダル State ──────────────────────────────
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  // 詳細データが何かしら入力されているか（5W1H or EVAL のいずれか）
+  const hasDetails =
+    !!taskDetails &&
+    (
+      (typeof taskDetails.when  === 'string' && taskDetails.when.trim()  !== '') ||
+      (typeof taskDetails.where === 'string' && taskDetails.where.trim() !== '') ||
+      (typeof taskDetails.how   === 'string' && taskDetails.how.trim()   !== '') ||
+      (typeof taskDetails.whyType === 'string' && taskDetails.whyType.trim() !== '') ||
+      (typeof taskDetails.whyText === 'string' && taskDetails.whyText.trim() !== '') ||
+      (
+        !!taskDetails.evalCriteria &&
+        [5, 3, 1].some(n => {
+          const v = taskDetails.evalCriteria[n as 5 | 3 | 1];
+          return typeof v === 'string' && v.trim() !== '';
+        })
+      )
+    );
+
+  function openDetail(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (hasDetails) setDetailOpen(true);
+  }
+
   // ── ★ ツールチップ State ─────────────────────────────────
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+
 
   // 外側クリック / Esc で閉じる
   useEffect(() => {
@@ -183,7 +240,7 @@ export function TaskScoreDistCard({
         transition:   'all 0.2s ease',
       }}
     >
-      {/* ── 1行目 ヘッダー: 課題テキスト → Mastery表示（縦積み） ── */}
+      {/* ── 1行目 ヘッダー: 課題テキスト + 詳細アイコン → Mastery表示（縦積み） ── */}
       <div style={{
         display:        'flex',
         flexDirection:  'column',
@@ -191,16 +248,53 @@ export function TaskScoreDistCard({
         gap:            8,
         marginBottom:   10,
       }}>
-        <p style={{
-          margin:     0,
-          fontSize:   13,
-          fontWeight: 700,
-          color:      '#ede9fe',
-          lineHeight: 1.4,
-          wordBreak:  'break-word',
+        <div style={{
+          display:     'flex',
+          alignItems:  'flex-start',
+          gap:         8,
         }}>
-          {taskText}
-        </p>
+          <p
+            onClick={hasDetails ? openDetail : undefined}
+            style={{
+              margin:     0,
+              fontSize:   13,
+              fontWeight: 700,
+              color:      '#ede9fe',
+              lineHeight: 1.4,
+              wordBreak:  'break-word',
+              flex:       1,
+              cursor:     hasDetails ? 'pointer' : 'default',
+            }}
+          >
+            {taskText}
+          </p>
+
+          {/* ★ 詳細確認トリガー（ゴールドアイコン） */}
+          {hasDetails && (
+            <button
+              type="button"
+              onClick={openDetail}
+              aria-label="課題詳細を表示"
+              title="TASK DETAIL"
+              style={{
+                flexShrink:     0,
+                width:          24,
+                height:         24,
+                borderRadius:   6,
+                background:     'rgba(251,191,36,0.1)',
+                border:         '1px solid rgba(251,191,36,0.4)',
+                display:        'flex',
+                alignItems:     'center',
+                justifyContent: 'center',
+                cursor:         'pointer',
+                padding:        0,
+                marginTop:      1,
+              }}
+            >
+              <Info size={14} color="#fde68a" strokeWidth={2} />
+            </button>
+          )}
+        </div>
 
         {showMastery && mastery && (
           <div>
@@ -264,11 +358,410 @@ export function TaskScoreDistCard({
       {tooltip && (
         <Tooltip tooltip={tooltip} />
       )}
+
+      {/* ── ★ 課題詳細モーダル ── */}
+      {detailOpen && taskDetails && (
+        <TaskDetailModal
+          taskText={taskText}
+          details={taskDetails}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
 export default TaskScoreDistCard;
+
+// =====================================================================
+// TaskDetailModal: 課題詳細ポップアップ（モーダルオーバレイ）
+// =====================================================================
+
+interface TaskDetailModalProps {
+  taskText: string;
+  details:  TaskDetails;
+  onClose:  () => void;
+}
+
+// 5W1H 行ラベルのメタ
+const FIELD_META = {
+  when:  { en: 'WHEN',  ja: '機',   Icon: Clock },
+  where: { en: 'WHERE', ja: '間合い',       Icon: MapPin },
+  why:   { en: 'WHY',   ja: '理由', Icon: AlertTriangle },
+  how:   { en: 'HOW',   ja: '如何',       Icon: Footprints },
+} as const;
+
+function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
+
+  // 親カードへのクリック伝播を完全に遮断する
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  // Why の表示テキストを解決
+  const whyTypeLabel = details.whyType
+    ? (TASK_WHY_LABELS[details.whyType as TaskWhyType] ?? details.whyType)
+    : '';
+  const whyDisplay =
+    details.whyType === 'custom'
+      ? (details.whyText?.trim() || '（記述なし）')
+      : (whyTypeLabel || '（未設定）');
+
+  // 各フィールドの値（空はプレースホルダ）
+  const whenVal  = (typeof details.when  === 'string' && details.when.trim())  ? details.when  : '未設定';
+  const whereVal = (typeof details.where === 'string' && details.where.trim()) ? details.where : '未設定';
+  const howVal   = (typeof details.how   === 'string' && details.how.trim())   ? details.how   : '未設定';
+
+  return (
+    <>
+      <style>{`
+        @keyframes taskDistBackdropIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes taskDistPanelIn {
+          0%   { opacity: 0; transform: translateY(18px) scale(0.96); }
+          100% { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+      `}</style>
+
+      {/* バックドロップ（漆黒・サイバーインディゴ） */}
+      <div
+        onClick={(e) => { stop(e); onClose(); }}
+        style={{
+          position:       'fixed',
+          inset:          0,
+          zIndex:         9999,
+          background:     'radial-gradient(circle at 50% 30%, rgba(30,27,75,0.82), rgba(8,6,20,0.92))',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'center',
+          padding:        '20px',
+          animation:      'taskDistBackdropIn 0.2s ease forwards',
+        }}
+      >
+        {/* パネル本体（黄金ボーダー） */}
+        <div
+          onClick={stop}
+          style={{
+            position:     'relative',
+            width:        'min(420px, calc(100vw - 40px))',
+            maxHeight:    'calc(100dvh - 80px)',
+            overflowY:    'auto',
+            background:   'linear-gradient(160deg, rgba(13,11,42,0.98), rgba(20,16,48,0.98))',
+            border:       `1.5px solid ${GOLD}`,
+            borderRadius: 18,
+            boxShadow:    `0 0 28px rgba(251,191,36,0.25), 0 12px 48px rgba(0,0,0,0.6)`,
+            padding:      '18px 18px 16px',
+            animation:    'taskDistPanelIn 0.32s cubic-bezier(0.34,1.56,0.64,1) forwards',
+          }}
+        >
+          {/* 上端ゴールドライン */}
+          <div style={{
+            position:   'absolute',
+            top:        0,
+            left:       '12%',
+            right:      '12%',
+            height:     2,
+            background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`,
+            borderRadius: '0 0 4px 4px',
+          }} />
+
+          {/* ヘッダー */}
+          <div style={{
+            display:      'flex',
+            alignItems:   'flex-start',
+            gap:          10,
+            marginBottom: 16,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                display:       'flex',
+                alignItems:    'center',
+                gap:           7,
+                marginBottom:  6,
+              }}>
+                <FileText size={15} color={GOLD} strokeWidth={1.8} />
+                <span style={{
+                  fontSize:      '0.66rem',
+                  fontWeight:    800,
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  color:         GOLD,
+                }}>
+                  TASK DETAIL
+                </span>
+                <span style={{
+                  fontSize:      '0.6rem',
+                  fontWeight:    600,
+                  letterSpacing: '0.06em',
+                  color:         'rgba(199,210,254,0.45)',
+                }}>
+                  課題詳細
+                </span>
+              </div>
+              <p style={{
+                margin:     0,
+                fontSize:   '0.98rem',
+                fontWeight: 800,
+                color:      '#ede9fe',
+                lineHeight: 1.4,
+                wordBreak:  'break-word',
+              }}>
+                {taskText}
+              </p>
+            </div>
+
+            {/* 閉じるボタン（右上 X） */}
+            <button
+              type="button"
+              onClick={(e) => { stop(e); onClose(); }}
+              aria-label="閉じる"
+              style={{
+                flexShrink:     0,
+                width:          30,
+                height:         30,
+                borderRadius:   8,
+                background:     'rgba(251,191,36,0.08)',
+                border:         `1px solid ${GOLD}66`,
+                display:        'flex',
+                alignItems:     'center',
+                justifyContent: 'center',
+                cursor:         'pointer',
+                padding:        0,
+              }}
+            >
+              <X size={16} color={GOLD} strokeWidth={2} />
+            </button>
+          </div>
+
+          {/* ── 5W1H セクション ── */}
+          <div style={{
+            display:       'flex',
+            flexDirection: 'column',
+            gap:           10,
+            marginBottom:  16,
+          }}>
+            <DetailRow
+              en={FIELD_META.when.en}
+              ja={FIELD_META.when.ja}
+              Icon={FIELD_META.when.Icon}
+              value={whenVal}
+            />
+            <DetailRow
+              en={FIELD_META.where.en}
+              ja={FIELD_META.where.ja}
+              Icon={FIELD_META.where.Icon}
+              value={whereVal}
+            />
+            <DetailRow
+              en={FIELD_META.why.en}
+              ja={FIELD_META.why.ja}
+              Icon={FIELD_META.why.Icon}
+              value={whyDisplay}
+            />
+            <DetailRow
+              en={FIELD_META.how.en}
+              ja={FIELD_META.how.ja}
+              Icon={FIELD_META.how.Icon}
+              value={howVal}
+              multiline
+            />
+          </div>
+
+          {/* ── EVAL セクション ── */}
+          <div style={{
+            paddingTop:  14,
+            borderTop:   '1px solid rgba(251,191,36,0.18)',
+          }}>
+            <div style={{
+              display:      'flex',
+              alignItems:   'center',
+              gap:          7,
+              marginBottom: 10,
+            }}>
+              <Star size={13} color={GOLD} fill={GOLD} strokeWidth={0} />
+              <span style={{
+                fontSize:      '0.64rem',
+                fontWeight:    800,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color:         GOLD,
+              }}>
+                EVAL CRITERIA
+              </span>
+              <span style={{
+                fontSize:      '0.6rem',
+                fontWeight:    600,
+                letterSpacing: '0.04em',
+                color:         'rgba(199,210,254,0.45)',
+              }}>
+                評価基準
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[5, 3, 1].map(n => {
+                const meta = EVAL_ROW_META[n];
+                const text = details.evalCriteria?.[n as 5 | 3 | 1] ?? '';
+                const filled = typeof text === 'string' && text.trim() !== '';
+                return (
+                  <div
+                    key={n}
+                    style={{
+                      display:      'flex',
+                      alignItems:   'flex-start',
+                      gap:          9,
+                      padding:      '8px 10px',
+                      borderRadius: 9,
+                      background:   `${meta.color}0d`,
+                      border:       `1px solid ${meta.color}33`,
+                      opacity:      filled ? 1 : 0.45,
+                    }}
+                  >
+                    {/* ★N ラベル */}
+                    <div style={{
+                      flexShrink:     0,
+                      display:        'flex',
+                      alignItems:     'center',
+                      gap:            4,
+                      padding:        '3px 8px',
+                      borderRadius:   7,
+                      background:     `${meta.color}1f`,
+                      border:         `1px solid ${meta.color}66`,
+                      minWidth:       60,
+                      justifyContent: 'center',
+                    }}>
+                      <Star size={11} fill={meta.color} color={meta.color} strokeWidth={0} />
+                      <span style={{
+                        fontSize:   '0.76rem',
+                        fontWeight: 800,
+                        color:      meta.color,
+                        lineHeight: 1,
+                      }}>
+                        {n}
+                      </span>
+                    </div>
+                    {/* 基準テキスト */}
+                    <p style={{
+                      margin:     0,
+                      fontSize:   '0.76rem',
+                      lineHeight: 1.5,
+                      color:      filled ? 'rgba(226,232,240,0.9)' : 'rgba(199,210,254,0.4)',
+                      wordBreak:  'break-word',
+                      flex:       1,
+                      paddingTop: 2,
+                    }}>
+                      {filled ? text : '基準未設定'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── 下部 CLOSE ボタン ── */}
+          <button
+            type="button"
+            onClick={(e) => { stop(e); onClose(); }}
+            style={{
+              marginTop:     18,
+              width:         '100%',
+              padding:       '11px 16px',
+              borderRadius:  11,
+              background:    `linear-gradient(135deg, rgba(120,80,0,0.35), rgba(251,191,36,0.18))`,
+              border:        `1px solid ${GOLD}88`,
+              color:         '#fde68a',
+              fontSize:      '0.8rem',
+              fontWeight:    800,
+              letterSpacing: '0.1em',
+              cursor:        'pointer',
+              fontFamily:    'inherit',
+              display:       'flex',
+              alignItems:    'center',
+              justifyContent:'center',
+              gap:           8,
+            }}
+          >
+            <X size={15} strokeWidth={2.2} />
+            CLOSE（閉じる）
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// =====================================================================
+// DetailRow: 5W1H 各項目の表示行
+// =====================================================================
+
+interface DetailRowProps {
+  en:        string;
+  ja:        string;
+  Icon:      typeof Clock;
+  value:     string;
+  multiline?: boolean;
+}
+
+function DetailRow({ en, ja, Icon, value, multiline }: DetailRowProps) {
+  const isUnset = value === '未設定' || value === '（未設定）' || value === '（記述なし）';
+  return (
+    <div style={{
+      display:      'flex',
+      alignItems:   multiline ? 'flex-start' : 'center',
+      gap:          10,
+      padding:      '9px 11px',
+      borderRadius: 10,
+      background:   'rgba(49,46,129,0.3)',
+      border:       '1px solid rgba(129,140,248,0.18)',
+    }}>
+      {/* ラベル列 */}
+      <div style={{
+        flexShrink:    0,
+        width:         72,
+        display:       'flex',
+        flexDirection: 'column',
+        gap:           2,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Icon size={12} color="#a5b4fc" strokeWidth={2} />
+          <span style={{
+            fontSize:      '0.6rem',
+            fontWeight:    800,
+            letterSpacing: '0.1em',
+            color:         '#a5b4fc',
+          }}>
+            {en}
+          </span>
+        </div>
+        <span style={{
+          fontSize:    '0.58rem',
+          fontWeight:  600,
+          color:       'rgba(199,210,254,0.45)',
+          paddingLeft: 17,
+        }}>
+          {ja}
+        </span>
+      </div>
+
+      {/* 値 */}
+      <p style={{
+        margin:     0,
+        flex:       1,
+        fontSize:   '0.78rem',
+        fontWeight: 700,
+        lineHeight: 1.5,
+        color:      isUnset ? 'rgba(199,210,254,0.4)' : '#e0e7ff',
+        wordBreak:  'break-word',
+        whiteSpace: multiline ? 'pre-wrap' : 'normal',
+      }}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 
 // =====================================================================
 // ツールチップ（吹き出し）

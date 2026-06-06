@@ -296,23 +296,25 @@ export default function RivalDashboardPage({
                   ? '評価済'
                   : (!isSelf ? `課題 ${idx + 1}` : undefined);
 
-                return (
-                  <TaskEvalCard
-                    key={task.id}
-                    taskText={task.task_text}
-                    score={selectedScore}
-                    onChange={(s) => {
-                      // 同じスコアを再タップでクリア（既存仕様を踏襲）
-                      setTaskScores(prev => ({
-                        ...prev,
-                        [task.id]: prev[task.id] === s ? null : s,
-                      }));
-                    }}
-                    disabled={disabled}
-                    isEvaluated={isEvaluated}
-                    indexBadge={indexBadge}
-                  />
-                );
+                  return (
+                    <TaskEvalCard
+                      key={task.id}
+                      taskText={task.task_text}
+                      score={selectedScore}
+                      onChange={(s) => {
+                        // 同じスコアを再タップでクリア（既存仕様を踏襲）
+                        setTaskScores(prev => ({
+                          ...prev,
+                          [task.id]: prev[task.id] === s ? null : s,
+                        }));
+                      }}
+                      disabled={disabled}
+                      isEvaluated={isEvaluated}
+                      indexBadge={indexBadge}
+                      taskDetails={task.details}
+                    />
+                  );
+  
               })}
             </div>
           )}
