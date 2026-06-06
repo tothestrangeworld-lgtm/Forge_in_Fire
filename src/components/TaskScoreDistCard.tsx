@@ -19,8 +19,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Info,
   FileText,
   X,
   Star,
@@ -269,7 +269,7 @@ export function TaskScoreDistCard({
             {taskText}
           </p>
 
-          {/* ★ 詳細確認トリガー（ゴールドアイコン） */}
+          {/* ★ 詳細確認トリガー（ゴールドアイコン: FileText に統一） */}
           {hasDetails && (
             <button
               type="button"
@@ -291,7 +291,7 @@ export function TaskScoreDistCard({
                 marginTop:      1,
               }}
             >
-              <Info size={14} color="#fde68a" strokeWidth={2} />
+              <FileText size={14} color="#fde68a" strokeWidth={1.8} />
             </button>
           )}
         </div>
@@ -396,6 +396,18 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
   // 親カードへのクリック伝播を完全に遮断する
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
+  // ★ Portal マウント判定（SSR/初回レンダリング時は document が無いため）
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    // モーダル表示中は背面スクロールを抑止
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+
   // Why の表示テキストを解決
   const whyTypeLabel = details.whyType
     ? (TASK_WHY_LABELS[details.whyType as TaskWhyType] ?? details.whyType)
@@ -410,7 +422,10 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
   const whereVal = (typeof details.where === 'string' && details.where.trim()) ? details.where : '未設定';
   const howVal   = (typeof details.how   === 'string' && details.how.trim())   ? details.how   : '未設定';
 
-  return (
+  // ★ Portal がマウントされるまでは何も描画しない
+  if (!mounted) return null;
+
+  const modalContent = (
     <>
       <style>{`
         @keyframes taskDistBackdropIn {
@@ -429,7 +444,7 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
         style={{
           position:       'fixed',
           inset:          0,
-          zIndex:         9999,
+          zIndex:         99999,
           background:     'radial-gradient(circle at 50% 30%, rgba(30,27,75,0.82), rgba(8,6,20,0.92))',
           backdropFilter: 'blur(4px)',
           WebkitBackdropFilter: 'blur(4px)',
@@ -440,6 +455,7 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
           animation:      'taskDistBackdropIn 0.2s ease forwards',
         }}
       >
+
         {/* パネル本体（黄金ボーダー） */}
         <div
           onClick={stop}
@@ -690,6 +706,10 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
       </div>
     </>
   );
+
+  // ★ document.body 直下へ Portal でレンダリングし、
+  //   親カードの transform / opacity 等によるスタッキングコンテキストを完全回避する
+  return createPortal(modalContent, document.body);
 }
 
 // =====================================================================

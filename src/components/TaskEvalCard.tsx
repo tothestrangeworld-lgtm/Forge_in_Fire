@@ -12,10 +12,12 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Star, FileText, X, Clock, MapPin, AlertTriangle, Footprints } from 'lucide-react';
 import type { TaskDetails, TaskWhyType } from '@/types';
 import { TASK_WHY_LABELS } from '@/types';
+
 
 const SCORE_LABELS_SHORT: Record<number, string> = {
   1: '少し',
@@ -310,6 +312,18 @@ const FIELD_META = {
 
 function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
 
+  // ★ Portal マウント判定（SSR/初回レンダリング時は document が無いため）
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    // モーダル表示中は背面スクロールを抑止
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+
   // Why の表示テキストを解決
   const whyTypeLabel = details.whyType
     ? (TASK_WHY_LABELS[details.whyType as TaskWhyType] ?? details.whyType)
@@ -324,7 +338,10 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
   const whereVal = (typeof details.where === 'string' && details.where.trim()) ? details.where : '未設定';
   const howVal   = (typeof details.how   === 'string' && details.how.trim())   ? details.how   : '未設定';
 
-  return (
+  // ★ Portal がマウントされるまでは何も描画しない
+  if (!mounted) return null;
+
+  const modalContent = (
     <>
       <style>{`
         @keyframes taskDetailBackdropIn {
@@ -343,7 +360,7 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
         style={{
           position:       'fixed',
           inset:          0,
-          zIndex:         9990,
+          zIndex:         99999,
           background:     'radial-gradient(circle at 50% 30%, rgba(30,27,75,0.82), rgba(8,6,20,0.92))',
           backdropFilter: 'blur(4px)',
           WebkitBackdropFilter: 'blur(4px)',
@@ -354,6 +371,7 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
           animation:      'taskDetailBackdropIn 0.2s ease forwards',
         }}
       >
+
         {/* パネル本体（黄金ボーダー） */}
         <div
           onClick={e => e.stopPropagation()}
@@ -604,6 +622,11 @@ function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
       </div>
     </>
   );
+
+  // ★ document.body 直下へ Portal でレンダリングし、
+  //   親カード（animate-slide-in 等の transform）によるスタッキングコンテキストを
+  //   完全回避して確実に最前面へ表示する
+  return createPortal(modalContent, document.body);
 }
 
 // =====================================================================
