@@ -2,7 +2,7 @@
 
 /**
  * =====================================================================
- * 刹那ノ見切 (Setsuna no Mikiri) - Phase 16.1 追記4版
+ * 刹那ノ見切 (Setsuna no Mikiri) - Phase 17.0 反応時間リファクタ版
  * =====================================================================
  * 改善点:
  *  - Phase16.1: viewState による画面分割（menu/playing/records）
@@ -10,6 +10,10 @@
  *  - Phase16.1 追記2: okori 予備動作アニメ・配色をインディゴ×和風ゴールドに
  *  - Phase16.1 追記3: reactionMs を okoriStartRef からの通算時間に統一
  *  - Phase16.1 追記4: pre_okori フェーズ追加（READY消去後 0.4〜1.4s の無の間）
+ *  - Phase17.0: 反応時間の計測起点を「okoriフェーズ開始の瞬間」に統一
+ *  - Phase17.0: ランク判定を純粋な反応時間(ms)の絶対値ベースに再定義
+ *               S:0-150 / A:151-250 / B:251-400 / C:401-600 / F:600+
+ *  - Phase17.0: 待機中タップ（waiting/pre_okori）を「フライング」として即失敗化
  * =====================================================================
  */
 
@@ -94,6 +98,32 @@ const ROUNDS_PER_MATCH = 3;
 const MAX_MATCHES_PER_DAY = 3;
 
 // =====================================================================
+// ★ Phase17.0: ランク判定の閾値（okori開始からの純粋な反応時間 ms）
+//   S: 0   〜 150
+//   A: 151 〜 250
+//   B: 251 〜 400
+//   C: 401 〜 600
+//   F: 601 〜（被弾） / フライング / 部位ミス / タイムアウト
+// =====================================================================
+const RANK_THRESHOLD = {
+  S: 150,
+  A: 250,
+  B: 400,
+  C: 600,
+} as const;
+
+/**
+ * ★ Phase17.0: 純粋な反応時間(ms)からランクを判定するヘルパー
+ */
+function judgeRankByReaction(reactionMs: number): 'S' | 'A' | 'B' | 'C' | 'F' {
+  if (reactionMs <= RANK_THRESHOLD.S) return 'S';
+  if (reactionMs <= RANK_THRESHOLD.A) return 'A';
+  if (reactionMs <= RANK_THRESHOLD.B) return 'B';
+  if (reactionMs <= RANK_THRESHOLD.C) return 'C';
+  return 'F';
+}
+
+// =====================================================================
 // ★ カットイン用：タイミング別のテキストプール
 // =====================================================================
 const CUTIN_S = [
@@ -124,12 +154,25 @@ const CUTIN_FAIL = [
   '無惨...',
 ];
 const CUTIN_TOO_EARLY = [
-  'お手付き!',
+  '不覚…！（フライング）',
   'TOO HASTY!',
   '慌てるべからず!',
 ];
 
 const pickRandom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+// =====================================================================
+// ★ Phase17.0: ランクに応じたカットインプールを返すヘルパー
+// =====================================================================
+function pickCutinByRank(rank: 'S' | 'A' | 'B' | 'C'): string {
+  switch (rank) {
+    case 'S': return pickRandom(CUTIN_S);
+    case 'A': return pickRandom(CUTIN_A);
+    case 'B':
+    case 'C':
+    default:  return pickRandom(CUTIN_BC);
+  }
+}
 
 // =====================================================================
 // ユーティリティ
@@ -262,7 +305,7 @@ export default function MiniGamePage() {
   // ★ Phase16.1 追記4: pre_okori フェーズを挿入した4段階タイマー
   //   waiting (READY表示, 1.5〜3.0s)
   //   → pre_okori (無の間, 0.4〜1.4s)  ← READY消去後、画面静寂
-  //   → okori    (起こり, 0.4〜1.0s)   ← ここで計測スタート
+  //   → okori    (起こり, 0.4〜1.0s)   ← ★ Phase17.0: ここを計測の0秒とする
   //   → strike   (打突, pattern.strikeDuration)
   // ===================================================================
   const scheduleNextRound = useCallback(() => {
@@ -279,7 +322,8 @@ export default function MiniGamePage() {
       timerRef.current = setTimeout(() => {
         const pattern = pickRandomPattern();
         setCurrentPattern(pattern);
-        okoriStartRef.current = performance.now();  // ★ ここで計測スタート
+        // ★ Phase17.0: okoriフェーズに入った瞬間を反応時間の0秒として記録
+        okoriStartRef.current = performance.now();
         setPhase('okori');
         // 起こりに入った瞬間の微細な視覚キュー
         setFlashType('okori');
@@ -316,19 +360,22 @@ export default function MiniGamePage() {
   }, [scheduleNextRound]);
 
   // ===================================================================
-  // ★ Phase16.1: タップハンドラ（拡張版）
-  // ★ Phase16.1 追記3: 反応時間計測ロジック修正
-  // ★ Phase16.1 追記4: pre_okori 中のタップも「お手付き」扱い
+  // ★ Phase17.0: タップハンドラ（反応時間計測リファクタ版）
+  //   - waiting / pre_okori 中のタップ → フライング（即Fランク・タイム無効）
+  //   - okori / strike 中の正しい部位タップ
+  //       → okori開始からの純粋な経過時間(ms)で S/A/B/C/F をフラット判定
+  //   - 部位ミス → Fランク・タイム無効
   // ===================================================================
   const handleTap = (part: HitPart) => {
-    // ★ Phase16.1 追記4: waiting / pre_okori 中のタップ → お手付き
+    // ── フライング（お手付き）判定 ──
+    // ★ Phase17.0: 敵が動き出す前（waiting / pre_okori）のタップは即失敗
     if (phase === 'waiting' || phase === 'pre_okori') {
       if (timerRef.current) clearTimeout(timerRef.current);
-      const dummyPattern = pickRandomPattern();
+      const dummyPattern = currentPattern ?? pickRandomPattern();
       finishRound({
         patternId:   dummyPattern.id,
         success:     false,
-        reactionMs:  null,
+        reactionMs:  null,            // フライングはタイム無効
         successName: dummyPattern.successName,
         failLabel:   'EARLY',
         timing:      'tooEarly',
@@ -344,7 +391,7 @@ export default function MiniGamePage() {
 
     const isCorrectPart = part === currentPattern.correctPart;
 
-    // 部位ミス
+    // ── 部位ミス → 失敗（タイム無効） ──
     if (!isCorrectPart) {
       finishRound({
         patternId:   currentPattern.id,
@@ -360,54 +407,39 @@ export default function MiniGamePage() {
     }
 
     // ── 正しい部位タップ ──
-    // ★ Phase16.1 追記3: 記録用タイムは「常にokoriからの通算時間」に統一
-    const totalReactionMs = okoriStartRef.current
+    // ★ Phase17.0: okori開始（okoriStartRef）からの純粋な経過時間を計測
+    const reactionMs = okoriStartRef.current !== null
       ? performance.now() - okoriStartRef.current
       : 0;
+    const reactionMsRounded = Math.round(reactionMs);
 
-    if (phase === 'okori') {
-      // Sランク: 出端を捉えた大成功
+    // ★ Phase17.0: 反応時間の絶対値だけでランクをフラット判定
+    const rank = judgeRankByReaction(reactionMsRounded);
+
+    // ── Fランク（600ms超）= 反応が遅すぎて被弾扱い ──
+    if (rank === 'F') {
       finishRound({
         patternId:   currentPattern.id,
-        success:     true,
-        reactionMs:  Math.round(totalReactionMs),
+        success:     false,
+        reactionMs:  reactionMsRounded, // 遅延タイムは記録（参考表示）
         successName: currentPattern.successName,
-        failLabel:   '',
-        timing:      'okori',
-        cutinText:   pickRandom(CUTIN_S),
-        rank:        'S',
+        failLabel:   currentPattern.failLabel,
+        timing:      phase === 'okori' ? 'okori' : 'strike',
+        cutinText:   pickRandom(CUTIN_FAIL),
+        rank:        'F',
       });
       return;
     }
 
-    // strike フェーズ
-    // ★ Phase16.1 追記3: ランク判定は「strikeからの遅延時間」で行うが、
-    //   保存する reactionMs は okoriからの通算時間 totalReactionMs を使う
-    const delayFromStrike = strikeStartRef.current
-      ? performance.now() - strikeStartRef.current
-      : 0;
-
-    let rank: 'A' | 'B' | 'C';
-    let cutinPool: string[];
-    if (delayFromStrike < 200) {
-      rank = 'A';
-      cutinPool = CUTIN_A;
-    } else if (delayFromStrike < 400) {
-      rank = 'B';
-      cutinPool = CUTIN_BC;
-    } else {
-      rank = 'C';
-      cutinPool = CUTIN_BC;
-    }
-
+    // ── 成功（S / A / B / C） ──
     finishRound({
       patternId:   currentPattern.id,
       success:     true,
-      reactionMs:  Math.round(totalReactionMs), // ★ okoriからの通算時間で記録
+      reactionMs:  reactionMsRounded,
       successName: currentPattern.successName,
       failLabel:   '',
-      timing:      'strike',
-      cutinText:   pickRandom(cutinPool),
+      timing:      phase === 'okori' ? 'okori' : 'strike',
+      cutinText:   pickCutinByRank(rank),
       rank,
     });
   };
@@ -1737,7 +1769,7 @@ function KenshiSVG({ glowPart, intensity, active, onTap }: KenshiSVGProps) {
         </g>
         <g fill="#a37e1f" fontFamily="JetBrains Mono, Courier New, monospace" fontSize="7" opacity="0.7">
           <text x="26" y="44">TGT-LOCK</text>
-          <text x="232" y="44">v.16.1</text>
+          <text x="232" y="44">v.17.0</text>
           <text x="26" y="464">HIT-ZONE</text>
           <text x="240" y="464">ACTIVE</text>
         </g>
