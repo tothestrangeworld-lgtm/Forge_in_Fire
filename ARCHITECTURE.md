@@ -93,6 +93,9 @@ C:\Forge_in_Fire
   - received_technique_logs (is_match 列付き)
   - user_techniques (Points は試合時 ×10 反映済み)
 ```
+## タスク構造化（5W1H + EVAL）設計方針
+課題（UserTask）は、抽象的な1行テキストから脱却し、詳細な行動目標として構造化する。
+GAS側の列ズレによる技術負債を回避するため、DBスキーマ（user_tasksシート）へのカラム追加は `task_details`（JSON文字列）の1列のみに留め、バックエンドでパース/シリアライズを行うハイブリッド方式を採用する。
 
 ### 4.2 ダッシュボード描画フロー
 ```text

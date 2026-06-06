@@ -4,11 +4,16 @@
 // 【Phase-ex2】評価入力カードの極限シンプル化
 //   - Mastery表示UIの完全削除
 //   - 選択スコアに応じた星のカラー動的化（1:赤, 2:オレンジ, 3:黄, 4:緑, 5:サイバーブルー）
+// 【5W1H+EVAL】
+//   - taskDetails を受け取り、評価基準（EVAL）確認アコーディオンを追加
+//   - 評価者が迷わずスコアを付けられるよう ★5/★3/★1 の基準を提示
 // =====================================================================
 
 'use client';
 
-import { Star } from 'lucide-react';
+import { useState } from 'react';
+import { Star, ClipboardList, ChevronDown } from 'lucide-react';
+import type { TaskDetails } from '@/types';
 
 const SCORE_LABELS_SHORT: Record<number, string> = {
   1: '少し',
@@ -34,6 +39,15 @@ const STAR_COLORS: Record<number, string> = {
   5: '#22d3ee', // ← ★5の星の色を輝くサイバーブルーに変更
 };
 
+// =====================================================================
+// 評価基準（EVAL）行: ★N + 基準テキスト
+// =====================================================================
+const EVAL_ROW_META: Record<number, { label: string; color: string }> = {
+  5: { label: '会心', color: '#22d3ee' },
+  3: { label: '及第', color: '#fbbf24' },
+  1: { label: '課題', color: '#f87171' },
+};
+
 export interface TaskEvalCardProps {
   taskText:    string;
   score:       number | null;
@@ -41,6 +55,11 @@ export interface TaskEvalCardProps {
   disabled?:   boolean;
   isEvaluated?: boolean;
   indexBadge?: string;
+  /**
+   * ★ 5W1H+EVAL: 構造化詳細データ。
+   * 存在する場合のみ「評価基準 (EVAL)」確認アコーディオンを表示する。
+   */
+  taskDetails?: TaskDetails;
 }
 
 export function TaskEvalCard({
@@ -50,10 +69,22 @@ export function TaskEvalCard({
   disabled    = false,
   isEvaluated = false,
   indexBadge,
+  taskDetails,
 }: TaskEvalCardProps) {
 
   const badgeStyle = score != null ? SCORE_BADGE_COLORS[score] : null;
   const starColor = score != null ? STAR_COLORS[score] : '#fbbf24';
+
+  const [evalOpen, setEvalOpen] = useState(false);
+
+  // 評価基準のいずれかにテキストが入っているか
+  const hasEvalCriteria =
+    !!taskDetails &&
+    !!taskDetails.evalCriteria &&
+    [5, 3, 1].some(n => {
+      const v = taskDetails.evalCriteria[n as 5 | 3 | 1];
+      return typeof v === 'string' && v.trim() !== '';
+    });
 
   return (
     <div
@@ -110,6 +141,127 @@ export function TaskEvalCard({
           {taskText}
         </p>
       </div>
+
+      {/* ── 評価基準 (EVAL) アコーディオン ── */}
+      {hasEvalCriteria && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={() => setEvalOpen(o => !o)}
+            style={{
+              width:          '100%',
+              display:        'flex',
+              alignItems:     'center',
+              gap:            7,
+              padding:        '6px 10px',
+              background:     'rgba(30,27,75,0.45)',
+              border:         '1px solid rgba(129,140,248,0.22)',
+              borderRadius:   9,
+              cursor:         'pointer',
+              fontFamily:     'inherit',
+              transition:     'all 0.15s ease',
+            }}
+          >
+            <ClipboardList size={13} color="#a5b4fc" strokeWidth={1.8} />
+            <span style={{
+              fontSize:      '0.62rem',
+              fontWeight:    700,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color:         '#a5b4fc',
+            }}>
+              評価基準
+            </span>
+            <span style={{
+              fontSize:      '0.62rem',
+              fontWeight:    600,
+              color:         'rgba(199,210,254,0.45)',
+              letterSpacing: '0.04em',
+            }}>
+              EVAL CRITERIA
+            </span>
+            <ChevronDown
+              size={15}
+              color="#a5b4fc"
+              strokeWidth={2}
+              style={{
+                marginLeft: 'auto',
+                transform:  evalOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+              }}
+            />
+          </button>
+
+          {evalOpen && (
+            <div
+              className="animate-fade-up"
+              style={{
+                marginTop:    7,
+                display:      'flex',
+                flexDirection:'column',
+                gap:          6,
+                padding:      '10px',
+                background:   'rgba(13,11,42,0.55)',
+                border:       '1px solid rgba(129,140,248,0.18)',
+                borderRadius: 9,
+              }}
+            >
+              {[5, 3, 1].map(n => {
+                const meta = EVAL_ROW_META[n];
+                const text = taskDetails?.evalCriteria?.[n as 5 | 3 | 1] ?? '';
+                const filled = typeof text === 'string' && text.trim() !== '';
+                return (
+                  <div
+                    key={n}
+                    style={{
+                      display:     'flex',
+                      alignItems:  'flex-start',
+                      gap:         8,
+                      opacity:     filled ? 1 : 0.4,
+                    }}
+                  >
+                    {/* ★N ラベル */}
+                    <div style={{
+                      flexShrink:     0,
+                      display:        'flex',
+                      alignItems:     'center',
+                      gap:            3,
+                      padding:        '2px 7px',
+                      borderRadius:   6,
+                      background:     `${meta.color}1a`,
+                      border:         `1px solid ${meta.color}55`,
+                      minWidth:       54,
+                      justifyContent: 'center',
+                    }}>
+                      <Star size={10} fill={meta.color} color={meta.color} strokeWidth={0} />
+                      <span style={{
+                        fontSize:   '0.7rem',
+                        fontWeight: 800,
+                        color:      meta.color,
+                        lineHeight: 1,
+                      }}>
+                        {n}
+                      </span>
+                    </div>
+                    {/* 基準テキスト */}
+                    <p style={{
+                      margin:     0,
+                      fontSize:   '0.72rem',
+                      lineHeight: 1.5,
+                      color:      filled ? 'rgba(226,232,240,0.88)' : 'rgba(199,210,254,0.4)',
+                      wordBreak:  'break-word',
+                      flex:       1,
+                      paddingTop: 1,
+                    }}>
+                      {filled ? text : '基準未設定'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── 下段: 星5つ（左） + 評価テキストカプセル（右） ── */}
       <div style={{

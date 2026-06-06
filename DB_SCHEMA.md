@@ -35,10 +35,11 @@
 |:---|:---|:---|:---|
 | A | id | string | 課題ID (UUID) |
 | B | user_id | string | 所有ユーザーのID |
-| C | task_text | string | 課題の内容 |
+| C | task_text | string | 課題のタイトル（一覧表示用） |
 | D | status | string | 'active' or 'archived' |
 | E | created_at | string | 作成日時 |
 | F | updated_at | string | 最終更新日時 |
+| G | task_details | string | 【追加】課題の詳細設定（5W1H+EVAL）。JSON.stringify して保存 |
 
 ## 2. ログ・履歴データ
 ### `logs` (課題進捗ログ)

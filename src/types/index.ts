@@ -123,14 +123,96 @@ export interface XpHistoryEntry {
 
 // =====================================================================
 // user_tasks
+// ★ 5W1H + EVAL 構造化対応
+//   task_text は「タイトル」として継続使用し、
+//   詳細データは details オブジェクト（GAS の G列に JSON 文字列で格納）に集約する。
+//   既存データとの互換性のため details は optional とし、
+//   空欄・パース失敗時は undefined となる。
 // =====================================================================
+
+/**
+ * 「いつ（When）」打突の機会。
+ * 剣道の「打突の好機」を選択肢化したもの。
+ */
+export type TaskWhen =
+  | '懸の先'
+  | '先の先'
+  | '後の先'
+  | '起こり'
+  | '技の尽きたところ'
+  | '居着いたところ'
+  | '受け止めたところ'
+  | '退くところ'
+  | '常態';
+
+/**
+ * 「どこで（Where）」間合い。
+ */
+export type TaskWhere =
+  | '遠間'
+  | '触刃の間'
+  | '交刃の間'
+  | '近間'
+  | '鍔迫り合い'
+  | '引き際'
+  | '全ての間合い';
+
+/**
+ * 「なぜ（Why）」課題設定の起点となる弱点カテゴリ。
+ *  - weakness_1〜weakness_5: 被打原因（深刻度）に対応する定型カテゴリ
+ *  - custom:                 自由記述（whyText を併用）
+ */
+export type TaskWhyType =
+  | 'weakness_1'
+  | 'weakness_2'
+  | 'weakness_3'
+  | 'weakness_4'
+  | 'weakness_5'
+  | 'custom';
+
+/**
+ * 評価基準（EVAL）。
+ * スコア 5 / 3 / 1 の到達状態を言語化したもの。
+ * 各フィールドは自由記述（空文字許容）。
+ */
+export interface TaskEvalCriteria {
+  5: string;
+  3: string;
+  1: string;
+}
+
+/**
+ * 課題の構造化詳細データ（5W1H + EVAL）。
+ * GAS 側では JSON.stringify して user_tasks シートの G列（task_details）に格納する。
+ */
+export interface TaskDetails {
+  /** いつ（打突の好機） */
+  when:         TaskWhen | string;
+  /** どこで（間合い） */
+  where:        TaskWhere | string;
+  /** なぜ（弱点カテゴリ種別） */
+  whyType:      TaskWhyType | string;
+  /** whyType === 'custom' の場合の自由記述 */
+  whyText:      string;
+  /** どのように（攻略法・自由記述） */
+  how:          string;
+  /** 評価基準（5/3/1 の到達状態） */
+  evalCriteria: TaskEvalCriteria;
+}
 
 export interface UserTask {
   id:         string;
+  /** タイトル（一覧表示用）。従来の task_text を継続使用 */
   task_text:  string;
   status:     'active' | 'archived' | string;
   created_at: string;
   updated_at: string;
+  /**
+   * ★ 5W1H + EVAL の構造化詳細。
+   * 既存データ（G列が空）との互換のため optional。
+   * GAS が G列の JSON 文字列をパースして返す。パース失敗時は undefined。
+   */
+  details?:   TaskDetails;
 }
 
 // =====================================================================
@@ -261,13 +343,18 @@ export interface SaveLogResponse {
   newAchievements?: Achievement[];
 }
 
-// =====================================================================
+// =================================================// =====================================================================
 // updateTasks ペイロード ★ Phase4
+// ★ 5W1H + EVAL 構造化対応: details を追加
+//   既存タスク（details 未設定）との互換のため optional。
 // =====================================================================
 export interface TaskDiff {
-  id?:  string;
-  text: string;
+  id?:      string;
+  text:     string;
+  /** ★ 構造化詳細（5W1H + EVAL）。未指定時は GAS 側で空文字を書き込む */
+  details?: TaskDetails;
 }
+
 
 // =====================================================================
 // 他者評価 ★ Phase7
@@ -803,5 +890,62 @@ export interface Rival {
     '小手': number;
     '胴': number;
     '突き': number;
+  };
+}
+
+// =====================================================================
+// 課題構造化（5W1H + EVAL）入力UI 用の選択肢定数
+//   表記揺れ防止のため、選択肢は必ずこの定数を参照すること。
+// =====================================================================
+
+/** When（打突の好機）選択肢 */
+export const TASK_WHEN_OPTIONS: TaskWhen[] = [
+  '懸の先',
+  '先の先',
+  '後の先',
+  '起こり',
+  '技の尽きたところ',
+  '居着いたところ',
+  '受け止めたところ',
+  '退くところ',
+  '常態',
+];
+
+/** Where（間合い）選択肢 */
+export const TASK_WHERE_OPTIONS: TaskWhere[] = [
+  '遠間',
+  '触刃の間',
+  '交刃の間',
+  '近間',
+  '鍔迫り合い',
+  '引き際',
+  '全ての間合い',
+];
+
+/**
+ * Why（弱点カテゴリ）選択肢ラベル。
+ * weakness_1〜5 は被打原因コード（SEVERITY_MULT）と対応する。
+ */
+export const TASK_WHY_LABELS: Record<TaskWhyType, string> = {
+  weakness_1: '攻め負け (相手に主導権を握られる)',
+  weakness_2: '単調 (動きや技のパターンを読まれる)',
+  weakness_3: '居着き (足が止まり反応が遅れる)',
+  weakness_4: '体勢崩れ (打突後などの姿勢の乱れ)',
+  weakness_5: '手元上がり (無意識の防御で隙を作る)',
+  custom:     'その他 (自由記述)',
+};
+
+/**
+ * 空の TaskDetails を生成するファクトリ。
+ * 新規課題作成フォームの初期値として使用する。
+ */
+export function createEmptyTaskDetails(): TaskDetails {
+  return {
+    when:    '常態',
+    where:   '全ての間合い',
+    whyType: 'custom',
+    whyText: '',
+    how:     '',
+    evalCriteria: { 5: '', 3: '', 1: '' },
   };
 }

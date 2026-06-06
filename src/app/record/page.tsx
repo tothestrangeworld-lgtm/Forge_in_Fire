@@ -633,6 +633,7 @@ const validReceived = receivedTechSelections
                   score={current}
                   onChange={(s) => setScores(prev => ({ ...prev, [task.id]: s }))}
                   disabled={submitting}
+                  taskDetails={task.details}
                 />
               </div>
             );

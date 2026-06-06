@@ -1031,10 +1031,11 @@ function getUserTasksSheet(ss) {
   var sheet = ss.getSheetByName(SHEET_USER_TASKS);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_USER_TASKS);
-    sheet.appendRow(['id', 'user_id', 'task_text', 'status', 'created_at', 'updated_at']);
-    sheet.getRange(1,1,1,6).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
+    // ★ 5W1H+EVAL 構造化対応: G列 task_details を追加（7列構成）
+    sheet.appendRow(['id', 'user_id', 'task_text', 'status', 'created_at', 'updated_at', 'task_details']);
+    sheet.getRange(1,1,1,7).setFontWeight('bold').setBackground('#1e1b4b').setFontColor('#fff');
     sheet.setFrozenRows(1);
-    gasLog('INFO', 'getUserTasksSheet', 'user_tasks シートを自動作成しました');
+    gasLog('INFO', 'getUserTasksSheet', 'user_tasks シートを自動作成しました（7列: task_details 追加）');
   }
   return sheet;
 }
@@ -1046,24 +1047,49 @@ function getTasksData(ss, userId) {
   return rows.slice(1)
     .filter(function(r){ return String(r[1]) === String(userId); })
     .map(function(r){
-      return {
+      var task = {
         id:         String(r[0]),
         task_text:  String(r[2]),
         status:     String(r[3]),
         created_at: r[4] ? String(r[4]).slice(0, 10) : '',
         updated_at: r[5] ? String(r[5]).slice(0, 10) : '',
       };
+
+      // ★ G列（index 6）= task_details の JSON をパースして details に格納。
+      //   空欄・不正JSON時は details を付与せず undefined のままにする（フェイルセーフ）。
+      var rawDetails = r[6];
+      if (rawDetails !== undefined && rawDetails !== null && String(rawDetails).trim() !== '') {
+        try {
+          var parsed = JSON.parse(String(rawDetails));
+          if (parsed && typeof parsed === 'object') {
+            task.details = parsed;
+          }
+        } catch (e) {
+          gasLog('WARN', 'getTasksData',
+            'task_details の JSON パースに失敗 id=' + task.id, { error: e.message });
+        }
+      }
+
+      return task;
     })
     .filter(function(t) { return t.id && t.task_text; });
 }
 
+
 /**
  * updateTasks
  * ★ スマート差分対応版
+ * ★ 5W1H+EVAL 構造化対応:
+ *   - body.tasks[].details（オブジェクト）を受け取り、JSON.stringify して
+ *     G列（task_details, 7列目）へ書き込む。
+ *   - 既存タスクの更新・新規タスクの追加の双方に統合。
+ *   - details 未指定時は空文字を書き込む（列ズレ防止）。
+ *
+ * tasks: Array<{ id?: string, text: string, details?: object }>
  */
 function updateTasks(body) {
   var userId = body.user_id;
-  var tasks  = body.tasks; // Array<{id?: string, text: string}>
+  var tasks  = body.tasks; // Array<{id?: string, text: string, details?: object}>
   if (!userId) return createError('user_id は必須です', 400);
   if (!tasks || !Array.isArray(tasks)) return createError('tasks は配列で必須です', 400);
 
@@ -1071,16 +1097,28 @@ function updateTasks(body) {
   var sheet = getUserTasksSheet(ss);
   var ts    = nowJstTs();
 
-  var tasksWithId = {};  // id -> text
-  var newTasks    = [];  // text のみ
+  // details をJSON文字列化するヘルパー（未指定・不正時は空文字）
+  function serializeDetails(details) {
+    if (details === undefined || details === null) return '';
+    try {
+      return JSON.stringify(details);
+    } catch (e) {
+      gasLog('WARN', 'updateTasks', 'details の JSON.stringify に失敗', { error: e.message });
+      return '';
+    }
+  }
+
+  var tasksWithId = {};  // id -> { text, detailsJson }
+  var newTasks    = [];  // { text, detailsJson }
 
   tasks.forEach(function(t) {
     var text = (t.text || '').trim();
     if (!text) return;
+    var detailsJson = serializeDetails(t.details);
     if (t.id) {
-      tasksWithId[String(t.id)] = text;
+      tasksWithId[String(t.id)] = { text: text, detailsJson: detailsJson };
     } else {
-      newTasks.push(text);
+      newTasks.push({ text: text, detailsJson: detailsJson });
     }
   });
 
@@ -1093,9 +1131,11 @@ function updateTasks(body) {
     var rowId = String(r[0]);
 
     if (tasksWithId[rowId] !== undefined) {
-      sheet.getRange(i + 1, 3).setValue(tasksWithId[rowId]);
-      sheet.getRange(i + 1, 4).setValue('active');
-      sheet.getRange(i + 1, 6).setValue(ts);
+      var upd = tasksWithId[rowId];
+      sheet.getRange(i + 1, 3).setValue(upd.text);        // C: task_text
+      sheet.getRange(i + 1, 4).setValue('active');         // D: status
+      sheet.getRange(i + 1, 6).setValue(ts);               // F: updated_at
+      sheet.getRange(i + 1, 7).setValue(upd.detailsJson);  // ★ G: task_details
       foundIds[rowId] = true;
     } else if (String(r[3]) === 'active') {
       sheet.getRange(i + 1, 4).setValue('archived');
@@ -1105,18 +1145,23 @@ function updateTasks(body) {
 
   var newRows = [];
 
+  // 既存IDが指定されたが該当行が無かったもの（=他端末で削除済み等）は新規行として復元
   Object.keys(tasksWithId).forEach(function(id) {
     if (!foundIds[id]) {
-      newRows.push([id, userId, tasksWithId[id], 'active', ts, ts]);
+      var t = tasksWithId[id];
+      // ★ 7列構成: 末尾に detailsJson を追加
+      newRows.push([id, userId, t.text, 'active', ts, ts, t.detailsJson]);
     }
   });
 
-  newTasks.forEach(function(text) {
-    newRows.push([Utilities.getUuid(), userId, text, 'active', ts, ts]);
+  newTasks.forEach(function(t) {
+    // ★ 7列構成: 末尾に detailsJson を追加
+    newRows.push([Utilities.getUuid(), userId, t.text, 'active', ts, ts, t.detailsJson]);
   });
 
   if (newRows.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
+    // ★ 7列で書き込み
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 7).setValues(newRows);
   }
 
   var activeCount = Object.keys(tasksWithId).length + newTasks.length;
