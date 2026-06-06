@@ -203,8 +203,14 @@ export default function TaskSettingsPage() {
       }
 
       await updateTasks(taskDiffs);
+      
+      // SWRのキャッシュを強制破棄し、再フェッチを待機
       await mutateDashboard();
-
+      
+      // Next.js App Routerのクライアントキャッシュを強制破棄
+      router.refresh();
+      
+      // ホームへ遷移
       router.push('/');
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
