@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
+    "@supabase/supabase-js": "^2.108.0",
     "@xyflow/react": "^12.6.4",
     "lucide-react": "^0.513.0",
     "next": "^15.5.15",
