@@ -183,10 +183,13 @@ export default function XPTimelineChart({ xpHistory = [], compact = false }: Pro
 
   const maxXP  = Math.max(...xpHistory.map(e => e.total_xp_after));
   const height = compact ? 160 : 220;
-  const xTicks = buildXTicks(xpHistory);
+  
+  // ★ ここで配列をコピーして時系列順（古い順）に反転させる
+  const chronologicalHistory = [...xpHistory].reverse();
+  const xTicks = buildXTicks(chronologicalHistory);
 
   // ★ Phase-ex1: titleLabel フィールドを廃止（titleForLevel 呼び出しを削除）
-  const chartData = xpHistory.map(e => ({
+  const chartData = chronologicalHistory.map(e => ({
     label:          toDisplayDate(e.date),
     total_xp_after: Math.max(0, e.total_xp_after),
     amount:         e.amount,
