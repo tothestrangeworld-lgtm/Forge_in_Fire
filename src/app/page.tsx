@@ -109,6 +109,7 @@ export default function DashboardPage() {
       }
     });
     return {
+      taskId: t.id,
       taskText: t.task_text,
       taskDetails: t.details,
       selfDist, selfTotalPts, selfTotalCount,
@@ -170,7 +171,7 @@ export default function DashboardPage() {
 
         {hasScoreData ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-            {scoreDistData.map(({ taskText, taskDetails, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount }) => {
+            {scoreDistData.map(({ taskId, taskText, taskDetails, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount }) => {
               let insight = '';
               if (peerTotalCount > 0 && selfTotalCount > 0) {
                 const s = selfTotalPts / selfTotalCount;
@@ -179,8 +180,8 @@ export default function DashboardPage() {
                 else if (s - p >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
                 else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
               }
-              const mastery = calcMasteryStatus(logs ?? [], taskText);
-              return <TaskScoreDistCard key={taskText} taskText={taskText} taskDetails={taskDetails} selfDist={selfDist} selfTotalPts={selfTotalPts} selfTotalCount={selfTotalCount} peerDist={peerDist} peerTotalPts={peerTotalPts} peerTotalCount={peerTotalCount} mastery={mastery} insight={insight} />;
+              const mastery = calcMasteryStatus(logs ?? [], taskId);
+              return <TaskScoreDistCard key={taskId} taskText={taskText} taskDetails={taskDetails} selfDist={selfDist} selfTotalPts={selfTotalPts} selfTotalCount={selfTotalCount} peerDist={peerDist} peerTotalPts={peerTotalPts} peerTotalCount={peerTotalCount} mastery={mastery} insight={insight} />;
             })}
           </div>
         ) : (
