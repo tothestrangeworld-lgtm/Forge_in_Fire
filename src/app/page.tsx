@@ -46,6 +46,8 @@ export default function DashboardPage() {
   }, [achievementsList]);
 
   // 日付・タスク単位での集約（Reactフック順序維持のため早期リターンなし）
+  // ★ 集約キーを item_name（タイトル）から task_id（一意ID）へ変更。
+  //   タスク詳細更新で旧IDがアーカイブ＆新ID採番されても評価を合流させない。
   const dailyLogs = useMemo(() => {
     const map: Record<string, Record<string, { score: number; count: number }>> = {};
     if (!dashboardData?.logs) return map;
@@ -55,8 +57,8 @@ export default function DashboardPage() {
       if (!map[log.date]) map[log.date] = {};
 
       const tasks = map[log.date];
-      const current = tasks[log.item_name] || { score: 0, count: 0 };
-      tasks[log.item_name] = {
+      const current = tasks[log.task_id] || { score: 0, count: 0 };
+      tasks[log.task_id] = {
         score: current.score + (log.score ?? 0),
         count: current.count + 1
       };
@@ -82,12 +84,13 @@ export default function DashboardPage() {
   const peerLogs = dashboardData.peerLogs ?? [];
 
   // スコア分布データの算出（集約済み dailyLogs を使用）
+  // ★ 自己ログ・他者評価ともに task_id（t.id）をキーに突合する。
   const scoreDistData = activeTasks.map(t => {
     const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let selfTotalPts = 0, selfTotalCount = 0;
 
     Object.keys(dailyLogs).forEach(date => {
-      const taskData = dailyLogs[date][t.task_text];
+      const taskData = dailyLogs[date][t.id];
       if (taskData) {
         const avgScore = Math.round(taskData.score / taskData.count);
         if (avgScore >= 1 && avgScore <= 5) selfDist[avgScore] = (selfDist[avgScore] ?? 0) + 1;
@@ -99,7 +102,7 @@ export default function DashboardPage() {
     const peerDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let peerTotalPts = 0, peerTotalCount = 0;
     peerLogs.slice(-50).forEach(l => {
-      if (l.item_name === t.task_text) {
+      if (l.task_id === t.id) {
         const s = l.score as number;
         if (s >= 1 && s <= 5) peerDist[s] = (peerDist[s] ?? 0) + 1;
         peerTotalPts += s; peerTotalCount++;
