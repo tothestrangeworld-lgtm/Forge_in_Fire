@@ -505,6 +505,7 @@ async function buildPeerLogs(
   return ((data ?? []) as Array<{ date: string; task_id: string; score: number }>).map(
     (r) => ({
       date: r.date,
+      task_id: r.task_id,
       item_name: taskTextMap.get(r.task_id) ?? r.task_id,
       score: r.score,
     }),
@@ -599,9 +600,11 @@ export async function fetchDashboard(targetUserId?: string): Promise<DashboardDa
   const taskTextMap = new Map(taskRows.map((r) => [r.id, r.task_text]));
 
   // ---- logs マッピング（task_id → item_name JOIN）----
+  // ★ task_id を一意キーとして保持。item_name は UI 表示用の補助情報に留める。
   const logRows = (logsRes.data ?? []) as LogRow[];
   const logs: LogEntry[] = logRows.map((r) => ({
     date: r.date,
+    task_id: r.task_id,
     item_name: taskTextMap.get(r.task_id) ?? r.task_id,
     score: r.score,
     xp_earned: r.xp_earned,
