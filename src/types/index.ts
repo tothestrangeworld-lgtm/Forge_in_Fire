@@ -299,7 +299,8 @@ export interface DashboardData {
 // =====================================================================
 export interface PeerLogEntry {
   date:      string;  // YYYY-MM-DD
-  item_name: string;  // 課題テキスト（task_id → JOIN済み）
+  task_id:   string;  // ★ 集計の一意キー。タイトル一致による誤合流を防止
+  item_name: string;  // 課題テキスト（task_id → JOIN済み・UI表示用）
   score:     number;  // 1〜5（評価者がつけたスコア）
 }
 
