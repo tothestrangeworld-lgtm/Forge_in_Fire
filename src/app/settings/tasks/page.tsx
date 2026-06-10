@@ -182,26 +182,35 @@ export default function TaskSettingsPage() {
     try {
       const taskDiffs: TaskDiff[] = [];
 
-      for (let i = 0; i < INPUT_COUNT; i++) {
+  for (let i = 0; i < INPUT_COUNT; i++) {
         const slot     = slots[i];
         const title    = slot.title.trim();
         const original = originalTasks[i]; // UserTask | undefined
 
         if (!title) {
-          // 空欄: 送らない → GAS が archived に変更
+          // 空欄: 送らない → バックエンドが archived に変更
           continue;
         }
 
-        // タイトル・詳細のいずれかが変化していれば「変更」とみなす。
-        // 既存IDがあり、かつ original が存在する場合は ID を維持して更新。
         if (original && slot.id === original.id) {
-          taskDiffs.push({ id: original.id, text: title, details: slot.details });
+          // 変更があるかどうかの判定
+          const isChanged =
+            title !== original.task_text ||
+            JSON.stringify(slot.details) !== JSON.stringify(original.details ?? createEmptyTaskDetails());
+
+          if (isChanged) {
+            // ★ 変更あり: IDを外して送信する（新規作成扱いとなり、旧タスクは自動アーカイブされる）
+            taskDiffs.push({ text: title, details: slot.details });
+          } else {
+            // ★ 変更なし: 既存のIDをそのまま送信し、維持する
+            taskDiffs.push({ id: original.id, text: title, details: slot.details });
+          }
         } else {
-          // 新規（id を送らない → GAS が新 UUID を発行）
+          // 完全な新規スロット（id を送らない）
           taskDiffs.push({ text: title, details: slot.details });
         }
       }
-
+      
       await updateTasks(taskDiffs);
       
       // SWRのキャッシュを強制破棄し、再フェッチを待機

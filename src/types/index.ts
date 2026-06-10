@@ -59,7 +59,8 @@
 
 export interface LogEntry {
   date:      string;
-  item_name: string; // GAS 側で task_id → task_text に JOIN して返す
+  task_id:   string; // ★ 集計の一意キー。タスク詳細更新で新IDが採番されても合流させない
+  item_name: string; // GAS 側で task_id → task_text に JOIN して返す（UI表示用）
   score:     number;
   xp_earned: number;
 }
@@ -298,7 +299,8 @@ export interface DashboardData {
 // =====================================================================
 export interface PeerLogEntry {
   date:      string;  // YYYY-MM-DD
-  item_name: string;  // 課題テキスト（task_id → JOIN済み）
+  task_id:   string;  // ★ 集計の一意キー。タイトル一致による誤合流を防止
+  item_name: string;  // 課題テキスト（task_id → JOIN済み・UI表示用）
   score:     number;  // 1〜5（評価者がつけたスコア）
 }
 

@@ -46,6 +46,8 @@ export default function DashboardPage() {
   }, [achievementsList]);
 
   // 日付・タスク単位での集約（Reactフック順序維持のため早期リターンなし）
+  // ★ 集約キーを item_name（タイトル）から task_id（一意ID）へ変更。
+  //   タスク詳細更新で旧IDがアーカイブ＆新ID採番されても評価を合流させない。
   const dailyLogs = useMemo(() => {
     const map: Record<string, Record<string, { score: number; count: number }>> = {};
     if (!dashboardData?.logs) return map;
@@ -55,8 +57,8 @@ export default function DashboardPage() {
       if (!map[log.date]) map[log.date] = {};
 
       const tasks = map[log.date];
-      const current = tasks[log.item_name] || { score: 0, count: 0 };
-      tasks[log.item_name] = {
+      const current = tasks[log.task_id] || { score: 0, count: 0 };
+      tasks[log.task_id] = {
         score: current.score + (log.score ?? 0),
         count: current.count + 1
       };
@@ -82,12 +84,13 @@ export default function DashboardPage() {
   const peerLogs = dashboardData.peerLogs ?? [];
 
   // スコア分布データの算出（集約済み dailyLogs を使用）
+  // ★ 自己ログ・他者評価ともに task_id（t.id）をキーに突合する。
   const scoreDistData = activeTasks.map(t => {
     const selfDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let selfTotalPts = 0, selfTotalCount = 0;
 
     Object.keys(dailyLogs).forEach(date => {
-      const taskData = dailyLogs[date][t.task_text];
+      const taskData = dailyLogs[date][t.id];
       if (taskData) {
         const avgScore = Math.round(taskData.score / taskData.count);
         if (avgScore >= 1 && avgScore <= 5) selfDist[avgScore] = (selfDist[avgScore] ?? 0) + 1;
@@ -99,13 +102,14 @@ export default function DashboardPage() {
     const peerDist: Record<number, number> = { 1:0,2:0,3:0,4:0,5:0 };
     let peerTotalPts = 0, peerTotalCount = 0;
     peerLogs.slice(-50).forEach(l => {
-      if (l.item_name === t.task_text) {
+      if (l.task_id === t.id) {
         const s = l.score as number;
         if (s >= 1 && s <= 5) peerDist[s] = (peerDist[s] ?? 0) + 1;
         peerTotalPts += s; peerTotalCount++;
       }
     });
     return {
+      taskId: t.id,
       taskText: t.task_text,
       taskDetails: t.details,
       selfDist, selfTotalPts, selfTotalCount,
@@ -167,7 +171,7 @@ export default function DashboardPage() {
 
         {hasScoreData ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-            {scoreDistData.map(({ taskText, taskDetails, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount }) => {
+            {scoreDistData.map(({ taskId, taskText, taskDetails, selfDist, selfTotalPts, selfTotalCount, peerDist, peerTotalPts, peerTotalCount }) => {
               let insight = '';
               if (peerTotalCount > 0 && selfTotalCount > 0) {
                 const s = selfTotalPts / selfTotalCount;
@@ -176,8 +180,8 @@ export default function DashboardPage() {
                 else if (s - p >= 1.0) insight = '【過大評価】自己評価 >> 剣友評価';
                 else insight = '【明鏡止水】自己評価 ≒ 剣友評価';
               }
-              const mastery = calcMasteryStatus(logs ?? [], taskText);
-              return <TaskScoreDistCard key={taskText} taskText={taskText} taskDetails={taskDetails} selfDist={selfDist} selfTotalPts={selfTotalPts} selfTotalCount={selfTotalCount} peerDist={peerDist} peerTotalPts={peerTotalPts} peerTotalCount={peerTotalCount} mastery={mastery} insight={insight} />;
+              const mastery = calcMasteryStatus(logs ?? [], taskId);
+              return <TaskScoreDistCard key={taskId} taskText={taskText} taskDetails={taskDetails} selfDist={selfDist} selfTotalPts={selfTotalPts} selfTotalCount={selfTotalCount} peerDist={peerDist} peerTotalPts={peerTotalPts} peerTotalCount={peerTotalCount} mastery={mastery} insight={insight} />;
             })}
           </div>
         ) : (

@@ -62,15 +62,14 @@ export const COMBO_DISPLAY_MIN = 2;
 // ---------------------------------------------------------------------
 
 /**
- * task_id（item_name）に紐づくログを日付昇順で抽出する。
+ * task_id に紐づくログを日付昇順で抽出する。
  *
- * Phase4 正規化により、フロントが受け取る LogEntry は
- * task_id ではなく item_name に JOIN 済み。
- * 課題テキストでフィルタするため、task_text を引数に取る。
+ * ★ タスク詳細更新で旧タスクがアーカイブされ新IDが採番された場合でも、
+ *   タイトル（item_name）一致による誤合流を防ぐため、task_id で完全突合する。
  */
-function filterLogsByTaskText(logs: LogEntry[], taskText: string): LogEntry[] {
+function filterLogsByTaskId(logs: LogEntry[], taskId: string): LogEntry[] {
   return logs
-    .filter(l => l.item_name === taskText)
+    .filter(l => l.task_id === taskId)
     .slice()
     .sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -174,15 +173,15 @@ function calcBreakthroughProgress(scoresAfterDiscern: number[]): {
 /**
  * 指定タスクの免許皆伝ステータスを計算する。
  *
- * @param logs     全ログ（DashboardData.logs）
- * @param taskText 対象タスクのテキスト（item_name でマッチング）
- * @returns        MasteryStatus
+ * @param logs   全ログ（DashboardData.logs）
+ * @param taskId 対象タスクの一意ID（task_id でマッチング）
+ * @returns      MasteryStatus
  */
 export function calcMasteryStatus(
-  logs:     LogEntry[],
-  taskText: string,
+  logs:   LogEntry[],
+  taskId: string,
 ): MasteryStatus {
-  const taskLogs = filterLogsByTaskText(logs, taskText);
+  const taskLogs = filterLogsByTaskId(logs, taskId);
   const allScores = taskLogs.map(l => l.score);
 
   // 直近10件
@@ -241,25 +240,25 @@ export function calcMasteryStatus(
 // ---------------------------------------------------------------------
 
 /**
- * saveLog 前後のログを比較し、新規に皆伝に到達した課題テキストを返す。
+ * saveLog 前後のログを比較し、新規に皆伝に到達したタスクIDを返す。
  *
- * @param prevLogs    保存前のログ
- * @param nextLogs    保存後のログ
- * @param activeTaskTexts チェック対象のタスクテキスト一覧
- * @returns           新規皆伝到達タスクのテキスト配列
+ * @param prevLogs      保存前のログ
+ * @param nextLogs      保存後のログ
+ * @param activeTaskIds チェック対象のタスクID一覧
+ * @returns             新規皆伝到達タスクのID配列
  */
 export function detectNewlyMastered(
-  prevLogs:         LogEntry[],
-  nextLogs:         LogEntry[],
-  activeTaskTexts:  string[],
+  prevLogs:       LogEntry[],
+  nextLogs:       LogEntry[],
+  activeTaskIds:  string[],
 ): string[] {
   const newlyMastered: string[] = [];
 
-  for (const taskText of activeTaskTexts) {
-    const prevStatus = calcMasteryStatus(prevLogs, taskText);
-    const nextStatus = calcMasteryStatus(nextLogs, taskText);
+  for (const taskId of activeTaskIds) {
+    const prevStatus = calcMasteryStatus(prevLogs, taskId);
+    const nextStatus = calcMasteryStatus(nextLogs, taskId);
     if (!prevStatus.isMastered && nextStatus.isMastered) {
-      newlyMastered.push(taskText);
+      newlyMastered.push(taskId);
     }
   }
 
