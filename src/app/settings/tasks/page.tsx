@@ -398,7 +398,7 @@ export default function TaskSettingsPage() {
                       <div>
                         <div style={FIELD_LABEL_STYLE}>
                           <Clock size={12} strokeWidth={2} color="#a5b4fc" />
-                          いつ（打突の好機）
+                          いつ（タイミング）
                         </div>
                         <select
                           value={slot.details.when}
@@ -436,7 +436,7 @@ export default function TaskSettingsPage() {
                       <div>
                         <div style={FIELD_LABEL_STYLE}>
                           <AlertTriangle size={12} strokeWidth={2} color="#a5b4fc" />
-                          なぜ（克服したい弱点）
+                          なぜ（この課題を克服したい理由）
                         </div>
                         <select
                           value={slot.details.whyType}
@@ -455,7 +455,7 @@ export default function TaskSettingsPage() {
                           <textarea
                             value={slot.details.whyText}
                             onChange={e => updateDetails(i, { whyText: e.target.value })}
-                            placeholder="克服したい弱点を自由に記述"
+                            placeholder="克服したい理由を自由に記述"
                             style={{ ...TEXTAREA_STYLE, marginTop: 8, minHeight: 56 }}
                           />
                         )}

@@ -304,10 +304,10 @@ interface TaskDetailModalProps {
 
 // 5W1H 行ラベルのメタ
 const FIELD_META = {
-  when:  { en: 'WHEN',  ja: '打突の好機', Icon: Clock },
+  when:  { en: 'WHEN',  ja: '機', Icon: Clock },
   where: { en: 'WHERE', ja: '間合い',     Icon: MapPin },
-  why:   { en: 'WHY',   ja: '克服する弱点', Icon: AlertTriangle },
-  how:   { en: 'HOW',   ja: '攻略法',     Icon: Footprints },
+  why:   { en: 'WHY',   ja: '理由', Icon: AlertTriangle },
+  how:   { en: 'HOW',   ja: '如何',     Icon: Footprints },
 } as const;
 
 function TaskDetailModal({ taskText, details, onClose }: TaskDetailModalProps) {
