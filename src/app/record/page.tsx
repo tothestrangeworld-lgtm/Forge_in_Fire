@@ -441,7 +441,7 @@ export default function RecordPage() {
     setSubmitting(true); setSubmitError(null);
 
     const prevLogs: LogEntry[] = dashboard?.logs ? [...dashboard.logs] : [];
-    const submittedTaskTexts = activeTasks.map(t => t.task_text);
+    const submittedTaskIds = activeTasks.map(t => t.id); // ★ テキストではなくIDの配列を生成
 
     try {
 // 変更後
@@ -493,13 +493,18 @@ const validReceived = receivedTechSelections
         } as LogEntry)),
       ];
 
-      const newlyMastered = detectNewlyMastered(prevLogs, nextLogs, submittedTaskTexts);
-      if (newlyMastered.length > 0) {
-        setMasteryToastTexts(newlyMastered);
-      }
+// ★ IDベースで判定を実行
+const newlyMasteredIds = detectNewlyMastered(prevLogs, nextLogs, submittedTaskIds);
+if (newlyMasteredIds.length > 0) {
+  // ★ 返ってきたIDの配列を、Toast表示用のタスクタイトル（text）の配列に変換してセット
+  const newlyMasteredTexts = newlyMasteredIds.map(id => {
+    const task = activeTasks.find(t => t.id === id);
+    return task ? task.task_text : id;
+  });
+  setMasteryToastTexts(newlyMasteredTexts);
+}
 
-      // ★ Phase17: void globalMutate(['dashboard']) は削除（重複再フェッチ防止）
-
+// ★ Phase17: void globalMutate(['dashboard']) は削除（重複再フェッチ防止）
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'AUTH_REQUIRED') return;
       setSubmitError(e instanceof Error ? e.message : '送信に失敗しました');
