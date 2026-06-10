@@ -154,7 +154,7 @@ const CUTIN_FAIL = [
   '無惨...',
 ];
 const CUTIN_TOO_EARLY = [
-  '不覚…！（フライング）',
+  '不覚…！',
   'TOO HASTY!',
   '慌てるべからず!',
 ];
@@ -222,7 +222,6 @@ export default function MiniGamePage() {
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   const okoriStartRef    = useRef<number | null>(null);
-  const strikeStartRef   = useRef<number | null>(null);
   const timerRef         = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roundIdxRef      = useRef(0);
   const matchCountRef    = useRef(0);
@@ -332,7 +331,6 @@ export default function MiniGamePage() {
         // [3] okori フェーズ（0.4〜1.0秒のランダム）
         const okoriMs = randomBetween(400, 1000);
         timerRef.current = setTimeout(() => {
-          strikeStartRef.current = performance.now();
           setPhase('strike');
 
           // [4] strike フェーズ（パターンごとの猶予）
@@ -360,16 +358,19 @@ export default function MiniGamePage() {
   }, [scheduleNextRound]);
 
 // ===================================================================
-  // ★ Phase17.0: タップハンドラ（反応時間計測リファクタ・バグ修正版）
-  //   - waiting / pre_okori / okori 中のタップ → フライング（即Fランク・タイム無効）
-  //   - strike 中の正しい部位タップ
-  //       → strike開始からの純粋な経過時間(ms)で S/A/B/C/F をフラット判定
+  // ★ Phase17.1: タップハンドラ（okori計測起点バグ修正版）
+  //   - waiting / pre_okori 中のタップ → フライング（即Fランク・タイム無効）
+  //   - okori / strike 中の正しい部位タップ
+  //       → okori開始（okoriStartRef）からの純粋な経過時間(ms)で
+  //         S/A/B/C/F をフラット判定
   //   - 部位ミス → Fランク・タイム無効
+  //   - okori開始から600ms超（rank==='F'）→ 反応が遅すぎた被弾扱い
   // ===================================================================
   const handleTap = (part: HitPart) => {
     // ── フライング（お手付き）判定 ──
-    // ★ 敵が完全に動き出す前（waiting / pre_okori / okori）のタップは即フライング失敗
-    if (phase === 'waiting' || phase === 'pre_okori' || phase === 'okori') {
+    // ★ 敵がまだ動き出していない無の間（waiting / pre_okori）のタップのみ即フライング失敗
+    //   okori 以降は有効打突として受け付けるため、ここには含めない
+    if (phase === 'waiting' || phase === 'pre_okori') {
       if (timerRef.current) clearTimeout(timerRef.current);
       const dummyPattern = currentPattern ?? pickRandomPattern();
       finishRound({
@@ -386,7 +387,8 @@ export default function MiniGamePage() {
     }
 
     if (!currentPattern) return;
-    if (phase !== 'strike') return; // ★ 攻撃が始まった瞬間（strike）のみ有効打突として受け付ける
+    // ★ 起こり（okori）と打突（strike）の両フェーズでタップを有効打突として受け付ける
+    if (phase !== 'okori' && phase !== 'strike') return;
     if (timerRef.current) clearTimeout(timerRef.current);
 
     const isCorrectPart = part === currentPattern.correctPart;
@@ -407,9 +409,9 @@ export default function MiniGamePage() {
     }
 
     // ── 正しい部位タップ ──
-    // ★ 敵が打突を開始した瞬間（strikeStartRef）からの純粋な経過時間をミリ秒で計測
-    const reactionMs = strikeStartRef.current !== null
-      ? performance.now() - strikeStartRef.current
+    // ★ 敵が動き始めた瞬間（okoriStartRef）からの純粋な経過時間をミリ秒で計測
+    const reactionMs = okoriStartRef.current !== null
+      ? performance.now() - okoriStartRef.current
       : 0;
     const reactionMsRounded = Math.round(reactionMs);
 
@@ -443,7 +445,7 @@ export default function MiniGamePage() {
       rank,
     });
   };
-  
+
   const averageReaction = useMemo(() => {
     const successes = results.filter(r => r.success && r.reactionMs !== null);
     if (successes.length === 0) return null;
