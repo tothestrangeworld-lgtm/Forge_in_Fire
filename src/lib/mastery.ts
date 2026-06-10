@@ -235,23 +235,6 @@ export function calcMasteryStatus(
   };
 }
 
-  // 見極め起点以降のスコアで breakthroughCount を計算
-  const scoresAfterDiscern = allScores.slice(discernStartIdx + 1);
-  const { breakthroughCount, isMastered } = calcBreakthroughProgress(scoresAfterDiscern);
-
-  const phase: MasteryPhase = isMastered ? 'mastered' : 'discerning';
-
-  return {
-    stability,
-    recentScores,
-    phase,
-    breakthroughCount,
-    isMastered,
-    evalCount:     allScores.length,
-    currentStreak,
-  };
-}
-
 // ---------------------------------------------------------------------
 // 新規皆伝検出（saveLog 前後の差分判定）
 // ---------------------------------------------------------------------
