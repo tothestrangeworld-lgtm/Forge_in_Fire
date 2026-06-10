@@ -59,7 +59,8 @@
 
 export interface LogEntry {
   date:      string;
-  item_name: string; // GAS 側で task_id → task_text に JOIN して返す
+  task_id:   string; // ★ 集計の一意キー。タスク詳細更新で新IDが採番されても合流させない
+  item_name: string; // GAS 側で task_id → task_text に JOIN して返す（UI表示用）
   score:     number;
   xp_earned: number;
 }
