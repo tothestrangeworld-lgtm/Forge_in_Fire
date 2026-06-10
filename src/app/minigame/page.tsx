@@ -359,17 +359,17 @@ export default function MiniGamePage() {
     scheduleNextRound();
   }, [scheduleNextRound]);
 
-  // ===================================================================
-  // ★ Phase17.0: タップハンドラ（反応時間計測リファクタ版）
-  //   - waiting / pre_okori 中のタップ → フライング（即Fランク・タイム無効）
-  //   - okori / strike 中の正しい部位タップ
-  //       → okori開始からの純粋な経過時間(ms)で S/A/B/C/F をフラット判定
+// ===================================================================
+  // ★ Phase17.0: タップハンドラ（反応時間計測リファクタ・バグ修正版）
+  //   - waiting / pre_okori / okori 中のタップ → フライング（即Fランク・タイム無効）
+  //   - strike 中の正しい部位タップ
+  //       → strike開始からの純粋な経過時間(ms)で S/A/B/C/F をフラット判定
   //   - 部位ミス → Fランク・タイム無効
   // ===================================================================
   const handleTap = (part: HitPart) => {
     // ── フライング（お手付き）判定 ──
-    // ★ Phase17.0: 敵が動き出す前（waiting / pre_okori）のタップは即失敗
-    if (phase === 'waiting' || phase === 'pre_okori') {
+    // ★ 敵が完全に動き出す前（waiting / pre_okori / okori）のタップは即フライング失敗
+    if (phase === 'waiting' || phase === 'pre_okori' || phase === 'okori') {
       if (timerRef.current) clearTimeout(timerRef.current);
       const dummyPattern = currentPattern ?? pickRandomPattern();
       finishRound({
@@ -386,7 +386,7 @@ export default function MiniGamePage() {
     }
 
     if (!currentPattern) return;
-    if (phase !== 'okori' && phase !== 'strike') return;
+    if (phase !== 'strike') return; // ★ 攻撃が始まった瞬間（strike）のみ有効打突として受け付ける
     if (timerRef.current) clearTimeout(timerRef.current);
 
     const isCorrectPart = part === currentPattern.correctPart;
@@ -407,13 +407,13 @@ export default function MiniGamePage() {
     }
 
     // ── 正しい部位タップ ──
-    // ★ Phase17.0: okori開始（okoriStartRef）からの純粋な経過時間を計測
-    const reactionMs = okoriStartRef.current !== null
-      ? performance.now() - okoriStartRef.current
+    // ★ 敵が打突を開始した瞬間（strikeStartRef）からの純粋な経過時間をミリ秒で計測
+    const reactionMs = strikeStartRef.current !== null
+      ? performance.now() - strikeStartRef.current
       : 0;
     const reactionMsRounded = Math.round(reactionMs);
 
-    // ★ Phase17.0: 反応時間の絶対値だけでランクをフラット判定
+    // ★ 反応時間の絶対値（0ms〜）だけでランクをフラット判定
     const rank = judgeRankByReaction(reactionMsRounded);
 
     // ── Fランク（600ms超）= 反応が遅すぎて被弾扱い ──
@@ -424,7 +424,7 @@ export default function MiniGamePage() {
         reactionMs:  reactionMsRounded, // 遅延タイムは記録（参考表示）
         successName: currentPattern.successName,
         failLabel:   currentPattern.failLabel,
-        timing:      phase === 'okori' ? 'okori' : 'strike',
+        timing:      'strike',
         cutinText:   pickRandom(CUTIN_FAIL),
         rank:        'F',
       });
@@ -438,12 +438,12 @@ export default function MiniGamePage() {
       reactionMs:  reactionMsRounded,
       successName: currentPattern.successName,
       failLabel:   '',
-      timing:      phase === 'okori' ? 'okori' : 'strike',
+      timing:      'strike',
       cutinText:   pickCutinByRank(rank),
       rank,
     });
   };
-
+  
   const averageReaction = useMemo(() => {
     const successes = results.filter(r => r.success && r.reactionMs !== null);
     if (successes.length === 0) return null;
