@@ -358,13 +358,14 @@ export default function MiniGamePage() {
   }, [scheduleNextRound]);
 
 // ===================================================================
-  // ★ Phase17.1: タップハンドラ（okori計測起点バグ修正版）
+  // ★ Phase18.0: タップハンドラ（案A: okori中タップ＝必ず成功）
   //   - waiting / pre_okori 中のタップ → フライング（即Fランク・タイム無効）
-  //   - okori / strike 中の正しい部位タップ
-  //       → okori開始（okoriStartRef）からの純粋な経過時間(ms)で
-  //         S/A/B/C/F をフラット判定
   //   - 部位ミス → Fランク・タイム無効
-  //   - okori開始から600ms超（rank==='F'）→ 反応が遅すぎた被弾扱い
+  //   - okori 中の正しい部位タップ
+  //       → 「相手の起こりを見切った」＝必ず成功
+  //         反応時間(ms)に応じて S/A/B/C を付与（遅くても最低Cで成功）
+  //   - strike 中（okoriを見切れず打突を許した）の正しい部位タップ
+  //       → 被弾扱いの失敗（Fランク）
   // ===================================================================
   const handleTap = (part: HitPart) => {
     // ── フライング（お手付き）判定 ──
@@ -415,15 +416,12 @@ export default function MiniGamePage() {
       : 0;
     const reactionMsRounded = Math.round(reactionMs);
 
-    // ★ 反応時間の絶対値（0ms〜）だけでランクをフラット判定
-    const rank = judgeRankByReaction(reactionMsRounded);
-
-    // ── Fランク（600ms超）= 反応が遅すぎて被弾扱い ──
-    if (rank === 'F') {
+    // ── strike フェーズ＝起こりを見切れず打突を許した → 被弾失敗（Fランク） ──
+    if (phase === 'strike') {
       finishRound({
         patternId:   currentPattern.id,
         success:     false,
-        reactionMs:  reactionMsRounded, // 遅延タイムは記録（参考表示）
+        reactionMs:  reactionMsRounded, // 被弾タイムは記録（参考表示）
         successName: currentPattern.successName,
         failLabel:   currentPattern.failLabel,
         timing:      'strike',
@@ -433,14 +431,19 @@ export default function MiniGamePage() {
       return;
     }
 
-    // ── 成功（S / A / B / C） ──
+    // ── okori フェーズ＝起こりを見切った → 必ず成功 ──
+    // ★ 反応時間に応じて S/A/B/C を付与。
+    //   okori継続が長い回で600msを超えても、見切れている以上は最低Cで成功扱い。
+    let rank = judgeRankByReaction(reactionMsRounded);
+    if (rank === 'F') rank = 'C';
+
     finishRound({
       patternId:   currentPattern.id,
       success:     true,
       reactionMs:  reactionMsRounded,
       successName: currentPattern.successName,
       failLabel:   '',
-      timing:      'strike',
+      timing:      'okori',
       cutinText:   pickCutinByRank(rank),
       rank,
     });
