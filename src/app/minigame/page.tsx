@@ -991,11 +991,11 @@ export default function MiniGamePage() {
           }
           40% {
             transform: translateY(1.5px) scale(1.005);
-            filter: drop-shadow(0 0 14px rgba(255, 140, 100, 0.4));
+            filter: drop-shadow(0 0 14px rgba(251, 191, 36, 0.4));
           }
           100% {
             transform: translateY(3px) scale(1.015);
-            filter: drop-shadow(0 0 18px rgba(255, 100, 80, 0.55));
+            filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.55));
           }
         }
         :global(.kenshi-wrap.anim-okori .sword) {
