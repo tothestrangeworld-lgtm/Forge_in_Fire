@@ -1448,17 +1448,18 @@ export async function saveLog(
   // ---- 1. 課題評価 XP ----
   let xpFromPractice = 0;
   const logRows = payload.items.map((it) => {
-    const earned = it.score * XP_PER_SCORE;
+    // ★ NaN汚染を防ぐ防御的プログラミング: 値がない場合は 0 として扱う
+    const safeScore = Number(it.score) || 0;
+    const earned = safeScore * XP_PER_SCORE;
     xpFromPractice += earned;
     return {
       user_id: userId,
       date,
       task_id: it.task_id,
-      score: it.score,
+      score: safeScore,
       xp_earned: earned,
     };
   });
-
   if (logRows.length > 0) {
     const { error: logErr } = await supabase.from('logs').insert(logRows);
     throwIfError(logErr, 'saveLog:insertLogs');

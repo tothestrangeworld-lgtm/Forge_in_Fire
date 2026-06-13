@@ -468,7 +468,9 @@ const validReceived = receivedTechSelections
 
       const res = await saveLog({
         date,
-        items: activeTasks.map(t => ({ task_id: t.id, score: scores[t.id] })),
+        items: activeTasks
+          .filter(t => scores[t.id] > 0)
+          .map(t => ({ task_id: t.id, score: scores[t.id] })),
         ...(validGiven.length > 0    ? { givenTechs:    validGiven }    : {}),
         ...(validReceived.length > 0 ? { receivedTechs: validReceived } : {}),
       });
